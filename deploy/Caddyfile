@@ -1,0 +1,16 @@
+{$SITE_DOMAIN} {
+	# API and SSE: never buffer, so events reach the browser immediately.
+	handle /api/* {
+		reverse_proxy api:8000 {
+			flush_interval -1
+		}
+	}
+
+	# Everything else is the Next.js static export.
+	handle {
+		root * /srv
+		encode zstd gzip
+		try_files {path} {path}.html /index.html
+		file_server
+	}
+}

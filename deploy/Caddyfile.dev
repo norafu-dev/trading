@@ -1,0 +1,19 @@
+# Local dev: one origin on http://localhost:8080, same routing as production.
+# api (uv run python -m harvester.api) and next dev (pnpm dev) run on the host.
+{
+	auto_https off
+	admin off
+}
+
+:8080 {
+	handle /api/* {
+		reverse_proxy host.docker.internal:8000 {
+			flush_interval -1
+		}
+	}
+
+	# Next dev server, including its hot reload WebSocket.
+	handle {
+		reverse_proxy host.docker.internal:3000
+	}
+}

@@ -1,0 +1,201 @@
+# Scope: Discord 频道采集器
+
+一个只给你自己用的 Discord 频道信息采集工具。selfbot 用你的账号（建议用小号）在云服务器上 24 小时在线，你在 dashboard 里勾选要采集的频道，实时看新消息，也能按指定时间段把历史消息抓回来。
+
+**Build approach:** Tracer Bullet（先打通一条从 Discord 到存储再到 dashboard 的真实链路，之后每个切片加粗其中一段，始终端到端可用）。
+**Workflow:** Alpha（`/develop` 之后跑 `/check verify`）。这是项目默认的严谨程度。遇到真正需要做决定的功能，推荐先走 `/architect`，如果你已经知道怎么做，可以跳过。任何功能都可以带自己的标签（例如 `· Beta`）来多做或少做。
+
+_这些都是让构建保持有序的建议，不是硬性要求。不合适的就跳过：如果你已经知道某个功能怎么做，直接用 `/develop`，跳过 `/architect`。功能什么时候算 `done`，由你决定。_
+
+> **风险提示：** selfbot 违反 Discord 服务条款，账号可能被封。建议用专门的小号，并把限速和"像正常人一样"的请求节奏当成正式需求（见第 6 和第 10 项）。(basis: Discord 服务条款禁止自动化用户账号)
+
+## At a glance
+
+| #   | Feature              | Phase      | Status  |
+| --- | -------------------- | ---------- | ------- |
+| 1   | 技术栈与架构         | Foundation | done |
+| 2   | 编码规范与工具       | Foundation | planned |
+| 3   | 数据模型             | Foundation | planned |
+| 4   | Dashboard 界面基础   | Foundation | planned |
+| 5   | Dashboard 访问保护   | Slice 1    | planned |
+| 6   | Discord 账号连接     | Slice 1    | planned |
+| 7   | 频道管理             | Slice 1    | planned |
+| 8   | 实时消息流           | Slice 1    | planned |
+| 9   | 部署与常驻运行       | Slice 1    | planned |
+| 10  | 按时间段采集历史消息 | Slice 2    | planned |
+| 11  | 编辑与删除留痕       | Slice 3    | planned |
+| 12  | 附件与图片保存       | Slice 4    | planned |
+| 13  | 消息搜索与筛选       | Slice 5    | planned |
+| 14  | 导出                 | Slice 6    | planned |
+| 15  | 关键词提醒           | Slice 7    | planned |
+
+## Foundations
+
+### 1. 技术栈与架构 · Beta · done
+
+决定整体技术栈（selfbot 连接方式、后端、实时推送到浏览器的方式、存储、部署形态），并搭出能跑起来的空项目，后面所有切片都在它上面构建。
+**Done when:** 技术栈记录在 spec 里；空项目本地能启动、能通过 build；采集进程和 dashboard 的关系（同一进程还是分开）已经定下。
+spec [0001](../specs/0001-stack-and-architecture/index.md) · code in `backend/`, `web/`, `deploy/`
+
+- [x] Decide the stack (spec): `/architect 技术栈与架构`
+- [x] Scaffold from the decision: `/develop 技术栈与架构`
+
+### 2. 编码规范与工具
+
+在真实的脚手架项目上记录规范，然后装好 lint、format 和 pre-commit。
+**Done when:** 根目录 `AGENTS.md` 反映真实技术栈，lint、format、pre-commit 都能干净跑通。
+
+- [ ] Capture conventions + tooling choices: `/audit`
+
+### 3. 数据模型 · needs a decision
+
+所有功能都依赖的核心实体：Discord 账号、服务器、频道及其采集开关、消息、消息的历史版本、附件、历史采集任务、关键词。(basis: 数据模型是最贵的返工)
+**Done when:** 实体和关系能支撑后续切片（编辑留痕、历史采集去重、附件、搜索、多账号）而不需要破坏性迁移；同一条消息无论来自实时还是历史采集都只存一份。
+
+- [ ] Design it (spec): `/architect 数据模型`
+
+### 4. Dashboard 界面基础 · needs a decision
+
+dashboard 的视觉风格、布局和基础组件，让频道列表、消息流和任务页看起来一致。
+**Done when:** `design.md` 覆盖字体、颜色、间距和基础组件；消息列表组件能处理长列表、空状态和加载状态。
+
+- [ ] Design it (spec): `/architect Dashboard 界面基础`
+
+## Slice 1: 核心链路（实时采集，也是 walking skeleton）
+
+连上一个账号 → 勾选一个频道 → 新消息存进数据库并实时出现在 dashboard 上 → 部署到服务器一直跑。只做文字消息，不做历史、附件、搜索。
+
+### 5. Dashboard 访问保护 · needs a decision
+
+dashboard 部署在公网上，里面有你的账号 token 和采集数据，必须只有你能打开。
+**Done when:** 没登录的人打不开任何页面和接口；你能登录、登出；会话会过期。
+
+- [ ] Design it (spec): `/architect Dashboard 访问保护`
+
+### 6. Discord 账号连接 · needs a decision · Beta
+
+在 dashboard 填入账号 token，selfbot 用它登录并保持在线，断线自动重连，状态清楚可见。token 加密保存。(basis: 封号和 token 泄露是这个产品最大的风险)
+**Done when:** 能添加一个账号并看到在线状态；断线后自动重连；token 失效或被封时 dashboard 明确提示；token 不以明文存储或出现在日志里；请求节奏有限速保护。
+
+- [ ] Design it (spec): `/architect Discord 账号连接`
+
+### 7. 频道管理
+
+列出账号所在的服务器和频道，勾选开关决定采集哪些。
+**Done when:** dashboard 按服务器分组显示频道；勾选或取消后几秒内生效，无需重启；看不到或无权限的频道有清楚标识。
+
+- [ ] Build it: `/develop 频道管理`
+
+### 8. 实时消息流
+
+已勾选频道里的新消息存进数据库，并实时推送到 dashboard 显示。
+**Done when:** 别人在已勾选频道发的消息几秒内出现在 dashboard 上，刷新后仍在；能按频道切换查看；未勾选频道的消息不被存。
+
+- [ ] Build it: `/develop 实时消息流`
+
+### 9. 部署与常驻运行 · needs a decision
+
+部署到云服务器，进程崩溃或服务器重启后自动恢复，并能看到它是否还活着。
+**Done when:** 服务器重启后采集自动恢复；dashboard 能看到采集进程最近一次心跳时间；有备份数据的办法。
+
+- [ ] Design it (spec): `/architect 部署与常驻运行`
+
+## Slice 2: 历史采集
+
+### 10. 按时间段采集历史消息 · needs a decision · Beta
+
+选频道和起止时间，后台把这段时间的消息抓回来，和实时采集的数据合在一起。也用来补齐断线期间漏掉的消息。
+**Done when:** 能为一个或多个频道建立指定时间段的采集任务；dashboard 显示进度、可暂停或取消；中断后能从断点继续；和实时消息不重复；请求节奏受限速保护。
+
+- [ ] Design it (spec): `/architect 按时间段采集历史消息`
+
+## Slice 3: 编辑与删除留痕
+
+### 11. 编辑与删除留痕
+
+消息被编辑时保留每个历史版本，被删除时保留原文并打上已删除标记。
+**Done when:** dashboard 上被编辑的消息能查看历史版本；被删除的消息仍可见且明显标记为已删除，带删除时间。
+
+- [ ] Build it: `/develop 编辑与删除留痕`
+
+## Slice 4: 附件保存
+
+### 12. 附件与图片保存 · needs a decision
+
+把消息里的图片和文件下载到自己的存储里，因为 Discord 的附件链接会过期。(basis: Discord CDN 链接带过期签名)
+**Done when:** 新消息的附件自动下载保存；dashboard 里图片能预览、文件能下载，不依赖 Discord 的原链接；有单个文件大小上限和总容量的设置。
+
+- [ ] Design it (spec): `/architect 附件与图片保存`
+
+## Slice 5: 搜索与筛选
+
+### 13. 消息搜索与筛选 · needs a decision
+
+在已采集的消息里按关键词、频道、作者、时间范围查找。
+**Done when:** 关键词搜索在大量消息里也很快返回；能叠加频道、作者、时间筛选；结果能跳到上下文。
+
+- [ ] Design it (spec): `/architect 消息搜索与筛选`
+
+## Slice 6: 导出
+
+### 14. 导出
+
+把当前筛选结果导出成文件。
+**Done when:** 能把筛选后的消息导出为 CSV 和 JSON；大量数据导出不会卡死页面；导出内容包含编辑和删除标记。
+
+- [ ] Build it: `/develop 导出`
+
+## Slice 7: 关键词提醒
+
+### 15. 关键词提醒
+
+设置关键词，新消息命中时在 dashboard 里提醒你。
+**Done when:** 能增删关键词；命中的消息在消息流里高亮，并出现在提醒列表里，可标记已读。
+
+- [ ] Build it: `/develop 关键词提醒`
+
+## Deferred
+
+这一轮不做，留在这里让计划保持诚实。
+
+- **多账号**：在 dashboard 管理多个账号，分摊采集压力（数据模型已预留）· needs a decision
+- **外部推送**：关键词提醒推送到手机或聊天工具 · needs a decision
+- **数据统计**：频道活跃度、发言人排行等图表
+- **AI 分析采集的信息**：作为独立的 `analyzer` 进程，用 pgvector 做向量检索（架构已预留）· needs a decision · from spec 0001
+- **向交易所下单**：作为独立的 `trader` 进程；涉及真钱，要先设计密钥存放、最小权限、幂等和审计 · needs a decision · from spec 0001
+
+## Legend
+
+**决策框。** 每个功能都有且只有一个以 `(spec)` 结尾的子任务。它的措辞会变（通常是 `Design it (spec)`，技术栈上是 `Decide the stack (spec)`），各个 skill 靠 `(spec)` 后缀找到它。其余的框都是执行框，`/architect` 不会勾它们。
+
+**功能生命周期**：功能推进时 scope 会更新：
+
+| State                        | Set by                     | 功能显示                                                                                                                                        |
+| ---------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `planned` · needs a decision | `/scope`                   | 一个框：`Design it (spec): /architect <feature>`                                                                                                |
+| `in-progress`（已设计）      | `/architect` 写完 spec 时  | `Design it` 已勾；链接 spec；`Build it: /develop <feature>` 加 2 到 5 个里程碑；按 tier 加收尾框（Alpha 起有 `Verify it`，Beta 起有 `Test it`） |
+| `in-progress`（构建中）      | `/develop`                 | 里程碑逐个勾选；填上代码位置                                                                                                                    |
+| `in-progress`（已验证）      | `/check verify`            | `Build it` 和里程碑已勾；`Verify it` 已勾                                                                                                       |
+| `done`                       | 你决定的时候；`/sync` 对账 | Alpha 默认在 `/check verify` 之后可以算 done；Beta 在 `/test` 之后                                                                              |
+
+- **下一步** = 第一个没勾的框。
+- **needs a decision** = 先跑 `/architect`；否则直接 `/develop`（规范与工具用 `/audit`）。spec 写完后这个标签就去掉。
+- **原子构建任务写在 spec 的 `## Build plan` 里，不在这里**：scope 只放里程碑汇总。
+- **Status**：`planned` → `in-progress` → `done`，另外有 `existing`（工作流之前就有）和 `dropped`（移出范围，保留历史）。
+- **Workflow tier 标签**（例如 `· Beta`）只改变那一个功能的严谨程度；没标签就继承项目默认的 Alpha。
+- **Workflow**：Prototype = `/develop` 之后什么都不跑；Alpha = `/check verify`；Beta = `/check verify` 再 `/test`；GA = 再加全新模型 `/check review` 和 `/document`。
+- **Pointer line**（`spec <n> · code in <path>`）：spec 链接由 `/architect` 加，代码位置由 `/develop` 加。
+
+## References
+
+**Project sources**
+
+- 你在本次 `/scope` 中的回答：单人自用、先一个账号（以后可能多个）、云服务器 24 小时运行、浏览勾选频道、保留编辑和删除原文、提醒先只在 dashboard、核心先上其余排后。
+
+**Practices & standards**
+
+- Foundations before features：先打好技术栈、数据模型和界面基础，再做功能切片。
+- Vertical slices ship real value early（Tracer Bullet）：第一个切片就端到端可用，后面逐段加粗。
+- 数据模型是最贵的返工：所以单独成项，并预留多账号和去重。
+- Discord 服务条款禁止自动化用户账号：所以限速和小号是正式需求，账号连接和历史采集提到 Beta。
+- Discord 附件 CDN 链接带过期签名：所以附件要下载到自己的存储，而且越早做越少丢失。

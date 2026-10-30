@@ -1,0 +1,10 @@
+**/node_modules
+**/.next
+web/out
+**/.venv
+**/__pycache__
+.env
+.env.*
+docs
+.claude
+.git

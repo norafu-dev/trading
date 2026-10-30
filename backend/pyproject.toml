@@ -1,0 +1,38 @@
+[project]
+name = "harvester"
+version = "0.1.0"
+description = "Discord channel collector: collector and api processes sharing one PostgreSQL."
+requires-python = ">=3.13"
+dependencies = [
+    "alembic>=1.20.1",
+    "asyncpg>=0.32.0",
+    "discord-py-self>=2.1.0",
+    "fastapi[standard]>=0.162.0",
+    "pydantic-settings>=2.16.2",
+    "sqlalchemy[asyncio]>=2.1.6",
+    "structlog>=26.1.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.28,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.414",
+    "ruff>=0.17.3",
+]
+
+[tool.fastapi]
+entrypoint = "harvester.api.main:app"
+
+# Rule selection is decided in feature 2 (/audit); this is only the baseline.
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.pyright]
+include = ["src", "migrations"]
+pythonVersion = "3.13"
+venvPath = "."
+venv = ".venv"
