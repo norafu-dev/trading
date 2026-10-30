@@ -19,6 +19,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "asyncpg-stubs>=0.32.0",
     "pyright>=1.1.414",
     "ruff>=0.17.3",
 ]
@@ -26,13 +27,16 @@ dev = [
 [tool.fastapi]
 entrypoint = "harvester.api.main:app"
 
-# Rule selection is decided in feature 2 (/audit); this is only the baseline.
 [tool.ruff]
 line-length = 100
 target-version = "py313"
 
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "ASYNC", "RUF"]
+
 [tool.pyright]
 include = ["src", "migrations"]
 pythonVersion = "3.13"
+typeCheckingMode = "strict"
 venvPath = "."
 venv = ".venv"

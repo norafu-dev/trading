@@ -6,7 +6,7 @@ while the LISTEN connection is down are recovered by clients via Last-Event-ID.
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -35,7 +35,7 @@ class Broadcaster:
                 log.warning("notifications.subscriber_full")
 
     @asynccontextmanager
-    async def subscribe(self) -> AsyncIterator[asyncio.Queue[dict[str, Any]]]:
+    async def subscribe(self) -> AsyncGenerator[asyncio.Queue[dict[str, Any]]]:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(SUBSCRIBER_QUEUE_SIZE)
         self._subscribers.add(queue)
         try:
@@ -47,7 +47,10 @@ class Broadcaster:
 async def _listen_until_closed(broadcaster: Broadcaster) -> None:
     """Open one LISTEN connection and return once PostgreSQL closes it."""
 
-    def on_notify(_conn: Any, _pid: int, _channel: str, payload: str) -> None:
+    def on_notify(_conn: object, _pid: int, _channel: str, payload: object) -> None:
+        if not isinstance(payload, str):
+            log.warning("notifications.bad_payload")
+            return
         try:
             broadcaster.publish(json.loads(payload))
         except json.JSONDecodeError:

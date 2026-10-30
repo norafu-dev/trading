@@ -14,7 +14,7 @@ _这些都是让构建保持有序的建议，不是硬性要求。不合适的�
 | #   | Feature              | Phase      | Status  |
 | --- | -------------------- | ---------- | ------- |
 | 1   | 技术栈与架构         | Foundation | done |
-| 2   | 编码规范与工具       | Foundation | planned |
+| 2   | 编码规范与工具       | Foundation | done |
 | 3   | 数据模型             | Foundation | planned |
 | 4   | Dashboard 界面基础   | Foundation | planned |
 | 5   | Dashboard 访问保护   | Slice 1    | planned |
@@ -40,12 +40,12 @@ spec [0001](../specs/0001-stack-and-architecture/index.md) · code in `backend/`
 - [x] Decide the stack (spec): `/architect 技术栈与架构`
 - [x] Scaffold from the decision: `/develop 技术栈与架构`
 
-### 2. 编码规范与工具
+### 2. 编码规范与工具 · done
 
 在真实的脚手架项目上记录规范，然后装好 lint、format 和 pre-commit。
 **Done when:** 根目录 `AGENTS.md` 反映真实技术栈，lint、format、pre-commit 都能干净跑通。
 
-- [ ] Capture conventions + tooling choices: `/audit`
+- [x] Capture conventions + tooling choices: `/audit`
 
 ### 3. 数据模型 · needs a decision
 

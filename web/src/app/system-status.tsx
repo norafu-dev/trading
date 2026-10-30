@@ -53,9 +53,7 @@ export function SystemStatus() {
       </dd>
       <dt>数据库时间</dt>
       <dd>
-        {health.data?.database_time
-          ? new Date(health.data.database_time).toLocaleString()
-          : "—"}
+        {health.data?.database_time ? new Date(health.data.database_time).toLocaleString() : "—"}
       </dd>
       <dt>实时推送（SSE）</dt>
       <dd>

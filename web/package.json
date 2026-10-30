@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "typecheck": "tsc --noEmit",
-    "gen:api": "openapi-typescript ../backend/openapi.json -o src/lib/api/schema.d.ts"
+    "gen:api": "openapi-typescript ../backend/openapi.json -o src/lib/api/schema.d.ts",
+    "lint": "biome check .",
+    "format": "biome check --write ."
   },
   "dependencies": {
     "@tanstack/react-query": "^5.105.0",
@@ -16,6 +18,7 @@
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.4",
     "@types/node": "^24.19.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",

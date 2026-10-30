@@ -1,0 +1,42 @@
+# Local hooks call the project's own pinned tools (uv.lock, pnpm-lock.yaml),
+# so a commit is checked with exactly the versions CI uses.
+# Setup once: uv tool install pre-commit && pre-commit install
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check (backend)
+        entry: uv run --project backend ruff check --fix
+        language: system
+        types: [python]
+        files: ^backend/
+
+      - id: ruff-format
+        name: ruff format (backend)
+        entry: uv run --project backend ruff format
+        language: system
+        types: [python]
+        files: ^backend/
+
+      - id: pyright
+        name: pyright (backend)
+        entry: bash -c 'cd backend && uv run pyright'
+        language: system
+        files: ^backend/.*\.py$
+        pass_filenames: false
+
+      - id: biome
+        name: biome check (web)
+        # Biome resolves its config and ignores from web/, so strip the prefix and run there.
+        # Binaries are called directly: pnpm exec may reinstall node_modules while
+        # pre-commit has unstaged manifest changes stashed.
+        entry: bash -c 'cd web && node_modules/.bin/biome check --write --no-errors-on-unmatched --files-ignore-unknown=true "${@#web/}"' --
+        language: system
+        files: ^web/
+
+      - id: tsc
+        name: tsc (web)
+        entry: bash -c 'cd web && node_modules/.bin/tsc --noEmit'
+        language: system
+        files: ^web/.*\.(ts|tsx)$
+        pass_filenames: false

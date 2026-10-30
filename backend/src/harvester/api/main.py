@@ -1,6 +1,6 @@
 import asyncio
 import contextlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -11,7 +11,7 @@ from harvester.db import get_engine
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     broadcaster = Broadcaster()
     app.state.broadcaster = broadcaster
     listener = asyncio.create_task(listen_forever(broadcaster), name="pg-listen")

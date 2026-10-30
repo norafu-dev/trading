@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import signal
 
 import asyncpg
@@ -58,10 +59,8 @@ async def run() -> int:
             if lost.is_set():
                 log.error("collector.lock_lost")
                 return EXIT_LOCK_LOST
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(stop.wait(), timeout=LOCK_CHECK_INTERVAL)
-            except TimeoutError:
-                pass
         log.info("collector.stopping")
         return EXIT_OK
     finally:
