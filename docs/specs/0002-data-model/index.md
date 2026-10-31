@@ -1,7 +1,7 @@
 # 0002. 核心数据模型
 
 **Date**: 2026-10-31
-**Status**: In Progress
+**Status**: Accepted
 
 ## Summary
 

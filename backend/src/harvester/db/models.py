@@ -176,6 +176,8 @@ class Message(Base):
 
 
 # Newest first per channel, author and guild (dashboard pagination).
+# Query with ORDER BY id DESC: the snowflake ID is the creation time. ORDER BY created_at
+# cannot use these indexes and adds a Sort over every matching row.
 Index("ix_message_channel_id_id", Message.channel_id, Message.id.desc())
 Index("ix_message_author_id_id", Message.author_id, Message.id.desc())
 Index("ix_message_guild_id_id", Message.guild_id, Message.id.desc())

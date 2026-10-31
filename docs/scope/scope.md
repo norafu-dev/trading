@@ -15,7 +15,7 @@ _这些都是让构建保持有序的建议，不是硬性要求。不合适的�
 | --- | -------------------- | ---------- | ------- |
 | 1   | 技术栈与架构         | Foundation | done    |
 | 2   | 编码规范与工具       | Foundation | done    |
-| 3   | 数据模型             | Foundation | in-progress |
+| 3   | 数据模型             | Foundation | done    |
 | 4   | Dashboard 界面基础   | Foundation | planned |
 | 5   | Dashboard 访问保护   | Slice 1    | planned |
 | 6   | Discord 账号连接     | Slice 1    | planned |
@@ -47,19 +47,19 @@ spec [0001](../specs/0001-stack-and-architecture/index.md) · code in `backend/`
 
 - [x] Capture conventions + tooling choices: `/audit`
 
-### 3. 数据模型 · in-progress
+### 3. 数据模型 · done
 
 所有功能都依赖的核心实体：Discord 账号、服务器、频道及其采集开关、消息、消息的历史版本、附件、历史采集任务、关键词。(basis: 数据模型是最贵的返工)
 **Done when:** 实体和关系能支撑后续切片（编辑留痕、历史采集去重、附件、搜索、多账号）而不需要破坏性迁移；同一条消息无论来自实时还是历史采集都只存一份。
 spec [0002](../specs/0002-data-model/index.md) · code in `backend/src/harvester/db/`, `backend/migrations/`
 
 - [x] Design it (spec): `/architect 数据模型`
-- [ ] Build it: `/develop 数据模型`
+- [x] Build it: `/develop 数据模型`
   - [x] 模型和第一次迁移（Slice 1 的表加 `message_revision`，约束和索引都写明名字），AC-1, AC-8, AC-10, AC-11
   - [x] 快照类型和纯函数（`snowflake_time`、embed 统一格式、编辑判断表），AC-5, AC-12, AC-13
   - [x] 写入函数（upsert、`ingest_message`、批量删除、覆盖段），AC-2 到 AC-10, AC-13
   - [x] 连真实 PostgreSQL 的集成测试，AC-1 到 AC-13
-- [ ] Verify it: `/check verify 数据模型`
+- [x] Verify it: `/check verify 数据模型`
 
 ### 4. Dashboard 界面基础 · needs a decision
 
