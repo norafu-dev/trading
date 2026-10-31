@@ -5,7 +5,7 @@
 **Build approach:** Tracer Bullet（先打通一条从 Discord 到存储再到 dashboard 的真实链路，之后每个切片加粗其中一段，始终端到端可用）。
 **Workflow:** Alpha（`/develop` 之后跑 `/check verify`）。这是项目默认的严谨程度。遇到真正需要做决定的功能，推荐先走 `/architect`，如果你已经知道怎么做，可以跳过。任何功能都可以带自己的标签（例如 `· Beta`）来多做或少做。
 
-_这些都是让构建保持有序的建议，不是硬性要求。不合适的就跳过：如果你已经知道某个功能怎么做，直接用 `/develop`，跳过 `/architect`。功能什么时候算 `done`，由你决定。_
+_这些都是让构建保持有序的建议，不是硬性要求。不合适的就跳过：如果你已经知道某个功能怎么做，直接用_ `/develop`_，跳过_ `/architect`_。功能什么时候算_ `done`_，由你决定。_
 
 > **风险提示：** selfbot 违反 Discord 服务条款，账号可能被封。建议用专门的小号，并把限速和"像正常人一样"的请求节奏当成正式需求（见第 6 和第 10 项）。(basis: Discord 服务条款禁止自动化用户账号)
 
@@ -13,9 +13,9 @@ _这些都是让构建保持有序的建议，不是硬性要求。不合适的�
 
 | #   | Feature              | Phase      | Status  |
 | --- | -------------------- | ---------- | ------- |
-| 1   | 技术栈与架构         | Foundation | done |
-| 2   | 编码规范与工具       | Foundation | done |
-| 3   | 数据模型             | Foundation | planned |
+| 1   | 技术栈与架构         | Foundation | done    |
+| 2   | 编码规范与工具       | Foundation | done    |
+| 3   | 数据模型             | Foundation | in-progress |
 | 4   | Dashboard 界面基础   | Foundation | planned |
 | 5   | Dashboard 访问保护   | Slice 1    | planned |
 | 6   | Discord 账号连接     | Slice 1    | planned |
@@ -47,12 +47,19 @@ spec [0001](../specs/0001-stack-and-architecture/index.md) · code in `backend/`
 
 - [x] Capture conventions + tooling choices: `/audit`
 
-### 3. 数据模型 · needs a decision
+### 3. 数据模型 · in-progress
 
 所有功能都依赖的核心实体：Discord 账号、服务器、频道及其采集开关、消息、消息的历史版本、附件、历史采集任务、关键词。(basis: 数据模型是最贵的返工)
 **Done when:** 实体和关系能支撑后续切片（编辑留痕、历史采集去重、附件、搜索、多账号）而不需要破坏性迁移；同一条消息无论来自实时还是历史采集都只存一份。
+spec [0002](../specs/0002-data-model/index.md) · code in `backend/src/harvester/db/`, `backend/migrations/`
 
-- [ ] Design it (spec): `/architect 数据模型`
+- [x] Design it (spec): `/architect 数据模型`
+- [ ] Build it: `/develop 数据模型`
+  - [x] 模型和第一次迁移（Slice 1 的表加 `message_revision`，约束和索引都写明名字），AC-1, AC-8, AC-10, AC-11
+  - [x] 快照类型和纯函数（`snowflake_time`、embed 统一格式、编辑判断表），AC-5, AC-12, AC-13
+  - [x] 写入函数（upsert、`ingest_message`、批量删除、覆盖段），AC-2 到 AC-10, AC-13
+  - [ ] 连真实 PostgreSQL 的集成测试，AC-1 到 AC-13
+- [ ] Verify it: `/check verify 数据模型`
 
 ### 4. Dashboard 界面基础 · needs a decision
 
@@ -180,7 +187,7 @@ dashboard 部署在公网上，里面有你的账号 token 和采集数据，必
 
 - **下一步** = 第一个没勾的框。
 - **needs a decision** = 先跑 `/architect`；否则直接 `/develop`（规范与工具用 `/audit`）。spec 写完后这个标签就去掉。
-- **原子构建任务写在 spec 的 `## Build plan` 里，不在这里**：scope 只放里程碑汇总。
+- **原子构建任务写在 spec 的** `## Build plan` **里，不在这里**：scope 只放里程碑汇总。
 - **Status**：`planned` → `in-progress` → `done`，另外有 `existing`（工作流之前就有）和 `dropped`（移出范围，保留历史）。
 - **Workflow tier 标签**（例如 `· Beta`）只改变那一个功能的严谨程度；没标签就继承项目默认的 Alpha。
 - **Workflow**：Prototype = `/develop` 之后什么都不跑；Alpha = `/check verify`；Beta = `/check verify` 再 `/test`；GA = 再加全新模型 `/check review` 和 `/document`。
