@@ -1,4 +1,7 @@
-from sqlalchemy import MetaData
+from datetime import datetime
+from typing import Any, ClassVar
+
+from sqlalchemy import TIMESTAMP, BigInteger, MetaData, Text
 from sqlalchemy.orm import DeclarativeBase
 
 # Stable constraint names so Alembic autogenerate produces predictable migrations.
@@ -12,6 +15,13 @@ NAMING_CONVENTION = {
 
 
 class Base(DeclarativeBase):
-    """Shared declarative base for collector, api and migrations. Models arrive with feature 3."""
+    """Shared declarative base for collector, api and migrations; models live in `models`."""
 
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
+
+    # Spec 0002 conventions: Discord IDs are BIGINT, strings TEXT, times TIMESTAMPTZ.
+    type_annotation_map: ClassVar[dict[Any, Any]] = {
+        int: BigInteger,
+        str: Text,
+        datetime: TIMESTAMP(timezone=True),
+    }
