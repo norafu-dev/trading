@@ -109,7 +109,8 @@
   --destructive-foreground: #ffffff;
   --border: #e0e3de;
   --input: #c9cdc6;
-  --ring: #163300;
+  /* spec 表里是 #163300，和 --rail 同色，焦点环在图标栏上看不见；按对比度检查改成中绿。 */
+  --ring: #428f16;
   --rail: #163300;
   --rail-foreground: #ffffff;
   --mention: rgb(159 232 112 / 0.28);

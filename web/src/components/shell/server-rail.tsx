@@ -60,7 +60,7 @@ export function ServerRail({
         H
       </Link>
       <Separator className="mx-auto bg-rail-foreground/20 data-horizontal:w-8" />
-      <ul className="flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-y-auto">
+      <ul className="flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-y-auto py-1">
         {guilds.map((guild) => {
           const selected = guild.id === selectedGuildId;
           return (
