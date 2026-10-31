@@ -42,6 +42,7 @@ uv run python -m harvester.api.export_openapi && cd ../web && pnpm gen:api   # �
 - 配置全部走 `harvester.config` 的 `pydantic-settings`，启动时校验，缺配置直接报错退出；密钥绝不进 git、日志或前端代码。
 - 前端只用具名导出；Next.js 要求的 `page.tsx`、`layout.tsx` 等文件除外。
 - 表结构只通过 Alembic 迁移修改；进程之间只通过 PostgreSQL 交流（其余不变量见 spec 0001）。
+- 代码注释一律用简体中文写（标识符、日志、错误码等代码本身保持英文）。
 - Commit message 用 Conventional Commits（`feat:`、`fix:`、`chore:`）。
 
 ## Tooling
