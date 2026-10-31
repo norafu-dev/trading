@@ -1,4 +1,5 @@
 import { ButtonGallery } from "./component-gallery";
+import { MessageListDemo, MessageListStates } from "./message-list-demo";
 import { PreviewSection } from "./preview-section";
 import { EmptyShellDemo, ShellDemo } from "./shell-demo";
 import { TokenSwatches } from "./token-swatches";
@@ -33,6 +34,16 @@ export default function PreviewPage() {
         </PreviewSection>
         <PreviewSection id="shell-empty" title="外壳：还没有开启采集的频道">
           <EmptyShellDemo />
+        </PreviewSection>
+        <PreviewSection
+          id="messages"
+          title="消息列表"
+          description="5 万条确定性的假消息。滚到顶部会自动加载更早的消息；离开底部后点「模拟新消息」会出现「回到最新」。"
+        >
+          <MessageListDemo />
+        </PreviewSection>
+        <PreviewSection id="message-states" title="消息列表的三种状态">
+          <MessageListStates />
         </PreviewSection>
       </main>
     </div>
