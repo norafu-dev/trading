@@ -245,3 +245,54 @@ export function generateNewMessage(newest: MessageView, atMs: number, seed: numb
   if (!message) throw new Error("generator returned nothing");
   return { ...message, id: snowflake(time, seed), createdAt: new Date(time).toISOString() };
 }
+
+// 「消息内容样例」：每种语法、embed、转发、附件、编辑、删除各一条，方便逐项检查样式。
+export function sampleMessages(endMs: number): MessageView[] {
+  const bodies = [...MARKDOWN, ...CODE, LONG[2] ?? "", LONG[4] ?? ""];
+  const base = (index: number, content: string): MessageView => {
+    const time = endMs - (bodies.length + 6 - index) * 60_000;
+    const author = AUTHORS[index % 4] ?? AUTHORS[0];
+    return {
+      id: snowflake(time, index),
+      authorId: author?.id ?? "0",
+      authorName: author?.names[0] ?? "",
+      authorAvatarUrl: null,
+      createdAt: new Date(time).toISOString(),
+      content,
+      embeds: [],
+      forwarded: null,
+      attachments: [],
+      editedAt: null,
+      deleted: false,
+    };
+  };
+  const plain = bodies.map((body, index) => base(index, body));
+  const n = bodies.length;
+  const [richEmbed, plainEmbed] = EMBEDS;
+  return [
+    ...plain,
+    { ...base(n, "看看这个更新"), embeds: richEmbed ? [richEmbed] : [] },
+    { ...base(n + 1, ""), embeds: plainEmbed ? [plainEmbed] : [] },
+    {
+      ...base(n + 2, ""),
+      forwarded: {
+        messageId: "1",
+        channelId: "910000000000000009",
+        guildId: null,
+        content: "被转发的原文：**周五** 发版",
+        embeds: [],
+        attachmentNames: ["changelog.md"],
+      },
+    },
+    {
+      ...base(n + 3, "附件大小：1023 B、1.0 KB、1.5 MB"),
+      attachments: [
+        { id: "a1", filename: "notes.txt", contentType: "text/plain", sizeBytes: 1023 },
+        { id: "a2", filename: "设计稿-v3.fig", contentType: null, sizeBytes: 1024 },
+        { id: "a3", filename: "screenshot.png", contentType: "image/png", sizeBytes: 1_572_864 },
+      ],
+    },
+    { ...base(n + 4, "这条被编辑过"), editedAt: new Date(endMs - 30_000).toISOString() },
+    { ...base(n + 5, "这条被删除了，但内容还在"), deleted: true },
+  ];
+}

@@ -12,6 +12,7 @@ import {
   generateMessages,
   generateNewMessage,
   generateOlderBatch,
+  sampleMessages,
 } from "@/dev/fake-messages";
 import { toUiError } from "@/lib/api/errors";
 import { useNow } from "@/lib/format/use-now";
@@ -163,6 +164,17 @@ export function MessageListStates() {
           </div>
         </figure>
       ))}
+    </div>
+  );
+}
+
+const SAMPLES = sampleMessages(FAKE_END_MS);
+
+export function MessageSamples() {
+  const now = useNow();
+  return (
+    <div className="h-[720px] overflow-hidden rounded-lg border border-border">
+      <MessageList {...STATE_PROPS} messages={SAMPLES} now={now} status="ready" />
     </div>
   );
 }

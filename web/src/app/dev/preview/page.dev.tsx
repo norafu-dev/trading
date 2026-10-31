@@ -1,7 +1,8 @@
 import { ButtonGallery } from "./component-gallery";
-import { MessageListDemo, MessageListStates } from "./message-list-demo";
+import { MessageListDemo, MessageListStates, MessageSamples } from "./message-list-demo";
 import { PreviewSection } from "./preview-section";
 import { EmptyShellDemo, ShellDemo } from "./shell-demo";
+import { StatesGallery } from "./states-gallery";
 import { TokenSwatches } from "./token-swatches";
 
 // 只在开发时存在的预览页（spec 0003）：`*.dev.tsx` 在 `next dev` 下是页面，`next build` 会忽略它。
@@ -44,6 +45,16 @@ export default function PreviewPage() {
         </PreviewSection>
         <PreviewSection id="message-states" title="消息列表的三种状态">
           <MessageListStates />
+        </PreviewSection>
+        <PreviewSection
+          id="message-samples"
+          title="消息内容样例"
+          description="每种 markdown 语法、embed、转发、附件、编辑和删除标记各一条。"
+        >
+          <MessageSamples />
+        </PreviewSection>
+        <PreviewSection id="states" title="状态和提示">
+          <StatesGallery />
         </PreviewSection>
       </main>
     </div>

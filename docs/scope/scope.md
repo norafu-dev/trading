@@ -72,7 +72,7 @@ spec [0003](../specs/0003-dashboard-ui-foundation/index.md) · code in `web/src/
   - [x] 打通细线：Tailwind v4、shadcn、两套 token、空外壳、`/dev/preview` 开关和生产构建排除，并验证 WASM markdown 解析器，AC-1, AC-9, AC-10, AC-15
   - [x] 纯函数、shadcn 组件和外壳（图标栏、频道列表、窄屏抽屉），AC-2, AC-3, AC-5, AC-6, AC-7, AC-12, AC-13
   - [x] 虚拟消息列表和假数据：贴底、回到最新、加载更早不跳动，AC-4, AC-5, AC-7, AC-8, AC-15
-  - [ ] 消息内容：markdown 渲染、embed、转发、附件、编辑删除标记、状态组件，AC-9, AC-10, AC-11, AC-12, AC-13
+  - [x] 消息内容：markdown 渲染、embed、转发、附件、编辑删除标记、状态组件，AC-9, AC-10, AC-11, AC-12, AC-13
   - [ ] 无障碍和对比度检查、`web/DESIGN.md`、单元和渲染测试，AC-14, AC-16, AC-17
 - [ ] Verify it: `/check verify Dashboard 界面基础`
 

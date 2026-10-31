@@ -7,6 +7,7 @@ import { useMemo, useRef } from "react";
 import { EmptyState } from "@/components/states/empty-state";
 import { ErrorBlock } from "@/components/states/error-block";
 import { ListSkeleton } from "@/components/states/list-skeleton";
+import { type ParserStatus, useMarkdownParser } from "@/lib/discord-markdown/use-markdown-parser";
 import { createTimeFormat } from "@/lib/format/time";
 
 import { buildRows, type Row } from "./build-rows";
@@ -30,6 +31,7 @@ function estimateFor(row: Row | undefined): number {
 // 虚拟滚动的消息列表：只渲染屏幕上看得见的几十行。切换频道时请用 key 重新挂载它。
 export function MessageList(props: MessageListProps) {
   const { messages, status } = props;
+  const parser = useMarkdownParser();
   if (status === "loading") return <ListSkeleton />;
   if (status === "error" && props.error) {
     return <ErrorBlock error={props.error} onRetry={props.onRetry} className="h-full" />;
@@ -44,7 +46,9 @@ export function MessageList(props: MessageListProps) {
       />
     );
   }
-  return <VirtualMessageList {...props} />;
+  // 解析器就绪之前显示骨架，不先显示纯文本再切换（避免行高跳动）。
+  if (parser === "pending") return <ListSkeleton />;
+  return <VirtualMessageList {...props} parser={parser} />;
 }
 
 function VirtualMessageList({
@@ -57,7 +61,8 @@ function VirtualMessageList({
   olderError,
   onReachTop,
   onRetry,
-}: MessageListProps) {
+  parser,
+}: MessageListProps & Readonly<{ parser: ParserStatus }>) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const rows = useMemo(() => buildRows(messages, timeZone), [messages, timeZone]);
   const format = useMemo(() => createTimeFormat(timeZone), [timeZone]);
@@ -125,7 +130,13 @@ function VirtualMessageList({
                   ref={virtualizer.measureElement}
                   className={row.groupStart ? "pt-4" : undefined}
                 >
-                  <MessageRow row={row} format={format} now={now} resolver={resolver} />
+                  <MessageRow
+                    row={row}
+                    format={format}
+                    now={now}
+                    resolver={resolver}
+                    parser={parser}
+                  />
                 </div>
               );
             })}
