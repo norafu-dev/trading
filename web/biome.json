@@ -25,6 +25,9 @@
       "preset": "recommended",
       "style": {
         "noDefaultExport": "error"
+      },
+      "security": {
+        "noDangerouslySetInnerHtml": "error"
       }
     }
   },
@@ -45,7 +48,9 @@
     {
       "includes": [
         "next.config.ts",
+        "postcss.config.mjs",
         "src/app/**/page.tsx",
+        "src/app/**/page.dev.tsx",
         "src/app/**/layout.tsx",
         "src/app/**/loading.tsx",
         "src/app/**/error.tsx",
@@ -58,6 +63,21 @@
           }
         }
       }
+    },
+    {
+      "includes": ["src/app/globals.css"],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noImportantStyles": "off"
+          }
+        }
+      }
     }
-  ]
+  ],
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  }
 }

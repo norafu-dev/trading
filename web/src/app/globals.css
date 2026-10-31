@@ -1,0 +1,184 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/*
+ * Design tokens (spec 0003). Light values live on :root, dark values in the
+ * prefers-color-scheme media query, so the theme follows the OS with no JS and
+ * no flash. Components only use the Tailwind classes mapped below; see
+ * web/DESIGN.md for usage.
+ */
+
+@custom-variant dark (@media (prefers-color-scheme: dark));
+
+@theme inline {
+  /* Drop Tailwind's default palette so only token colors generate classes. */
+  --color-*: initial;
+  --color-white: #fff;
+  --color-black: #000;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-rail: var(--rail);
+  --color-rail-foreground: var(--rail-foreground);
+  --color-mention: var(--mention);
+  --color-link: var(--link);
+  --color-warning: var(--warning);
+  --color-avatar-1: var(--avatar-1);
+  --color-avatar-2: var(--avatar-2);
+  --color-avatar-3: var(--avatar-3);
+  --color-avatar-4: var(--avatar-4);
+  --color-avatar-5: var(--avatar-5);
+  --color-avatar-6: var(--avatar-6);
+  --color-avatar-foreground: var(--avatar-foreground);
+
+  --font-sans:
+    var(--font-inter), "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC",
+    sans-serif;
+  --font-heading: var(--font-sans);
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Radius scale: rows 8px, inputs 10px, cards/dialogs/embeds/drawer 16px. */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-input: 10px;
+  --radius-lg: var(--radius);
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+
+  /* Type scale (spec 0003 font table). */
+  --text-page-title: 28px;
+  --text-page-title--line-height: 1.2;
+  --text-page-title--letter-spacing: -0.01em;
+  --text-section-title: 20px;
+  --text-section-title--line-height: 1.3;
+  --text-message: 15px;
+  --text-message--line-height: 1.5;
+  --text-ui: 14px;
+  --text-ui--line-height: 1.4;
+  --text-caption: 12px;
+  --text-caption--line-height: 1.4;
+
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --default-transition-duration: 150ms;
+  --default-transition-timing-function: var(--ease-out);
+}
+
+:root {
+  color-scheme: light dark;
+  --radius: 16px;
+
+  --background: #ffffff;
+  --foreground: #0e0f0c;
+  --muted: #f4f6f3;
+  --muted-foreground: #5d605b;
+  --card: #ffffff;
+  --card-foreground: #0e0f0c;
+  --popover: #ffffff;
+  --popover-foreground: #0e0f0c;
+  --primary: #9fe870;
+  --primary-foreground: #163300;
+  --secondary: #ecefea;
+  --secondary-foreground: #163300;
+  --accent: #e2f6d5;
+  --accent-foreground: #163300;
+  --destructive: #a8200d;
+  --destructive-foreground: #ffffff;
+  --border: #e0e3de;
+  --input: #c9cdc6;
+  --ring: #163300;
+  --rail: #163300;
+  --rail-foreground: #ffffff;
+  --mention: rgb(159 232 112 / 0.28);
+  --link: #2f5711;
+  --warning: #edc843;
+  --avatar-1: #cdefb5;
+  --avatar-2: #d6e4f0;
+  --avatar-3: #f0dfc8;
+  --avatar-4: #e3d7f0;
+  --avatar-5: #cfe8e2;
+  --avatar-6: #f2d4d0;
+  --avatar-foreground: #163300;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #121511;
+    --foreground: #e8ebe6;
+    --muted: #1a1e18;
+    --muted-foreground: #a3a8a0;
+    --card: #1f241d;
+    --card-foreground: #e8ebe6;
+    --popover: #1f241d;
+    --popover-foreground: #e8ebe6;
+    --primary: #9fe870;
+    --primary-foreground: #163300;
+    --secondary: #262b23;
+    --secondary-foreground: #e8ebe6;
+    --accent: #24321c;
+    --accent-foreground: #d7f5c2;
+    --destructive: #f2735f;
+    --destructive-foreground: #1a0500;
+    --border: #2c3229;
+    --input: #3a4136;
+    --ring: #9fe870;
+    --rail: #0b0d0a;
+    --rail-foreground: #e8ebe6;
+    --mention: rgb(159 232 112 / 0.16);
+    --link: #b7f08f;
+    --warning: #edc843;
+    --avatar-1: #2f4a1f;
+    --avatar-2: #24384a;
+    --avatar-3: #4a3a24;
+    --avatar-4: #3a2d4a;
+    --avatar-5: #1f4440;
+    --avatar-6: #4a2a26;
+    --avatar-foreground: #e8ebe6;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans antialiased;
+  }
+  body {
+    @apply bg-background text-foreground text-ui;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

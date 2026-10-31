@@ -11,23 +11,23 @@ _这些都是让构建保持有序的建议，不是硬性要求。不合适的�
 
 ## At a glance
 
-| #   | Feature              | Phase      | Status  |
-| --- | -------------------- | ---------- | ------- |
-| 1   | 技术栈与架构         | Foundation | done    |
-| 2   | 编码规范与工具       | Foundation | done    |
-| 3   | 数据模型             | Foundation | done    |
-| 4   | Dashboard 界面基础   | Foundation | planned |
-| 5   | Dashboard 访问保护   | Slice 1    | planned |
-| 6   | Discord 账号连接     | Slice 1    | planned |
-| 7   | 频道管理             | Slice 1    | planned |
-| 8   | 实时消息流           | Slice 1    | planned |
-| 9   | 部署与常驻运行       | Slice 1    | planned |
-| 10  | 按时间段采集历史消息 | Slice 2    | planned |
-| 11  | 编辑与删除留痕       | Slice 3    | planned |
-| 12  | 附件与图片保存       | Slice 4    | planned |
-| 13  | 消息搜索与筛选       | Slice 5    | planned |
-| 14  | 导出                 | Slice 6    | planned |
-| 15  | 关键词提醒           | Slice 7    | planned |
+| #   | Feature              | Phase      | Status      |
+| --- | -------------------- | ---------- | ----------- |
+| 1   | 技术栈与架构         | Foundation | done        |
+| 2   | 编码规范与工具       | Foundation | done        |
+| 3   | 数据模型             | Foundation | done        |
+| 4   | Dashboard 界面基础   | Foundation | in-progress |
+| 5   | Dashboard 访问保护   | Slice 1    | in-progress |
+| 6   | Discord 账号连接     | Slice 1    | planned     |
+| 7   | 频道管理             | Slice 1    | planned     |
+| 8   | 实时消息流           | Slice 1    | planned     |
+| 9   | 部署与常驻运行       | Slice 1    | planned     |
+| 10  | 按时间段采集历史消息 | Slice 2    | planned     |
+| 11  | 编辑与删除留痕       | Slice 3    | planned     |
+| 12  | 附件与图片保存       | Slice 4    | planned     |
+| 13  | 消息搜索与筛选       | Slice 5    | planned     |
+| 14  | 导出                 | Slice 6    | planned     |
+| 15  | 关键词提醒           | Slice 7    | planned     |
 
 ## Foundations
 
@@ -61,23 +61,38 @@ spec [0002](../specs/0002-data-model/index.md) · code in `backend/src/harvester
   - [x] 连真实 PostgreSQL 的集成测试，AC-1 到 AC-13
 - [x] Verify it: `/check verify 数据模型`
 
-### 4. Dashboard 界面基础 · needs a decision
+### 4. Dashboard 界面基础 · in-progress
 
 dashboard 的视觉风格、布局和基础组件，让频道列表、消息流和任务页看起来一致。
 **Done when:** `design.md` 覆盖字体、颜色、间距和基础组件；消息列表组件能处理长列表、空状态和加载状态。
+spec [0003](../specs/0003-dashboard-ui-foundation/index.md) · code in `web/src/components/`, `web/src/lib/`, `web/DESIGN.md`
 
-- [ ] Design it (spec): `/architect Dashboard 界面基础`
+- [x] Design it (spec): `/architect Dashboard 界面基础`
+- [ ] Build it: `/develop Dashboard 界面基础`
+  - [x] 打通细线：Tailwind v4、shadcn、两套 token、空外壳、`/dev/preview` 开关和生产构建排除，并验证 WASM markdown 解析器，AC-1, AC-9, AC-10, AC-15
+  - [ ] 纯函数、shadcn 组件和外壳（图标栏、频道列表、窄屏抽屉），AC-2, AC-3, AC-5, AC-6, AC-7, AC-12, AC-13
+  - [ ] 虚拟消息列表和假数据：贴底、回到最新、加载更早不跳动，AC-4, AC-5, AC-7, AC-8, AC-15
+  - [ ] 消息内容：markdown 渲染、embed、转发、附件、编辑删除标记、状态组件，AC-9, AC-10, AC-11, AC-12, AC-13
+  - [ ] 无障碍和对比度检查、`web/DESIGN.md`、单元和渲染测试，AC-14, AC-16, AC-17
+- [ ] Verify it: `/check verify Dashboard 界面基础`
 
 ## Slice 1: 核心链路（实时采集，也是 walking skeleton）
 
 连上一个账号 → 勾选一个频道 → 新消息存进数据库并实时出现在 dashboard 上 → 部署到服务器一直跑。只做文字消息，不做历史、附件、搜索。
 
-### 5. Dashboard 访问保护 · needs a decision
+### 5. Dashboard 访问保护 · in-progress
 
 dashboard 部署在公网上，里面有你的账号 token 和采集数据，必须只有你能打开。
 **Done when:** 没登录的人打不开任何页面和接口；你能登录、登出；会话会过期。
+spec [0004](../specs/0004-dashboard-access-protection/index.md) · code in `backend/src/harvester/api/`, `backend/src/harvester/crypto.py`, `web/src/app/login/`, `web/src/app/setup/`, `deploy/`
 
-- [ ] Design it (spec): `/architect Dashboard 访问保护`
+- [x] Design it (spec): `/architect Dashboard 访问保护`
+- [ ] Build it: `/develop Dashboard 访问保护`
+  - [ ] 配置拆分、加密模块、统一错误格式、Caddy 加固，和四张表的迁移，AC-1, AC-16, AC-17, AC-18
+  - [ ] 细线：设置码命令、设置、登录、登出、`require_session` 和 Origin 检查，前端设置页、登录页、`AuthGate` 和 401 跳转，AC-1 到 AC-6, AC-8, AC-10, AC-13, AC-14
+  - [ ] 加粗：会话过期、TOTP 防重复、加锁串行的限速、登录记录和清理、SSE 会话检查、重置命令、安全页和登出入口，AC-5 到 AC-7, AC-9, AC-11, AC-12, AC-14, AC-15
+  - [ ] 后端集成测试和前端渲染测试，确认日志和响应里没有密钥，AC-1 到 AC-18
+- [ ] Verify it: `/check verify Dashboard 访问保护`
 
 ### 6. Discord 账号连接 · needs a decision · Beta
 
@@ -170,6 +185,7 @@ dashboard 部署在公网上，里面有你的账号 token 和采集数据，必
 - **数据统计**：频道活跃度、发言人排行等图表
 - **AI 分析采集的信息**：作为独立的 `analyzer` 进程，用 pgvector 做向量检索（架构已预留）· needs a decision · from spec 0001
 - **向交易所下单**：作为独立的 `trader` 进程；涉及真钱，要先设计密钥存放、最小权限、幂等和审计 · needs a decision · from spec 0001
+- **身份组名字**：采集服务器的身份组，让消息里的 @身份组 显示真名（新表 `role`）· from spec 0003
 
 ## Legend
 
