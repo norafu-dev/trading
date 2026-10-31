@@ -58,7 +58,7 @@ spec [0002](../specs/0002-data-model/index.md) · code in `backend/src/harvester
   - [x] 模型和第一次迁移（Slice 1 的表加 `message_revision`，约束和索引都写明名字），AC-1, AC-8, AC-10, AC-11
   - [x] 快照类型和纯函数（`snowflake_time`、embed 统一格式、编辑判断表），AC-5, AC-12, AC-13
   - [x] 写入函数（upsert、`ingest_message`、批量删除、覆盖段），AC-2 到 AC-10, AC-13
-  - [ ] 连真实 PostgreSQL 的集成测试，AC-1 到 AC-13
+  - [x] 连真实 PostgreSQL 的集成测试，AC-1 到 AC-13
 - [ ] Verify it: `/check verify 数据模型`
 
 ### 4. Dashboard 界面基础 · needs a decision
