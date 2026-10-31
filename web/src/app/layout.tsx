@@ -5,7 +5,7 @@ import "./globals.css";
 
 import { Providers } from "./providers";
 
-// Downloaded at build time and self hosted; the browser never calls Google.
+// 构建时下载并自托管，浏览器运行时不会请求 Google。
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
 export const metadata: Metadata = {

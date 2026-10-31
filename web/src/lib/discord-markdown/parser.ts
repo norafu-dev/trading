@@ -1,5 +1,5 @@
-// The only module that imports @discord/markdown-wasm (spec 0003). Everything else uses the
-// typed `parseMarkdown` and the node types below.
+// 唯一引入 @discord/markdown-wasm 的模块（spec 0003）。其他地方只用这里带类型的
+// `parseMarkdown` 和下面的节点类型。
 
 import type {
   ChannelMention,
@@ -17,8 +17,8 @@ import type {
 } from "@discord/markdown-types";
 import { init, parse } from "@discord/markdown-wasm";
 
-// The published types leave `paragraph` and `text` out of the Block and Inline unions although the
-// parser emits both, so the tree is redeclared here with them included.
+// 官方类型的 Block 和 Inline 联合里漏了 `paragraph` 和 `text`，但解析器实际会输出这两种，
+// 所以在这里重新声明一遍语法树，把它们补上。
 export type InlineNode =
   | Text
   | Code
@@ -71,8 +71,8 @@ export type ParseResult =
   | Readonly<{ ok: true; blocks: readonly BlockNode[] }>
   | Readonly<{ ok: false; error: unknown }>;
 
-// Deliberate exception to "module level values are constants" (spec 0003): the one time WASM init
-// promise, cached so the whole page instantiates the module once. Assigned only on first call.
+// 对「模块级变量只能是常量」规则的有意例外（spec 0003）：缓存 WASM 初始化的 promise，
+// 保证整个页面只初始化一次。只在第一次调用时赋值（失败时清空以便重试）。
 let initPromise: Promise<void> | null = null;
 
 export function initParser(): Promise<void> {
