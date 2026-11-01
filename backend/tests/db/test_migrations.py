@@ -53,9 +53,9 @@ def test_upgrade_downgrade_upgrade_round_trip(roundtrip_db: URL) -> None:  # cov
     command.upgrade(cfg, PGVECTOR_REVISION)
     command.upgrade(cfg, "head")
     assert public_tables(roundtrip_db) == model_tables | {"alembic_version"}
-    assert len(model_tables) == 9
+    assert len(model_tables) == 13
 
-    command.downgrade(cfg, "-1")
+    command.downgrade(cfg, PGVECTOR_REVISION)
     assert public_tables(roundtrip_db) == {"alembic_version"}
 
     command.upgrade(cfg, "head")

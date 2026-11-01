@@ -1,5 +1,6 @@
 """AC-9: tokens never reach logs or API responses."""
 
+import base64
 import json
 import logging
 from collections.abc import Iterator
@@ -7,8 +8,10 @@ from typing import Any
 
 import pytest
 import structlog
+from pydantic import SecretStr
 
-from harvester.api.main import app
+from harvester.api.main import create_app
+from harvester.config import ApiSettings, CryptoSettings
 from harvester.logging import configure_logging
 
 
@@ -44,6 +47,10 @@ def property_names(schema: Any) -> set[str]:
 
 
 def test_no_api_schema_exposes_a_token_field() -> None:  # covers: AC-9
+    app = create_app(
+        ApiSettings(site_origin="http://localhost:8080", session_cookie_secure=False),
+        CryptoSettings(token_encryption_key=SecretStr(f"1:{base64.b64encode(bytes(32)).decode()}")),
+    )
     names = property_names(app.openapi())
 
     assert not {n for n in names if "token" in n.lower()}
