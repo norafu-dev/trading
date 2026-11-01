@@ -196,7 +196,7 @@ dashboard 放在公网上，里面有 Discord token 和全部采集数据，所�
 
 **Critical test scenarios**:
 - 集成测试：遍历 `app.routes`，白名单之外的 `/api/*` 路由都依赖 `require_session`；无 cookie 访问 `/api/health` 返回 401 和统一错误格式，verifies **AC-1**、**AC-2**
-- 集成测试：没有凭据时登录返回 409；运行 `setup_code` 后，用错误设置码返回 403 并记 `setup_bad_code`；正确设置码 `begin` 返回 URI；用错误验证码 `complete` 不保存任何东西；正确验证码保存凭据、删除设置码、返回会话 cookie；再次 `begin` 返回 409，verifies **AC-3**、**AC-4**
+- 集成测试：没有凭据时登录返回 409；运行 `setup_code` 后，用错误设置码返回 403 并记 `setup_bad_code`；正确设置码 `begin` 返回 URI；用错误验证码 `complete` 不保存任何东西，同样记 `setup_bad_code` 并计入限速；正确验证码保存凭据、删除设置码、返回会话 cookie；再次 `begin` 返回 409，verifies **AC-3**、**AC-4**
 - 集成测试：设置码过期后返回 403；已设置时 `setup_code` 命令拒绝执行，verifies **AC-3**
 - 集成测试：密码对验证码错、密码错验证码对，都返回同样的 401 `bad_credentials`；同一时间步的验证码第二次使用被拒绝；前后一个时间步的验证码能用，verifies **AC-5**
 - 集成测试：cookie 属性在 `SESSION_COOKIE_SECURE` 为真和假两种配置下符合 AC-6；库里存的是哈希不是 cookie 值，verifies **AC-6**

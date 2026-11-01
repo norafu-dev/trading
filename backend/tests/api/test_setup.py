@@ -112,6 +112,21 @@ async def test_wrong_totp_saves_nothing_then_retry_works(
     assert good.status_code == 204
 
 
+async def test_wrong_totp_counts_towards_rate_limit(
+    client: httpx.AsyncClient, factory: Factory, clock: FakeClock
+) -> None:  # covers: AC-4, AC-9
+    code = await new_setup_code(factory, clock)
+    await begin_secret(client, code)
+    body = {"setup_code": code, "password": PASSWORD, "totp_code": "000000"}
+    for _ in range(5):
+        bad = await client.post("/api/auth/setup/complete", json=body)
+        assert bad.json()["error"]["code"] == "totp_invalid"
+
+    limited = await client.post("/api/auth/setup/complete", json=body)
+    assert (limited.status_code, limited.json()["error"]["code"]) == (429, "rate_limited")
+    assert await outcomes(factory) == ["setup_bad_code"] * 5 + ["rate_limited"]
+
+
 async def test_complete_saves_credential_and_logs_in(
     client: httpx.AsyncClient, factory: Factory, clock: FakeClock
 ) -> None:  # covers: AC-3, AC-4

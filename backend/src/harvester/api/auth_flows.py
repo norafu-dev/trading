@@ -192,6 +192,9 @@ async def setup_complete(
             return secret
         step = core.verify_totp_step(secret, totp_code, now, None)
         if step is None:
+            # 拿到设置码的人也不能不限次数地猜验证码。
+            await store.record_event(session, "setup_bad_code", ctx.ip, ctx.user_agent, now)
+            log.info("auth.login_failed", ip=ctx.ip, outcome="setup_bad_code")
             return TotpInvalid()
 
         session.add(
