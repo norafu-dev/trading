@@ -181,4 +181,138 @@ describe("AccountPanel", () => {
     expect(await screen.findByText("已停用")).toBeInTheDocument();
     expect(post).toHaveBeenCalledWith("/api/discord/account/disable");
   });
+
+  // covers: AC-8, AC-9
+  it("重新连接发请求后回到正在连接", async () => {
+    showAccount({ status: "token_invalid" });
+    post.mockResolvedValue({ data: { ...ACCOUNT, status: "connecting" }, ...jsonResponse(200) });
+
+    fireEvent.click(await screen.findByRole("button", { name: "重新连接" }));
+
+    expect(await screen.findByText("正在连接")).toBeInTheDocument();
+    expect(post).toHaveBeenCalledWith("/api/discord/account/reconnect");
+  });
+
+  // covers: AC-12
+  it("启用发请求后回到正在连接", async () => {
+    showAccount({ status: "disabled" });
+    post.mockResolvedValue({ data: { ...ACCOUNT, status: "connecting" }, ...jsonResponse(200) });
+
+    fireEvent.click(await screen.findByRole("button", { name: "启用" }));
+
+    expect(await screen.findByText("正在连接")).toBeInTheDocument();
+    expect(post).toHaveBeenCalledWith("/api/discord/account/enable");
+  });
+
+  // covers: AC-13
+  it("操作被后端拒绝时显示统一文案，状态不变", async () => {
+    showAccount({ status: "token_invalid" });
+    post.mockResolvedValue({
+      error: { error: { code: "invalid_account_state", message: "x" } },
+      ...jsonResponse(409),
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "重新连接" }));
+
+    expect(await screen.findByText("现在不能这样操作")).toBeInTheDocument();
+    expect(screen.getByText("token 失效或账号被封，请到 Discord 确认")).toBeInTheDocument();
+  });
+
+  // covers: AC-11
+  it("取消换身份不发请求，确认框收起", async () => {
+    showAccount({ status: "account_mismatch" });
+
+    fireEvent.click(await screen.findByRole("button", { name: "确认换成这个账号" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+
+    expect(screen.queryByRole("button", { name: "确认更换" })).not.toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  // covers: AC-4
+  it("更换 token 失败时清空输入，表单留着并显示原因", async () => {
+    showAccount({ status: "online" });
+    put.mockResolvedValue({
+      error: { error: { code: "token_format_invalid", message: "x" } },
+      ...jsonResponse(422),
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "更换 token" }));
+    const input = screen.getByLabelText("新 Token") as HTMLInputElement;
+    expect(input.type).toBe("password");
+    expect(input.autocomplete).toBe("off");
+    fireEvent.change(input, { target: { value: "bad token" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    expect(await screen.findByText("token 的格式不对")).toBeInTheDocument();
+    expect(screen.getByLabelText("新 Token")).toHaveValue("");
+  });
+
+  it("取消更换 token 不发请求", async () => {
+    showAccount({ status: "online" });
+
+    fireEvent.click(await screen.findByRole("button", { name: "更换 token" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+
+    expect(screen.queryByLabelText("新 Token")).not.toBeInTheDocument();
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("改备注名预填当前值，保存后显示新名字", async () => {
+    showAccount({ status: "online" });
+    put.mockResolvedValue({ data: { ...ACCOUNT, label: "新名字" }, ...jsonResponse(200) });
+
+    fireEvent.click(await screen.findByRole("button", { name: "改备注名" }));
+    const input = screen.getByLabelText("备注名");
+    expect(input).toHaveValue("小号");
+    fireEvent.change(input, { target: { value: "新名字" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    expect(await screen.findByRole("heading", { name: "新名字" })).toBeInTheDocument();
+    expect(put).toHaveBeenCalledWith("/api/discord/account/label", { body: { label: "新名字" } });
+    expect(screen.queryByLabelText("备注名")).not.toBeInTheDocument();
+  });
+
+  // covers: AC-2
+  it("没登录过时提示还没有登录过", async () => {
+    showAccount({ discord_username: null });
+
+    expect(await screen.findByText("还没有登录过")).toBeInTheDocument();
+  });
+
+  // covers: AC-15
+  it("采集进程无响应时操作仍然可用", async () => {
+    showAccount({ status: "online", collector_stale: true });
+
+    expect(await screen.findByRole("button", { name: "停用" })).toBeEnabled();
+  });
+
+  // covers: AC-15
+  it("状态放进 role=status，读屏能读到变化", async () => {
+    showAccount({ status: "online" });
+
+    await screen.findByText("alt_user");
+
+    expect(screen.getByRole("status")).toHaveTextContent("在线（隐身）");
+  });
+
+  it("读取失败时显示错误和重试，重试成功后恢复", async () => {
+    get.mockResolvedValue({ error: {}, ...jsonResponse(500) });
+    renderWithQuery(<AccountPanel />);
+
+    const retry = await screen.findByRole("button", { name: /重试/ }, { timeout: 5000 });
+    get.mockResolvedValue({ data: { account: ACCOUNT }, ...jsonResponse(200) });
+    fireEvent.click(retry);
+
+    expect(await screen.findByText("alt_user")).toBeInTheDocument();
+  });
+
+  // covers: AC-4
+  it("已有账号时不主动显示 token 输入框", async () => {
+    showAccount({ status: "online" });
+
+    await screen.findByText("alt_user");
+
+    expect(screen.queryByLabelText(/token/i)).not.toBeInTheDocument();
+  });
 });

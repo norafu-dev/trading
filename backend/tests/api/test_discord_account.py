@@ -7,7 +7,7 @@ import httpx
 import pytest
 import structlog
 from fastapi import FastAPI
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from harvester.api import routes
@@ -215,3 +215,172 @@ async def test_sse_emits_account_status_with_data(
     assert event.event == "account_status"  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
     assert event.data == {}  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
     await iterator.aclose()  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+
+
+@pytest.mark.parametrize("length", [20, 512])
+async def test_token_length_limits_are_inclusive(logged_in: httpx.AsyncClient, length: int) -> None:
+    response = await logged_in.post(BASE, json={"label": "main", "token": "x" * length})
+    assert response.status_code == 201
+
+
+@pytest.mark.parametrize("length", [19, 513])
+async def test_token_just_outside_limits_is_rejected(
+    logged_in: httpx.AsyncClient, length: int
+) -> None:
+    response = await logged_in.post(BASE, json={"label": "main", "token": "x" * length})
+    assert response.json()["error"]["code"] == "token_format_invalid"
+
+
+@pytest.mark.parametrize(("length", "code"), [(100, 201), (101, 422)])
+async def test_label_length_counts_after_stripping(
+    logged_in: httpx.AsyncClient, length: int, code: int
+) -> None:
+    response = await logged_in.post(BASE, json={"label": f"  {'x' * length}  ", "token": TOKEN})
+    assert response.status_code == code
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param({"token": TOKEN}, id="missing-label"),
+        pytest.param({"label": "x" * 101, "token": TOKEN}, id="label-too-long"),
+        pytest.param({"label": "main", "token": [TOKEN]}, id="token-not-a-string"),
+        pytest.param({"label": "main", "token": TOKEN, "extra": {"token": TOKEN}}, id="ok-extra"),
+    ],
+)
+async def test_validation_errors_never_echo_the_token(
+    logged_in: httpx.AsyncClient, body: dict[str, object]
+) -> None:  # covers: AC-4
+    response = await logged_in.post(BASE, json=body)
+    assert TOKEN not in response.text
+
+
+async def test_replace_token_rejects_bad_format_and_keeps_the_old_one(
+    logged_in: httpx.AsyncClient, factory: Factory
+) -> None:
+    await _add(logged_in)
+    async with factory() as session:
+        before = await session.scalar(select(DiscordAccount.token_ciphertext))
+
+    response = await logged_in.put(f"{BASE}/token", json={"token": "Bot abc"})
+
+    async with factory() as session:
+        after = await session.scalar(select(DiscordAccount.token_ciphertext))
+    assert response.json()["error"]["code"] == "token_format_invalid"
+    assert before == after
+
+
+async def test_replace_token_stores_new_ciphertext_and_bumps_version(
+    logged_in: httpx.AsyncClient, factory: Factory
+) -> None:  # covers: AC-4, AC-10
+    await _add(logged_in)
+    new_token = "another-valid-token.abc123"
+
+    body = (await logged_in.put(f"{BASE}/token", json={"token": new_token})).json()
+
+    async with factory() as session:
+        row = await accounts.get_account(session)
+    assert row is not None
+    plain = decrypt(crypto_settings().key_ring, PURPOSE_DISCORD_TOKEN, row.token_ciphertext)
+    assert plain == new_token.encode()
+    assert row.config_version == 2
+    assert body["status"] == "connecting"
+    assert new_token not in str(body)
+
+
+async def test_replace_token_while_disabled_stays_disabled(
+    logged_in: httpx.AsyncClient,
+) -> None:  # covers: AC-12
+    await _add(logged_in)
+    await logged_in.post(f"{BASE}/disable")
+
+    body = (await logged_in.put(f"{BASE}/token", json={"token": TOKEN})).json()
+
+    assert body["status"] == "disabled"
+
+
+async def test_disable_twice_returns_200(logged_in: httpx.AsyncClient) -> None:
+    await _add(logged_in)
+    await logged_in.post(f"{BASE}/disable")
+
+    response = await logged_in.post(f"{BASE}/disable")
+
+    assert (response.status_code, response.json()["status"]) == (200, "disabled")
+
+
+async def test_label_on_missing_account_is_404(logged_in: httpx.AsyncClient) -> None:
+    response = await logged_in.put(f"{BASE}/label", json={"label": "x"})
+    assert response.json()["error"]["code"] == "account_not_found"
+
+
+async def test_snowflake_is_returned_as_a_string(
+    logged_in: httpx.AsyncClient, factory: Factory
+) -> None:
+    await _add(logged_in)
+    # 超过 JS 的安全整数，用数字返回会丢精度。
+    snowflake = 2**60 + 1
+    async with factory() as session, session.begin():
+        await accounts.record_identity(session, 1, 1, snowflake, "alt")
+
+    account = (await logged_in.get(BASE)).json()["account"]
+
+    assert account["discord_user_id"] == str(snowflake)
+    assert account["discord_username"] == "alt"
+
+
+@pytest.mark.parametrize(
+    ("status", "column", "age", "stale"),
+    [
+        pytest.param("online", "last_heartbeat_at", "121 seconds", True, id="online-old-beat"),
+        pytest.param("online", "last_heartbeat_at", "60 seconds", False, id="online-fresh-beat"),
+        pytest.param("online", "last_heartbeat_at", None, False, id="online-no-beat"),
+        pytest.param("connecting", "status_changed_at", "121 seconds", True, id="connecting-old"),
+        pytest.param("reconnecting", "status_changed_at", "1 hour", False, id="reconnecting"),
+    ],
+)
+async def test_collector_stale_uses_the_database_clock(
+    logged_in: httpx.AsyncClient,
+    factory: Factory,
+    status: str,
+    column: str,
+    age: str | None,
+    stale: bool,
+) -> None:  # covers: AC-15
+    await _add(logged_in)
+    value = "NULL" if age is None else f"now() - interval '{age}'"
+    async with factory() as session, session.begin():
+        await session.execute(
+            text(f"UPDATE discord_account SET status = :s, {column} = {value}"), {"s": status}
+        )
+
+    assert (await logged_in.get(BASE)).json()["account"]["collector_stale"] is stale
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("POST", "", {"label": "x", "token": TOKEN}),
+        ("PUT", "/label", {"label": "x"}),
+        ("PUT", "/token", {"token": TOKEN}),
+        ("POST", "/disable", None),
+        ("POST", "/enable", None),
+        ("POST", "/reconnect", None),
+        ("POST", "/switch-identity", None),
+    ],
+)
+async def test_every_write_route_checks_origin(
+    logged_in: httpx.AsyncClient, method: str, path: str, body: dict[str, str] | None
+) -> None:  # covers: AC-16
+    response = await logged_in.request(
+        method, f"{BASE}{path}", json=body, headers={"Origin": "https://evil.example"}
+    )
+
+    assert response.status_code == 403
+
+
+def test_discord_logger_stays_at_warning_even_in_debug(restore_logging: None) -> None:  # AC-4
+    # discord 库的低级别日志带请求细节，不能跟着 LOG_LEVEL 打开。
+    configure_logging("DEBUG")
+
+    assert logging.getLogger("discord").getEffectiveLevel() == logging.WARNING
+    assert logging.getLogger("discord.http").getEffectiveLevel() == logging.WARNING

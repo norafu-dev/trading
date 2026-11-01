@@ -18,7 +18,7 @@ _这些都是让构建保持有序的建议，不是硬性要求。不合适的�
 | 3   | 数据模型             | Foundation | done        |
 | 4   | Dashboard 界面基础   | Foundation | done        |
 | 5   | Dashboard 访问保护   | Slice 1    | done        |
-| 6   | Discord 账号连接     | Slice 1    | in-progress |
+| 6   | Discord 账号连接     | Slice 1    | done |
 | 7   | 频道管理             | Slice 1    | planned     |
 | 8   | 实时消息流           | Slice 1    | planned     |
 | 9   | 部署与常驻运行       | Slice 1    | planned     |
@@ -94,7 +94,7 @@ spec [0004](../specs/0004-dashboard-access-protection/index.md) · code in `back
   - [x] 后端集成测试和前端渲染测试，确认日志和响应里没有密钥，AC-1 到 AC-18
 - [x] Verify it: `/check verify Dashboard 访问保护`
 
-### 6. Discord 账号连接 · Beta · in-progress
+### 6. Discord 账号连接 · Beta · done
 
 在 dashboard 填入账号 token，selfbot 用它登录并保持在线，断线自动重连，状态清楚可见。token 加密保存。(basis: 封号和 token 泄露是这个产品最大的风险)
 **Done when:** 能添加一个账号并看到在线状态；断线后自动重连；token 失效或被封时 dashboard 明确提示；token 不以明文存储或出现在日志里；请求节奏有限速保护。
@@ -107,8 +107,8 @@ spec [0005](../specs/0005-discord-account-connection/index.md) · code in `backe
   - [x] 重连和额度：覆盖 `connect`、IDENTIFY 关卡、`login_paused`、心跳、覆盖段、SIGTERM，AC-5 到 AC-7, AC-14, AC-17
   - [x] 失败处理：失败分类、停止类状态、重新连接、身份不符和确认换身份，AC-8 到 AC-11
   - [x] 断网恢复调整：纯网络失败封顶 30 秒，RESUME 被拒后第一次等待封顶 30 秒，AC-5
-- [ ] Verify it: `/check verify Discord 账号连接`
-- [ ] Test it: `/test Discord 账号连接`
+- [x] Verify it: `/check verify Discord 账号连接`
+- [x] Test it: `/test Discord 账号连接`
 
 ### 7. 频道管理
 

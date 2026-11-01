@@ -12,10 +12,18 @@ import pytest
 from discord.gateway import ReconnectWebSocket
 
 import harvester
-from harvester.collector.discord_client import HarvesterClient, reconnect_failure, to_failure
+from harvester.collector.discord_client import (
+    HarvesterClient,
+    new_client,
+    reconnect_failure,
+    to_failure,
+)
 from harvester.collector.events import (
     Disconnected,
     IdentifyRequested,
+    Ready,
+    RequiredAction,
+    Resumed,
     RetryNeeded,
     SessionEnded,
     SupervisorEvent,
@@ -323,3 +331,44 @@ def test_only_boundary_imports_discord() -> None:  # covers: AC-18
             if any(n == "discord" or n.startswith("discord.") for n in names):
                 offenders.append(path.relative_to(root).as_posix())
     assert set(offenders) == {"collector/discord_client.py"}
+
+
+def test_non_numeric_retry_after_is_ignored() -> None:
+    assert to_failure(http_error(429, "soon")) == ConnectionFailure("http", http_status=429)
+
+
+async def test_client_logs_in_invisible_without_touching_settings() -> None:  # covers: AC-2
+    client = new_client(1, asyncio.Queue(), lambda: datetime(2026, 11, 1, tzinfo=UTC))
+    state = client._connection  # pyright: ignore[reportPrivateUsage]
+
+    assert state._status == "invisible"  # pyright: ignore[reportPrivateUsage]
+    assert client._sync_presences is False  # pyright: ignore[reportPrivateUsage]
+    assert state._chunk_guilds is False  # pyright: ignore[reportPrivateUsage]
+    await client.close()
+
+
+async def test_dispatch_queues_events_in_order_with_generation() -> None:  # covers: AC-13
+    queue: asyncio.Queue[SupervisorEvent] = asyncio.Queue()
+    moment = datetime(2026, 11, 1, tzinfo=UTC)
+    client = HarvesterClient(7, queue, lambda: moment)
+
+    client.dispatch("disconnect")
+    client.dispatch("resumed")
+    client.dispatch("ready")
+
+    assert queue.get_nowait() == Disconnected(7, moment)
+    assert queue.get_nowait() == Resumed(7)
+    assert queue.get_nowait() == Ready(7, required_action=False)
+    await client.close()
+
+
+async def test_required_action_update_only_counts_when_set() -> None:  # covers: AC-9
+    queue: asyncio.Queue[SupervisorEvent] = asyncio.Queue()
+    client = HarvesterClient(7, queue, lambda: datetime(2026, 11, 1, tzinfo=UTC))
+
+    client.dispatch("required_action_update", None)
+    assert queue.empty()
+
+    client.dispatch("required_action_update", "AGREEMENTS")
+    assert queue.get_nowait() == RequiredAction(7)
+    await client.close()

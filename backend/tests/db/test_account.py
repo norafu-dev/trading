@@ -259,3 +259,138 @@ def test_collector_stale_rules() -> None:  # covers: AC-15
     assert accounts.is_collector_stale(_row(status="connecting"))
     assert not accounts.is_collector_stale(_row(status="reconnecting"))
     assert not accounts.is_collector_stale(_row(db_now=at(0) + timedelta(seconds=120)))
+
+
+async def _force_status(session: AsyncSession, status: str) -> None:
+    retry_at = at(0) if status == "login_paused" else None
+    await session.execute(update(DiscordAccount).values(status=status, retry_at=retry_at))
+
+
+ALL_STATUSES = (
+    "connecting",
+    "online",
+    "reconnecting",
+    "login_paused",
+    "token_invalid",
+    "verification_required",
+    "account_mismatch",
+    "banned",
+)
+
+
+@pytest.mark.parametrize(
+    ("status", "allowed"),
+    [(s, s in ("token_invalid", "verification_required", "banned")) for s in ALL_STATUSES],
+)
+async def test_reconnect_only_from_stopped_states(
+    session: AsyncSession, status: str, allowed: bool
+) -> None:  # covers: AC-8, AC-9
+    await new_account(session)
+    await _force_status(session, status)
+
+    result = await accounts.request_reconnect(session)
+
+    if allowed:
+        assert isinstance(result, AccountRow)
+        assert (result.status, result.config_version) == ("connecting", 2)
+    else:
+        assert result == "invalid_state"
+
+
+@pytest.mark.parametrize("status", [s for s in ALL_STATUSES if s != "account_mismatch"])
+async def test_switch_identity_refused_outside_mismatch(
+    session: AsyncSession, status: str
+) -> None:  # covers: AC-11
+    row = await new_account(session)
+    await accounts.record_identity(session, row.id, 1, 111, "first")
+    await _force_status(session, status)
+
+    assert await accounts.switch_identity(session) == "invalid_state"
+
+    current = await accounts.get_account(session)
+    assert current is not None
+    assert current.discord_user_id == 111
+
+
+@pytest.mark.parametrize("status", ALL_STATUSES)
+async def test_disable_works_from_every_state_and_clears_retry(
+    session: AsyncSession, status: str
+) -> None:  # covers: AC-12
+    await new_account(session)
+    await _force_status(session, status)
+
+    result = await accounts.set_enabled(session, False)
+
+    assert isinstance(result, AccountRow)
+    assert (result.status, result.retry_at, result.last_error) == ("disabled", None, None)
+    assert result.config_version == 2
+
+
+@pytest.mark.parametrize("status", ALL_STATUSES)
+async def test_replace_token_reconnects_from_every_active_state(
+    session: AsyncSession, status: str
+) -> None:  # covers: AC-10
+    await new_account(session)
+    await _force_status(session, status)
+
+    result = await accounts.replace_token(session, b"new-cipher", 1)
+
+    assert isinstance(result, AccountRow)
+    assert (result.status, result.retry_at, result.config_version) == ("connecting", None, 2)
+    assert result.token_ciphertext == b"new-cipher"
+
+
+@pytest.mark.parametrize("status", ["connecting", "reconnecting", "token_invalid"])
+async def test_heartbeat_only_touches_online_rows(session: AsyncSession, status: str) -> None:
+    row = await new_account(session)
+    await _force_status(session, status)
+
+    await accounts.record_heartbeat(session, row.id, 1)
+    session.expire_all()
+
+    current = await accounts.get_account(session)
+    assert current is not None
+    assert current.last_heartbeat_at is None
+
+
+async def test_heartbeat_with_old_version_is_ignored(session: AsyncSession) -> None:  # AC-13
+    row = await new_account(session)
+    await _force_status(session, "online")
+
+    await accounts.record_heartbeat(session, row.id, row.config_version + 1)
+    session.expire_all()
+
+    current = await accounts.get_account(session)
+    assert current is not None
+    assert current.last_heartbeat_at is None
+
+
+async def test_later_retry_at_updates_without_moving_status_changed_at(
+    engine: AsyncEngine,
+) -> None:  # covers: AC-7
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session, session.begin():
+        row = await new_account(session)
+        await accounts.record_status(session, row.id, 1, "login_paused", "budget", at(0))
+    async with factory() as session:
+        first = await accounts.get_account(session)
+
+    async with factory() as session, session.begin():
+        assert row != "exists"
+        await accounts.record_status(session, row.id, 1, "login_paused", "budget", at(10))
+
+    async with factory() as session:
+        second = await accounts.get_account(session)
+    assert first is not None and second is not None
+    assert second.retry_at == at(10)
+    assert second.status_changed_at == first.status_changed_at
+
+
+async def test_seconds_since_last_attempt_reads_the_newest_row(session: AsyncSession) -> None:
+    row = await new_account(session)
+    assert await accounts.seconds_since_last_attempt(session, row.id) is None
+
+    await add_attempts(session, row.id, 5, 1)
+
+    elapsed = await accounts.seconds_since_last_attempt(session, row.id)
+    assert elapsed == pytest.approx(3600, abs=5)

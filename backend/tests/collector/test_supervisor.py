@@ -3,11 +3,12 @@
 import asyncio
 import contextlib
 from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import insert, select, text, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from harvester.collector.events import (
@@ -715,3 +716,189 @@ async def test_startup_normalizes_status_and_closes_stale_coverage(harness: Harn
     await harness.wait_status("online")
     spans = await harness.spans()
     assert spans[0].upper is not None  # type: ignore[attr-defined]
+
+
+async def test_small_retry_after_never_shortens_the_backoff(harness: Harness) -> None:  # AC-5
+    await add_account(harness)
+    harness.start()
+    await harness.wait_status("online")
+
+    delay = await harness.current.retry(ConnectionFailure("rate_limited", retry_after=0.0001))
+
+    assert delay == pytest.approx(5 * 0.001)
+
+
+async def test_http_500_keeps_five_minute_cap_and_stays_retrying(harness: Harness) -> None:  # AC-5
+    await add_account(harness)
+    harness.start()
+    await harness.wait_status("online")
+    session = harness.current
+    failure = ConnectionFailure("http", http_status=503)
+
+    delays = [await session.retry(failure, resume_ready=True) for _ in range(8)]
+
+    assert delays[-2:] == pytest.approx([300 * 0.001, 300 * 0.001])
+    row = await harness.read()
+    assert (row.status, row.last_error) == ("reconnecting", "http_5xx")
+    assert await harness.attempts() == 1
+
+
+async def test_long_outage_of_retries_writes_no_budget_rows(harness: Harness) -> None:  # AC-7
+    await add_account(harness)
+    harness.start()
+    await harness.wait_status("online")
+    session = harness.current
+
+    for _ in range(25):
+        await session.retry(ConnectionFailure("network"), resume_ready=True)
+
+    assert await harness.attempts() == 1
+
+
+async def test_label_change_keeps_the_session(harness: Harness) -> None:  # covers: AC-12
+    await add_account(harness)
+    harness.start()
+    before = await harness.wait_status("online")
+
+    await harness.api(lambda s: accounts.update_label(s, "renamed"))
+    await asyncio.sleep(0.05)
+
+    row = await harness.read()
+    assert (row.status, row.config_version) == ("online", before.config_version)
+    assert len(harness.sessions) == 1
+    assert not harness.current.closed
+
+
+async def test_disable_closes_session_then_enable_connects_again(harness: Harness) -> None:  # AC-12
+    await add_account(harness)
+    harness.start()
+    await harness.wait_status("online")
+    first = harness.current
+
+    await harness.api(lambda s: accounts.set_enabled(s, False))
+    await harness.wait_until(lambda: _is_closed(first))
+    assert (await harness.read()).status == "disabled"
+    assert len(harness.sessions) == 1
+
+    await harness.api(lambda s: accounts.set_enabled(s, True))
+    await harness.wait_status("online")
+    assert len(harness.sessions) == 2
+
+
+async def test_token_change_while_disabled_only_saves(harness: Harness) -> None:  # covers: AC-12
+    await add_account(harness)
+    async with harness.factory() as session, session.begin():
+        await accounts.set_enabled(session, False)
+    harness.start()
+    await asyncio.sleep(0.05)
+
+    cipher = encrypt(KEYS, PURPOSE_DISCORD_TOKEN, b"new-token-value-1234567890")
+    await harness.api(lambda s: accounts.replace_token(s, cipher, 1))
+    await asyncio.sleep(0.05)
+
+    assert harness.sessions == []
+    assert (await harness.read()).status == "disabled"
+    assert await harness.attempts() == 0
+
+
+async def test_reconnect_after_stop_class_logs_in_again(harness: Harness) -> None:  # AC-8, AC-9
+    await add_account(harness)
+    harness.start()
+    await harness.wait_status("online")
+    session = harness.current
+    session.queue.put_nowait(
+        SessionEnded(session.generation, ConnectionFailure("login_failure", http_status=401))
+    )
+    await harness.wait_status("token_invalid")
+    assert len(harness.sessions) == 1
+
+    await harness.api(accounts.request_reconnect)
+
+    await harness.wait_status("online")
+    assert len(harness.sessions) == 2
+
+
+async def test_undecryptable_token_sends_no_request(harness: Harness) -> None:
+    await add_account(harness)
+    other_key = encrypt(KEYS, "another_purpose", TOKEN.encode())
+    await harness.api(lambda s: accounts.replace_token(s, other_key, 1))
+    harness.start()
+
+    row = await harness.wait_status("token_invalid")
+
+    assert row.last_error == "token_undecryptable"
+    assert harness.sessions == []
+    assert await harness.attempts() == 0
+
+
+async def test_heartbeat_ticks_while_online(harness: Harness) -> None:  # covers: AC-15
+    await add_account(harness)
+    harness.deps = replace(harness.deps, heartbeat_interval=0.01)
+    harness.start()
+    first = await harness.wait_status("online")
+
+    async def moved() -> bool:
+        return (await harness.read()).last_heartbeat_at != first.last_heartbeat_at
+
+    await harness.wait_until(moved)
+
+
+async def test_failed_heartbeat_write_keeps_the_session(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await add_account(harness)
+    calls: list[int] = []
+
+    async def failing(*_args: object) -> None:
+        calls.append(1)
+        raise SQLAlchemyError("down")
+
+    monkeypatch.setattr(accounts, "record_heartbeat", failing)
+    harness.deps = replace(harness.deps, heartbeat_interval=0.01)
+    harness.start()
+    await harness.wait_status("online")
+
+    async def ticked() -> bool:
+        return len(calls) >= 2
+
+    await harness.wait_until(ticked)
+
+    assert harness.task is not None and not harness.task.done()
+    assert not harness.current.closed
+
+
+async def test_crash_guard_delays_login_after_a_recent_attempt(harness: Harness) -> None:
+    await add_account(harness)
+    await harness.add_attempts(1, hours_ago=0)
+    harness.deps = replace(harness.deps, crash_guard_seconds=0.5)
+    harness.start()
+
+    await asyncio.sleep(0.1)
+    assert harness.sessions == []
+
+    await harness.wait_status("online")
+
+
+async def test_crash_guard_skipped_when_last_attempt_is_old(harness: Harness) -> None:
+    await add_account(harness)
+    await harness.add_attempts(1, hours_ago=1)
+    harness.deps = replace(harness.deps, crash_guard_seconds=60)
+    harness.start()
+
+    await harness.wait_status("online")  # 5 秒内就上线，说明没有等 60 秒。
+
+
+async def test_startup_keeps_stopped_status(harness: Harness) -> None:  # covers: AC-8
+    row = await add_account(harness)
+    async with harness.factory() as session, session.begin():
+        await accounts.record_status(session, row.id, 1, "token_invalid", "http_401")
+    harness.start()
+    await asyncio.sleep(0.05)
+
+    current = await harness.read()
+    assert (current.status, current.last_error) == ("token_invalid", "http_401")
+    assert harness.sessions == []
+
+
+async def _is_closed(session: FakeSession) -> bool:
+    return session.closed
