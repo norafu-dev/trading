@@ -98,14 +98,14 @@ spec [0004](../specs/0004-dashboard-access-protection/index.md) · code in `back
 
 在 dashboard 填入账号 token，selfbot 用它登录并保持在线，断线自动重连，状态清楚可见。token 加密保存。(basis: 封号和 token 泄露是这个产品最大的风险)
 **Done when:** 能添加一个账号并看到在线状态；断线后自动重连；token 失效或被封时 dashboard 明确提示；token 不以明文存储或出现在日志里；请求节奏有限速保护。
-spec [0005](../specs/0005-discord-account-connection/index.md)
+spec [0005](../specs/0005-discord-account-connection/index.md) · code in `backend/src/harvester/collector/`, `backend/src/harvester/api/discord_routes.py`, `backend/src/harvester/db/account.py`, `web/src/components/discord/`
 
 - [x] Design it (spec): `/architect Discord 账号连接`
-- [ ] Build it: `/develop Discord 账号连接`
-  - [ ] 打通细线：迁移、添加和读取接口、设置页、监督循环隐身登录并写入身份，AC-1 到 AC-4, AC-16, AC-18
-  - [ ] 变更通知和操作：NOTIFY 加轮询、带版本的状态写入、换 token、启停、SSE 和侧栏指示，AC-10, AC-12, AC-13, AC-15
-  - [ ] 重连和额度：覆盖 `connect`、IDENTIFY 关卡、`login_paused`、心跳、覆盖段、SIGTERM，AC-5 到 AC-7, AC-14, AC-17
-  - [ ] 失败处理：失败分类、停止类状态、重新连接、身份不符和确认换身份，AC-8 到 AC-11
+- [x] Build it: `/develop Discord 账号连接`
+  - [x] 打通细线：迁移、添加和读取接口、设置页、监督循环隐身登录并写入身份，AC-1 到 AC-4, AC-16, AC-18
+  - [x] 变更通知和操作：NOTIFY 加轮询、带版本的状态写入、换 token、启停、SSE 和侧栏指示，AC-10, AC-12, AC-13, AC-15
+  - [x] 重连和额度：覆盖 `connect`、IDENTIFY 关卡、`login_paused`、心跳、覆盖段、SIGTERM，AC-5 到 AC-7, AC-14, AC-17
+  - [x] 失败处理：失败分类、停止类状态、重新连接、身份不符和确认换身份，AC-8 到 AC-11
 - [ ] Verify it: `/check verify Discord 账号连接`
 - [ ] Test it: `/test Discord 账号连接`
 
