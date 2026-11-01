@@ -17,7 +17,7 @@ _这些都是让构建保持有序的建议，不是硬性要求。不合适的�
 | 2   | 编码规范与工具       | Foundation | done        |
 | 3   | 数据模型             | Foundation | done        |
 | 4   | Dashboard 界面基础   | Foundation | in-progress |
-| 5   | Dashboard 访问保护   | Slice 1    | in-progress |
+| 5   | Dashboard 访问保护   | Slice 1    | done        |
 | 6   | Discord 账号连接     | Slice 1    | planned     |
 | 7   | 频道管理             | Slice 1    | planned     |
 | 8   | 实时消息流           | Slice 1    | planned     |
@@ -61,7 +61,7 @@ spec [0002](../specs/0002-data-model/index.md) · code in `backend/src/harvester
   - [x] 连真实 PostgreSQL 的集成测试，AC-1 到 AC-13
 - [x] Verify it: `/check verify 数据模型`
 
-### 4. Dashboard 界面基础 · in-progress
+### 4. Dashboard 界面基础 · done
 
 dashboard 的视觉风格、布局和基础组件，让频道列表、消息流和任务页看起来一致。
 **Done when:** `design.md` 覆盖字体、颜色、间距和基础组件；消息列表组件能处理长列表、空状态和加载状态。
@@ -73,26 +73,26 @@ spec [0003](../specs/0003-dashboard-ui-foundation/index.md) · code in `web/src/
   - [x] 纯函数、shadcn 组件和外壳（图标栏、频道列表、窄屏抽屉），AC-2, AC-3, AC-5, AC-6, AC-7, AC-12, AC-13
   - [x] 虚拟消息列表和假数据：贴底、回到最新、加载更早不跳动，AC-4, AC-5, AC-7, AC-8, AC-15
   - [x] 消息内容：markdown 渲染、embed、转发、附件、编辑删除标记、状态组件，AC-9, AC-10, AC-11, AC-12, AC-13
-  - [ ] 无障碍和对比度检查、`web/DESIGN.md`、单元和渲染测试，AC-14, AC-16, AC-17
-- [ ] Verify it: `/check verify Dashboard 界面基础`
+  - [x] 无障碍和对比度检查、`web/DESIGN.md`、单元和渲染测试，AC-14, AC-16, AC-17
+- [x] Verify it: `/check verify Dashboard 界面基础`
 
 ## Slice 1: 核心链路（实时采集，也是 walking skeleton）
 
 连上一个账号 → 勾选一个频道 → 新消息存进数据库并实时出现在 dashboard 上 → 部署到服务器一直跑。只做文字消息，不做历史、附件、搜索。
 
-### 5. Dashboard 访问保护 · in-progress
+### 5. Dashboard 访问保护 · done
 
 dashboard 部署在公网上，里面有你的账号 token 和采集数据，必须只有你能打开。
 **Done when:** 没登录的人打不开任何页面和接口；你能登录、登出；会话会过期。
 spec [0004](../specs/0004-dashboard-access-protection/index.md) · code in `backend/src/harvester/api/`, `backend/src/harvester/crypto.py`, `web/src/app/login/`, `web/src/app/setup/`, `deploy/`
 
 - [x] Design it (spec): `/architect Dashboard 访问保护`
-- [ ] Build it: `/develop Dashboard 访问保护`
-  - [ ] 配置拆分、加密模块、统一错误格式、Caddy 加固，和四张表的迁移，AC-1, AC-16, AC-17, AC-18
-  - [ ] 细线：设置码命令、设置、登录、登出、`require_session` 和 Origin 检查，前端设置页、登录页、`AuthGate` 和 401 跳转，AC-1 到 AC-6, AC-8, AC-10, AC-13, AC-14
-  - [ ] 加粗：会话过期、TOTP 防重复、加锁串行的限速、登录记录和清理、SSE 会话检查、重置命令、安全页和登出入口，AC-5 到 AC-7, AC-9, AC-11, AC-12, AC-14, AC-15
-  - [ ] 后端集成测试和前端渲染测试，确认日志和响应里没有密钥，AC-1 到 AC-18
-- [ ] Verify it: `/check verify Dashboard 访问保护`
+- [x] Build it: `/develop Dashboard 访问保护`
+  - [x] 配置拆分、加密模块、统一错误格式、Caddy 加固，和四张表的迁移，AC-1, AC-16, AC-17, AC-18
+  - [x] 细线：设置码命令、设置、登录、登出、`require_session` 和 Origin 检查，前端设置页、登录页、`AuthGate` 和 401 跳转，AC-1 到 AC-6, AC-8, AC-10, AC-13, AC-14
+  - [x] 加粗：会话过期、TOTP 防重复、加锁串行的限速、登录记录和清理、SSE 会话检查、重置命令、安全页和登出入口，AC-5 到 AC-7, AC-9, AC-11, AC-12, AC-14, AC-15
+  - [x] 后端集成测试和前端渲染测试，确认日志和响应里没有密钥，AC-1 到 AC-18
+- [x] Verify it: `/check verify Dashboard 访问保护`
 
 ### 6. Discord 账号连接 · needs a decision · Beta
 
@@ -118,7 +118,7 @@ spec [0004](../specs/0004-dashboard-access-protection/index.md) · code in `back
 ### 9. 部署与常驻运行 · needs a decision
 
 部署到云服务器，进程崩溃或服务器重启后自动恢复，并能看到它是否还活着。
-**Done when:** 服务器重启后采集自动恢复；dashboard 能看到采集进程最近一次心跳时间；有备份数据的办法。
+**Done when:** 服务器重启后采集自动恢复；dashboard 能看到采集进程最近一次心跳时间；有备份数据的办法；上线后跑完 spec [0004 的 verify.md](../specs/0004-dashboard-access-protection/verify.md) 里没勾的 4 个线上步骤。
 
 - [ ] Design it (spec): `/architect 部署与常驻运行`
 
