@@ -58,3 +58,5 @@ def configure_logging(level: str = "INFO") -> None:
         uv_logger = logging.getLogger(name)
         uv_logger.handlers = []
         uv_logger.propagate = True
+    # 固定在 WARNING，不跟随 LOG_LEVEL：discord 库的低级别日志带请求细节（spec 0005）。
+    logging.getLogger("discord").setLevel(logging.WARNING)

@@ -1,21 +1,37 @@
 import asyncio
 import contextlib
+import random
 import signal
+from datetime import UTC, datetime
 
 import asyncpg
 import structlog
 from sqlalchemy import text
 
-from harvester.db import get_engine, raw
+from harvester.collector.discord_client import new_client
+from harvester.collector.supervisor import Deps, run_supervisor
+from harvester.config import get_crypto_settings
+from harvester.db import get_engine, get_sessionmaker, raw
 
 log = structlog.get_logger("harvester.collector")
 
 # How often the dedicated lock connection is probed while idle.
 LOCK_CHECK_INTERVAL = 10.0
+# NOTIFY 丢了也有兜底：这么久读一次账号。
+ACCOUNT_POLL_INTERVAL = 30.0
+# 收到 SIGTERM 后关闭会话的时限，短于 Compose 默认的 10 秒强杀（AC-17）。
+SHUTDOWN_TIMEOUT = 8.0
+# 锁丢了要尽快退出，不等数据库写入。
+LOCK_LOST_TIMEOUT = 1.0
 
 EXIT_OK = 0
+EXIT_CRASH = 1
 EXIT_LOCK_HELD = 3
 EXIT_LOCK_LOST = 4
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 async def _acquire_lock() -> asyncpg.Connection | None:
@@ -26,6 +42,27 @@ async def _acquire_lock() -> asyncpg.Connection | None:
         await conn.close()
         return None
     return conn
+
+
+async def _probe_lock(lock_conn: asyncpg.Connection, lost: asyncio.Event) -> None:
+    while not lost.is_set():
+        try:
+            await lock_conn.fetchval("SELECT 1")
+        except (asyncpg.PostgresError, OSError, asyncpg.InterfaceError):
+            lost.set()
+            return
+        await asyncio.sleep(LOCK_CHECK_INTERVAL)
+
+
+async def _poll_account(wake: asyncio.Event) -> None:
+    while True:
+        await asyncio.sleep(ACCOUNT_POLL_INTERVAL)
+        wake.set()
+
+
+async def _cancel_and_wait(task: "asyncio.Task[None]", limit: float) -> None:
+    task.cancel()
+    await asyncio.wait((task,), timeout=limit)
 
 
 async def run() -> int:
@@ -43,26 +80,59 @@ async def run() -> int:
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
 
+    wake = asyncio.Event()
+
+    # 复用锁连接：断开即退出。先 LISTEN 再第一次读账号，不会漏通知。
+    def on_account_changed(_conn: object, _pid: int, _channel: str, _payload: object) -> None:
+        wake.set()
+
+    await lock_conn.add_listener(raw.ACCOUNT_CHANGED_CHANNEL, on_account_changed)
+
     engine = get_engine()
     try:
         async with engine.connect() as conn:
             version = await conn.scalar(text("SHOW server_version"))
         log.info("collector.db_connected", server_version=version)
 
-        # No token yet: Discord login arrives with feature 6. Idle until stopped or the lock drops.
-        log.info("collector.idle", reason="no_account_configured")
-        while not stop.is_set():
-            try:
-                await lock_conn.fetchval("SELECT 1")
-            except (asyncpg.PostgresError, OSError, asyncpg.InterfaceError):
-                lost.set()
+        supervisor = asyncio.create_task(
+            run_supervisor(
+                Deps(
+                    factory=get_sessionmaker(),
+                    key_ring=get_crypto_settings().key_ring,
+                    new_session=new_client,
+                    clock=_utc_now,
+                    uniform=random.uniform,
+                    wake=wake,
+                )
+            ),
+            name="supervisor",
+        )
+        background = (
+            asyncio.create_task(_probe_lock(lock_conn, lost), name="lock-probe"),
+            asyncio.create_task(_poll_account(wake), name="account-poll"),
+        )
+        stop_wait = asyncio.create_task(stop.wait(), name="stop-wait")
+        lost_wait = asyncio.create_task(lost.wait(), name="lost-wait")
+        waiters = (supervisor, stop_wait, lost_wait)
+        try:
+            await asyncio.wait(waiters, return_when=asyncio.FIRST_COMPLETED)
             if lost.is_set():
                 log.error("collector.lock_lost")
+                await _cancel_and_wait(supervisor, LOCK_LOST_TIMEOUT)
                 return EXIT_LOCK_LOST
-            with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(stop.wait(), timeout=LOCK_CHECK_INTERVAL)
-        log.info("collector.stopping")
-        return EXIT_OK
+            if stop.is_set():
+                log.info("collector.stopping")
+                await _cancel_and_wait(supervisor, SHUTDOWN_TIMEOUT)
+                return EXIT_OK
+            # 监督循环只有出错才会结束。异常内容可能带敏感信息，只记类型。
+            error = supervisor.exception()
+            log.error("collector.crashed", error_type=type(error).__name__)
+            return EXIT_CRASH
+        finally:
+            for task in (*background, stop_wait, lost_wait, supervisor):
+                task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.gather(*background, return_exceptions=True)
     finally:
         await engine.dispose()
         if not lock_conn.is_closed():
