@@ -47,6 +47,10 @@ class RetryNeeded:
     # 服务端让重连且能 RESUME：上一次连接足够稳定时可以立即重连。
     immediate_allowed: bool
     reply: "asyncio.Future[float | None]"  # 要等的秒数；None 表示不再重试
+    # 下一次连接会尝试 RESUME，不是重新 IDENTIFY。
+    resume_ready: bool = False
+    # 这次连接带 resume 发起，但服务端拒绝了：下一次要重新 IDENTIFY。
+    resume_rejected: bool = False
 
 
 @dataclass(frozen=True)

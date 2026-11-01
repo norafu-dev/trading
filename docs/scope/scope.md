@@ -106,6 +106,7 @@ spec [0005](../specs/0005-discord-account-connection/index.md) · code in `backe
   - [x] 变更通知和操作：NOTIFY 加轮询、带版本的状态写入、换 token、启停、SSE 和侧栏指示，AC-10, AC-12, AC-13, AC-15
   - [x] 重连和额度：覆盖 `connect`、IDENTIFY 关卡、`login_paused`、心跳、覆盖段、SIGTERM，AC-5 到 AC-7, AC-14, AC-17
   - [x] 失败处理：失败分类、停止类状态、重新连接、身份不符和确认换身份，AC-8 到 AC-11
+  - [x] 断网恢复调整：纯网络失败封顶 30 秒，RESUME 被拒后第一次等待封顶 30 秒，AC-5
 - [ ] Verify it: `/check verify Discord 账号连接`
 - [ ] Test it: `/test Discord 账号连接`
 

@@ -82,10 +82,19 @@ class FakeSession:
         return await reply
 
     async def retry(
-        self, failure: ConnectionFailure, *, immediate_allowed: bool = False
+        self,
+        failure: ConnectionFailure,
+        *,
+        immediate_allowed: bool = False,
+        resume_ready: bool = False,
+        resume_rejected: bool = False,
     ) -> float | None:
         reply: asyncio.Future[float | None] = asyncio.get_running_loop().create_future()
-        self.queue.put_nowait(RetryNeeded(self.generation, failure, immediate_allowed, reply))
+        self.queue.put_nowait(
+            RetryNeeded(
+                self.generation, failure, immediate_allowed, reply, resume_ready, resume_rejected
+            )
+        )
         return await reply
 
     async def close(self) -> None:
@@ -565,6 +574,37 @@ async def test_retry_writes_reconnecting_and_returns_backoff(harness: Harness) -
     assert first == pytest.approx(5 * 0.001)
     assert second == 99.0
     assert await harness.attempts() == 1
+
+
+async def test_network_resume_retries_cap_at_30_seconds(harness: Harness) -> None:
+    await add_account(harness)
+    harness.start()
+    await harness.wait_status("online")
+    session = harness.current
+    network = ConnectionFailure("network")
+
+    delays = [await session.retry(network, resume_ready=True) for _ in range(5)]
+    identify_delay = await session.retry(network)
+
+    assert delays == pytest.approx([d * 0.001 for d in (5, 10, 20, 30, 30)])
+    # 同一个计数继续往上走，但要重新 IDENTIFY 的重试不受 30 秒封顶影响。
+    assert identify_delay == pytest.approx(160 * 0.001)
+
+
+async def test_rejected_resume_caps_only_the_first_wait(harness: Harness) -> None:  # covers: AC-5
+    await add_account(harness)
+    harness.start()
+    await harness.wait_status("online")
+    session = harness.current
+    network = ConnectionFailure("network")
+
+    for _ in range(6):
+        await session.retry(network, resume_ready=True)
+    rejected = await session.retry(ConnectionFailure("gateway_reconnect"), resume_rejected=True)
+    identify_retry = await session.retry(network)
+
+    assert rejected == pytest.approx(30 * 0.001)
+    assert identify_retry == pytest.approx(300 * 0.001)
 
 
 async def test_stable_connection_reconnects_immediately_and_resets(

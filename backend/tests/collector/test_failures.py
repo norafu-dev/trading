@@ -5,6 +5,7 @@ import pytest
 from harvester.collector.failures import (
     ConnectionFailure,
     FailureVerdict,
+    backoff_max,
     classify_failure,
     next_delay,
 )
@@ -68,3 +69,30 @@ def test_backoff_doubles_and_caps() -> None:  # covers: AC-5
 def test_backoff_jitter_stays_in_range() -> None:  # covers: AC-5
     assert next_delay(1, lambda low, _high: low) == pytest.approx(4.0)
     assert next_delay(20, lambda low, _high: low) == pytest.approx(240.0)
+
+
+def test_network_resume_backoff_caps_at_30_seconds() -> None:
+    maximum = backoff_max(ConnectionFailure("network"), resume_ready=True)
+    top = [next_delay(n, lambda _low, high: high, maximum) for n in range(1, 6)]
+    assert top == [5, 10, 20, 30, 30]
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [ConnectionFailure("gateway_reconnect"), ConnectionFailure("http", http_status=503)],
+)
+def test_rejected_resume_caps_at_30_seconds(failure: ConnectionFailure) -> None:  # covers: AC-5
+    assert backoff_max(failure, resume_ready=False, resume_rejected=True) == 30
+
+
+@pytest.mark.parametrize(
+    ("failure", "resume_ready"),
+    [
+        (ConnectionFailure("network"), False),
+        (ConnectionFailure("http", http_status=503), True),
+        (ConnectionFailure("rate_limited", retry_after=1.0), True),
+        (ConnectionFailure("gateway_reconnect"), True),
+    ],
+)
+def test_other_retries_keep_five_minute_cap(failure: ConnectionFailure, resume_ready: bool) -> None:
+    assert backoff_max(failure, resume_ready=resume_ready) == 300

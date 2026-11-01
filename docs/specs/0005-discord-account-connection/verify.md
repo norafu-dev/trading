@@ -30,6 +30,8 @@ _步骤来自 spec 0005 的验收标准。`/check verify` 跑这些步骤，`/te
 - [ ] 把数据库时区和浏览器时区设成不同的值 → `retry_at` 和 `collector_stale` 都按数据库 `now()` 判断，界面按浏览器时区显示
 - [ ] 让 `client.user` 的用户名变化后重新登录 → `discord_username` 更新
 - [ ] 跑 `next_delay` 的上下限，以及 HTTP 429 带 `retry_after` 的情况 → 等待时间取两者较大值
+- [ ] 小号：断网超过 5 分钟，再恢复，会话仍有效 → 恢复后一般 30 秒内回到在线，最坏约 90 秒，不新增额度行 → AC-5
+- [ ] 小号：断网久到 RESUME 被拒，再恢复 → RESUME 被拒后最多等 30 秒就发出全新登录，额度多 1 行，状态回到在线，覆盖段按断线时间关闭 → AC-5, AC-6, AC-7
 - [ ] 把 `last_heartbeat_at` 改成 121 秒前和 `NULL` → `collector_stale` 分别为真和假
 - [ ] 改备注名 → `config_version` 不变，会话不断；换 token → 加 1，会话重连
 

@@ -147,11 +147,20 @@ class HarvesterClient(discord.Client):
             raise _IdentifyDenied
 
     async def _wait_before_retry(
-        self, failure: ConnectionFailure, *, immediate_allowed: bool = False
+        self,
+        failure: ConnectionFailure,
+        *,
+        immediate_allowed: bool = False,
+        resume_ready: bool = False,
+        resume_rejected: bool = False,
     ) -> bool:
         """问监督循环要等多久并等待；返回 False 表示不要再试。"""
         reply: asyncio.Future[float | None] = self._new_reply()
-        self._events.put_nowait(RetryNeeded(self._generation, failure, immediate_allowed, reply))
+        self._events.put_nowait(
+            RetryNeeded(
+                self._generation, failure, immediate_allowed, reply, resume_ready, resume_rejected
+            )
+        )
         delay = await reply
         if delay is None:
             return False
@@ -163,6 +172,8 @@ class HarvesterClient(discord.Client):
         """保留库的流程，所有等待都走监督循环给的退避，RESUME 判定也更严格。"""
         params: dict[str, Any] = {"initial": True}
         while not self.is_closed():
+            # 连上之后 params 会被改写，所以先记下这次是不是带 resume 发起的。
+            resuming = params.get("resume", False)
             try:
                 coro = self._ws_factory(self, **params)
                 self.ws = await asyncio.wait_for(coro, timeout=GATEWAY_CONNECT_TIMEOUT)
@@ -175,7 +186,10 @@ class HarvesterClient(discord.Client):
                 self.dispatch("disconnect")
                 params = self._next_params(resume=exc.resume)
                 proceed = await self._wait_before_retry(
-                    reconnect_failure(self.ws), immediate_allowed=params.get("resume", False)
+                    reconnect_failure(self.ws),
+                    immediate_allowed=params.get("resume", False),
+                    resume_ready=params.get("resume", False),
+                    resume_rejected=resuming and not exc.resume,
                 )
             except discord.ConnectionClosed:
                 # 不可恢复的 close code（包括 4004）：结束这个会话，由监督循环决定下一步。
@@ -197,7 +211,9 @@ class HarvesterClient(discord.Client):
                 failure = to_failure(exc)
                 assert failure is not None
                 params = self._next_params(resume=True)
-                proceed = await self._wait_before_retry(failure)
+                proceed = await self._wait_before_retry(
+                    failure, resume_ready=params.get("resume", False)
+                )
             if not proceed:
                 return
 

@@ -24,7 +24,13 @@ from harvester.collector.events import (
     SupervisorEvent,
     Wake,
 )
-from harvester.collector.failures import ConnectionFailure, classify_failure, next_delay
+from harvester.collector.failures import (
+    BACKOFF_MAX,
+    ConnectionFailure,
+    backoff_max,
+    classify_failure,
+    next_delay,
+)
 from harvester.crypto import PURPOSE_DISCORD_TOKEN, DecryptError, KeyRing, decrypt
 from harvester.db import account as accounts
 from harvester.db.account import AccountRow, LoginBudgetExhausted
@@ -123,10 +129,10 @@ async def _write_failure(
 
 
 def _next_attempt(
-    deps: Deps, loop: LoopState, retry_after: float | None
+    deps: Deps, loop: LoopState, retry_after: float | None, maximum: float = BACKOFF_MAX
 ) -> tuple[LoopState, float]:
     attempt = loop.attempt + 1
-    delay = next_delay(attempt, deps.uniform)
+    delay = next_delay(attempt, deps.uniform, maximum)
     return replace(loop, attempt=attempt), max(delay, retry_after or 0.0)
 
 
@@ -221,7 +227,10 @@ async def _on_retry(
     if event.immediate_allowed and state.last_stable >= STABLE_IMMEDIATE:
         event.reply.set_result(0.0)
         return next_state
-    loop, delay = _next_attempt(deps, state.loop, event.failure.retry_after)
+    maximum = backoff_max(
+        event.failure, resume_ready=event.resume_ready, resume_rejected=event.resume_rejected
+    )
+    loop, delay = _next_attempt(deps, state.loop, event.failure.retry_after, maximum)
     event.reply.set_result(delay)
     return replace(next_state, loop=loop)
 

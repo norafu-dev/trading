@@ -6,6 +6,9 @@ from typing import Literal
 
 BACKOFF_BASE = 5.0
 BACKOFF_MAX = 300.0
+# 纯网络失败且下一次是 RESUME 时的封顶：断网时请求到不了 Discord，也不消耗额度。
+# RESUME 被拒后的第一次等待也用它：这次登录本来就要发，长时间断网后不用再多等几分钟。
+BACKOFF_MAX_NETWORK_RESUME = 30.0
 
 FailureKind = Literal[
     "captcha",
@@ -68,7 +71,18 @@ def classify_failure(failure: ConnectionFailure) -> FailureVerdict | None:
     return None
 
 
-def next_delay(attempt: int, uniform: Callable[[float, float], float]) -> float:
-    """第 attempt 次重试（从 1 开始）前等待的秒数：5 秒起翻倍，封顶 5 分钟，带抖动。"""
-    ceiling = min(BACKOFF_MAX, BACKOFF_BASE * 2 ** (attempt - 1))
+def backoff_max(
+    failure: ConnectionFailure, *, resume_ready: bool, resume_rejected: bool = False
+) -> float:
+    """5xx、429 和其他要重新 IDENTIFY 的重试都保持 5 分钟封顶。"""
+    if resume_rejected or (resume_ready and failure.kind == "network"):
+        return BACKOFF_MAX_NETWORK_RESUME
+    return BACKOFF_MAX
+
+
+def next_delay(
+    attempt: int, uniform: Callable[[float, float], float], maximum: float = BACKOFF_MAX
+) -> float:
+    """第 attempt 次重试（从 1 开始）前等待的秒数：5 秒起翻倍，到 maximum 封顶，带抖动。"""
+    ceiling = min(maximum, BACKOFF_BASE * 2 ** (attempt - 1))
     return ceiling * uniform(0.8, 1.0)

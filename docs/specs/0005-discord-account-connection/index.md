@@ -21,7 +21,7 @@
 - **AC-2**: 登录成功后，`discord_user_id` 和 `discord_username` 被写入，页面显示用户名。Discord 确认登录（READY）后，小号被设为 `invisible`，用另一个账号看到它稳定后是离线状态；上线瞬间的显示在 `/check verify` 里实测并记录。
 - **AC-3**: 已有账号时再次添加返回 409 `account_exists`；数据库的唯一索引也挡得住并发添加。
 - **AC-4**: token 只以 `discord_token` 用途的 AES-256-GCM 密文存库；所有接口响应、OpenAPI 响应模型、前端状态和日志（包括 `discord` 库自己的日志）都不出现 token 原文或密文。
-- **AC-5**: 网络中断或 5xx 时，状态变成 `reconnecting`，按 5 秒起翻倍、封顶 5 分钟的节奏重试，每次带随机抖动，不放弃。从 READY 或 RESUMED 算起稳定 5 分钟后，退避计数清零。恢复后变回 `online`，页面无需手动操作。
+- **AC-5**: 网络中断或 5xx 时，状态变成 `reconnecting`，按 5 秒起翻倍的节奏重试，每次带随机抖动，不放弃。纯网络失败且下一次是 RESUME 时封顶 30 秒，RESUME 被拒后的第一次等待也封顶 30 秒，其余情况（5xx、429、其他要重新 IDENTIFY 的重试、`login` 阶段）封顶 5 分钟。从 READY 或 RESUMED 算起稳定 5 分钟后，退避计数清零。恢复后变回 `online`，页面无需手动操作。
 - **AC-6**: 能 RESUME（恢复原会话）时，重连不消耗登录额度，也不关闭覆盖段；不能 RESUME 时，走额度检查后重新 IDENTIFY（全新登录），并按断线时间关闭覆盖段，登录成功后重新打开。断线期间不会被记成已覆盖，即使中途换 token、停用、额度用完或进程退出也一样。
 - **AC-7**: 任何 24 小时滚动窗口内，最多真正发出 10 次 IDENTIFY（包括库内部的重新 IDENTIFY）。网络没连上、IDENTIFY 没发出的重试不计数。额度用完时不发任何登录请求，状态变成 `login_paused`，`retry_at` 是额度恢复时间，到点后自动继续。进程重启、换 token 和手动重连都不能绕过。
 - **AC-8**: 登录返回 401 或网关返回 close code 4004 时，状态变成 `token_invalid`，collector 不再登录；界面提示“token 失效或账号被封”，并引导你到 Discord 确认后换 token。这一版不写 `banned`。
@@ -148,7 +148,7 @@ Reasoning and options: see [rationale.md](rationale.md).
 - 客户端选项：`status=Status.invisible`、`sync_presence=False`（不改账号设置）、`chunk_guilds_at_startup=False`、`max_ratelimit_timeout=60.0`，不设置 `captcha_handler`。
 - 把 `discord` logger 固定在 `WARNING`，不跟随 `LOG_LEVEL`，避免请求细节进日志。
 
-**退避**：纯函数 `next_delay(attempt, random)` 返回 `min(300, 5 × 2^(attempt-1)) × uniform(0.8, 1.0)`。`attempt` 放在监督循环，跨 client 保留，`config_version` 变化时清零；从 READY 或 RESUMED 算起稳定满 300 秒时清零。`ReconnectWebSocket` 时，如果上一次连接已稳定 60 秒以上就立即重连，否则走退避。重新 IDENTIFY 之前总是走退避。
+**退避**：纯函数 `next_delay(attempt, random, maximum)` 返回 `min(maximum, 5 × 2^(attempt-1)) × uniform(0.8, 1.0)`。纯函数 `backoff_max(failure, resume_ready, resume_rejected)` 给出 `maximum`：`RetryNeeded.resume_rejected` 为真，或者 `failure.kind` 是 `network` 且 `RetryNeeded.resume_ready` 为真时是 30，其余都是 300。`network` 只包括 `OSError`、`aiohttp.ClientError`、`CurlError`、超时、`GatewayNotFound`，以及 `reconnect_failure` 取不到任何 close code 的情况；5xx 是 `http`，不算。`resume_rejected` 由 `connect` 填写：当前连接是带 `resume` 发起的，并且收到 `ReconnectWebSocket(resume=False)` 时为真。被拒后下一次连接不再带 `resume`，所以每个会话最多触发一次，不需要额外状态。这次等待之后 IDENTIFY 仍要过额度关卡，也仍然按 AC-6 关闭覆盖段；如果它又失败，就按 300 封顶。`resume_ready` 由 `connect` 按下一次连接的参数填写（`_next_params` 的结果带 `resume`），`login` 阶段的重试和 `SessionEnded` 之后的等待都按 300。`attempt` 放在监督循环，跨 client 保留，`config_version` 变化时清零；从 READY 或 RESUMED 算起稳定满 300 秒时清零。`ReconnectWebSocket` 时，如果上一次连接已稳定 60 秒以上就立即重连，否则走退避。重新 IDENTIFY 之前总是走退避。
 
 **心跳**：`online` 时每 30 秒更新 `last_heartbeat_at`，写 `online` 时同步写一次。单次心跳写入失败只记日志；数据库真的断了时，由锁连接探测触发退出。
 
@@ -227,10 +227,11 @@ Reasoning and options: see [rationale.md](rationale.md).
 | 退避和崩溃保护 | 最近一次尝试 | `discord_login_attempt.attempted_at` 的最大值 |
 | 额度检查 | 窗口内次数 | 数据库 `now()`，统计 `attempted_at > now() - 24 小时` |
 | 额度用完 | `retry_at` | 窗口内最早的 `attempted_at` + 24 小时 |
-| 退避 | 等待秒数 | `next_delay`；HTTP 429 时和 `retry_after` 取大 |
+| 退避 | 等待秒数 | `next_delay`，上限来自 `backoff_max`；HTTP 429 时和 `retry_after` 取大 |
 | 覆盖段关闭 | 断线时间 | 第一次 `on_disconnect` 时注入的时钟 |
 | `GET` 响应 | `collector_stale` | 读取时用数据库 `now()` 算：`online` 且 `last_heartbeat_at` 超过 120 秒，或者 `connecting` 且 `status_changed_at` 超过 120 秒；`last_heartbeat_at` 为 `NULL` 时不算过期 |
 | 版本校验 | `config_version` | collector 在读取账号时记下；所有状态写入带 `WHERE config_version = :expected` |
+| 重连上限和握手超时 | `BACKOFF_MAX` = 300，`BACKOFF_MAX_NETWORK_RESUME` = 30，`GATEWAY_CONNECT_TIMEOUT` = 60 | `failures.py` 和 `discord_client.py` 中的常量 |
 | 登录额度和阈值 | 10 次、24 小时、7 天、30 秒、60 秒、120 秒 | `harvester.collector` 和 `harvester.db` 中的具名常量，不是环境变量 |
 
 ### 数据库函数
@@ -274,7 +275,7 @@ Reasoning and options: see [rationale.md](rationale.md).
 - Happy path：添加账号 → 通知到达 → 假客户端 `on_ready` → `online`，身份写入，响应没有 token 字段，verifies **AC-1**、**AC-2**
 - 唯一账号：并发两个添加，一个 201 一个 409，verifies **AC-3**
 - 泄露检查：跑完整流程后，日志和响应中都搜不到测试 token，verifies **AC-4**
-- 退避：`next_delay` 的序列和上限；连接稳定后清零；429 时取 `retry_after`；首次连接失败（`self.ws` 为空）不崩溃并继续重试；断网很久也不写 `discord_login_attempt`，verifies **AC-5**、**AC-7**
+- 退避：`next_delay` 的序列和上限；纯网络失败且能 RESUME 时封顶 30 秒，RESUME 被拒后的第一次等待也封顶 30 秒，之后的 IDENTIFY 重试、5xx 和 429 仍是 5 分钟；连接稳定后清零；429 时取 `retry_after`；首次连接失败（`self.ws` 为空）不崩溃并继续重试；断网很久也不写 `discord_login_attempt`，verifies **AC-5**、**AC-7**
 - RESUME：断线后 RESUME，额度行数和覆盖段不变；INVALID_SESSION 后调用 `before_identify_hook`，覆盖段按断线时间关闭后重开；断线中途停用，关闭时间仍是断线时间，verifies **AC-6**
 - 额度：第 11 次返回 `LoginBudgetExhausted`，`retry_at` 正确；25 小时前的不计；并发预留不超额；重启和换 token 后仍然暂停，verifies **AC-7**
 - 分类表：表中每一行都有 `classify_failure` 单元测试，包括错误码的取值顺序；停止类状态后不再调用登录；`required_action` 非空时断开，verifies **AC-8**、**AC-9**
@@ -297,12 +298,14 @@ Reasoning and options: see [rationale.md](rationale.md).
 4. 重连和额度：覆盖 `connect`、`before_identify_hook`、`next_delay`、额度检查和预留、`login_paused`、心跳、覆盖段开关和断线时间、启动时清理残留、SIGTERM 流程，satisfies **AC-5**、**AC-6**、**AC-7**、**AC-14**、**AC-17**
 5. 失败处理：`classify_failure`、停止类状态、重新连接、身份不符和确认换身份，以及各状态的界面文案，satisfies **AC-8**、**AC-9**、**AC-10**、**AC-11**
 6. 测试和收尾：上面的测试场景、`discord` logger 固定级别、泄露检查和导入边界检查、重新生成 OpenAPI 类型，satisfies **AC-1** 到 **AC-18**
+7. RESUME 被拒后的退避：`RetryNeeded.resume_rejected`、`backoff_max` 的新分支和测试（已有的纯网络封顶改动还没有 commit，一起提交），satisfies **AC-5**
 
 ## Consequences
 
 **Positive**:
 - 崩溃循环、错误分类和误操作都不会造成反复登录。
 - 退避和额度都能精确生效，换小号也不丢数据。
+- 断网后最慢约 60 秒才发现（库的 `heartbeat_timeout` 默认值，这里不改）；网络恢复后，RESUME 重连一般 30 秒内成功，连接挂住时最坏约 90 秒（60 秒握手超时加 30 秒等待）。如果会话已失效，还要再等最多 30 秒才发出全新登录，并消耗 1 次额度。代价是 Discord 正常但网络层持续失败时，每 30 秒会多一次握手尝试，这些尝试不消耗登录额度。
 - 第 7 和第 8 项可以直接接上已有的会话、覆盖段钩子和 SSE 通道。
 
 **Negative / tradeoffs**:

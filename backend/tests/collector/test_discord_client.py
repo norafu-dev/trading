@@ -120,6 +120,7 @@ async def test_first_connect_failure_does_not_crash_and_identifies_again() -> No
     retries = [e for e in seen if isinstance(e, RetryNeeded)]
     assert [r.failure.kind for r in retries] == ["network"] * 3
     assert not any(r.immediate_allowed for r in retries)
+    assert not any(r.resume_ready for r in retries)
 
 
 async def test_reconnect_resumes_with_session_and_gateway() -> None:  # covers: AC-6
@@ -135,6 +136,7 @@ async def test_reconnect_resumes_with_session_and_gateway() -> None:  # covers: 
     }
     first = next(e for e in seen if isinstance(e, RetryNeeded))
     assert first.immediate_allowed
+    assert first.resume_ready
     assert first.failure == ConnectionFailure("gateway_reconnect")
     assert isinstance(seen[0], Disconnected)
 
@@ -151,7 +153,33 @@ async def test_identify_when_resume_is_impossible(ws: FakeWs) -> None:  # covers
     calls, seen, _ = await run_connect([returns(ws), raises(OSError("x"))], 0, None)
 
     assert calls[1] == {"initial": False}
-    assert not next(e for e in seen if isinstance(e, RetryNeeded)).immediate_allowed
+    first = next(e for e in seen if isinstance(e, RetryNeeded))
+    assert not first.immediate_allowed
+    assert not first.resume_ready
+
+
+async def test_rejected_resume_is_flagged_once_then_identifies() -> None:  # covers: AC-5
+    ws = FakeWs(ReconnectWebSocket(resume=True), close_code=1000)
+    # 真实的库在抛出前会清掉 session_id 和 sequence。
+    rejecting = FakeWs(ReconnectWebSocket(resume=False), None, None, close_code=1000)
+    fresh = FakeWs(ReconnectWebSocket(resume=False), None, None, close_code=1000)
+    calls, seen, _ = await run_connect(
+        [returns(ws), returns(rejecting), returns(fresh)], 0, 0, None
+    )
+
+    assert calls[1]["resume"]
+    assert calls[2] == {"initial": False}
+    retries = [e for e in seen if isinstance(e, RetryNeeded)]
+    assert [r.resume_rejected for r in retries] == [False, True, False]
+    assert not retries[1].resume_ready
+    assert not retries[1].immediate_allowed
+
+
+async def test_resume_failed_by_network_is_not_a_rejection() -> None:  # covers: AC-5
+    ws = FakeWs(ReconnectWebSocket(resume=True), close_code=1000)
+    _, seen, _ = await run_connect([returns(ws), raises(OSError("down"))], 0, None)
+
+    assert not any(e.resume_rejected for e in seen if isinstance(e, RetryNeeded))
 
 
 async def test_unrecoverable_close_propagates_after_disconnect() -> None:
