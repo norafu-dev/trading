@@ -14,6 +14,8 @@ deploy/    Caddy、生产 compose、deploy.sh
 
 ```sh
 cp .env.example .env && chmod 600 .env    # 改一个随机密码：openssl rand -hex 24
+# 再填 TOKEN_ENCRYPTION_KEY：cd backend && uv run python -m harvester.crypto genkey
+# 第一次打开 dashboard 前生成设置码：cd backend && uv run python -m harvester.api.setup_code
 docker compose up -d                      # postgres（127.0.0.1:5432）和 caddy（127.0.0.1:8080）
 
 cd backend

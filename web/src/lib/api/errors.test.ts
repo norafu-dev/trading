@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ApiResponseError, toUiError } from "./errors";
+import { ApiResponseError, toApiError, toUiError } from "./errors";
 
 describe("toUiError", () => {
   // covers: AC-13
@@ -58,5 +58,36 @@ describe("ApiResponseError", () => {
     expect(error.status).toBe(500);
     expect(error.message).toBe("request failed (500)");
     expect(error).toBeInstanceOf(Error);
+  });
+});
+
+describe("toApiError", () => {
+  // covers: AC-5, AC-9
+  it("解析统一错误格式里的 code 和等待秒数", () => {
+    const error = toApiError(429, {
+      error: { code: "rate_limited", message: "x", retry_after_seconds: 120 },
+    });
+    expect(error.code).toBe("rate_limited");
+    expect(error.retryAfterSeconds).toBe(120);
+    expect(toUiError(error)).toMatchObject({
+      kind: "rejected",
+      title: "尝试次数太多",
+      detail: "请 2 分钟后再试。",
+    });
+  });
+
+  // covers: AC-5
+  it("bad_credentials 不说是哪一个错了", () => {
+    expect(toUiError(toApiError(401, { error: { code: "bad_credentials" } })).detail).toBe(
+      "密码或验证码不对。",
+    );
+  });
+
+  it("不认识的格式退回按状态码处理", () => {
+    expect(toUiError(toApiError(503, "boom")).kind).toBe("server");
+    expect(toUiError(toApiError(401, { error: { code: "unauthenticated" } })).kind).toBe(
+      "unauthorized",
+    );
+    expect(toApiError(500, { error: null }).code).toBeNull();
   });
 });

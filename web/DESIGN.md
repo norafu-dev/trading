@@ -97,7 +97,7 @@ Tailwind 自带的调色板已经清空，只有下面这些颜色能生成类�
 - `Button`：药丸形。`default`（亮绿主按钮）、`secondary`、`outline`、`ghost`、`destructive`（实心红）、`link`（`text-link`）；尺寸 `xs` `sm` `default` `lg` 和对应的 `icon-*`。不要在调用处覆盖颜色，需要新样子就加 variant。
 - `Badge`：药丸形。`destructive` 是实心红，用作「已删除」标签。
 - `Avatar`：一定配 `AvatarFallback`（图片加载失败会自动切换）。
-- `Sheet`（窄屏抽屉）、`Tooltip`、`Skeleton`、`ScrollArea`、`Separator`、`Collapsible`、`Empty`、`Spinner`、`Alert`。
+- `Sheet`（窄屏抽屉）、`Tooltip`、`Skeleton`、`ScrollArea`、`Separator`、`Collapsible`、`Empty`、`Spinner`、`Alert`、`Input`（高 40px，`rounded-input`）、`Label`、`Table`。
 - `Toaster`（sonner）挂在 `Providers` 里，右下角弹出，`theme="system"`。临时操作的结果用 `toast.success(…)` / `toast.error(…)`。
 
 ### 本项目组件

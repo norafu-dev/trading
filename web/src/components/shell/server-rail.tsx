@@ -1,8 +1,10 @@
 "use client";
 
 import { cn } from "cn";
+import { ShieldIcon } from "lucide-react";
 import Link from "next/link";
 
+import { LogoutButton } from "@/components/auth/logout-button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -40,7 +42,7 @@ function GuildIcon({ guild, selected }: Readonly<{ guild: GuildInput; selected: 
   );
 }
 
-// 72px 宽的服务器图标栏：顶部是首页，中间是服务器，底部是采集进程状态。
+// 72px 宽的服务器图标栏：顶部是首页，中间是服务器，底部是安全、登出和采集进程状态。
 export function ServerRail({
   guilds,
   selectedGuildId,
@@ -92,6 +94,21 @@ export function ServerRail({
           );
         })}
       </ul>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Link
+              href="/settings/security"
+              aria-label="安全"
+              className="flex size-10 items-center justify-center rounded-lg transition-colors hover:bg-rail-foreground/10"
+            />
+          }
+        >
+          <ShieldIcon aria-hidden className="size-5" strokeWidth={1.75} />
+        </TooltipTrigger>
+        <TooltipContent side="right">安全</TooltipContent>
+      </Tooltip>
+      <LogoutButton />
       <CollectorStatusDot status={collectorStatus} />
     </nav>
   );

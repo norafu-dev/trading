@@ -54,6 +54,16 @@ describe("ServerRail", () => {
     expect(screen.getByRole("img", { name: "采集进程状态未知" })).toBeInTheDocument();
   });
 
+  // covers: AC-15 of spec 0004
+  it("底部有安全入口和登出按钮", () => {
+    renderRail();
+    expect(screen.getByRole("link", { name: "安全" })).toHaveAttribute(
+      "href",
+      "/settings/security",
+    );
+    expect(screen.getByRole("button", { name: "登出" })).toBeInTheDocument();
+  });
+
   // covers: AC-14
   it("从首页链接开始，用 Tab 能依次走到每个服务器按钮", async () => {
     const user = userEvent.setup();

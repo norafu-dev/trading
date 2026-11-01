@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "cn";
 import { useEffect, useMemo, useState } from "react";
 
@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { api } from "@/lib/api/client";
 import { ApiResponseError, toUiError } from "@/lib/api/errors";
+import { AUTH_STATE_KEY } from "@/lib/auth/use-auth-state";
 import { createTimeFormat } from "@/lib/format/time";
 
 type Heartbeat = { server_time: string };
@@ -27,17 +28,22 @@ function useHealth() {
 function useLastHeartbeat() {
   const [lastHeartbeat, setLastHeartbeat] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     const source = new EventSource("/api/events");
     source.onopen = () => setConnected(true);
-    source.onerror = () => setConnected(false);
+    source.onerror = () => {
+      setConnected(false);
+      // 可能是会话失效被断开；重新查登录状态，由 AuthGate 决定要不要跳转（AC-14）。
+      void queryClient.invalidateQueries({ queryKey: AUTH_STATE_KEY });
+    };
     source.addEventListener("heartbeat", (event) => {
       const beat = JSON.parse(event.data) as Heartbeat;
       setLastHeartbeat(beat.server_time);
     });
     return () => source.close();
-  }, []);
+  }, [queryClient]);
 
   return { connected, lastHeartbeat };
 }
