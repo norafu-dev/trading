@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 import discord
 import pytest
 from discord.gateway import ReconnectWebSocket
+from discord.state import ConnectionState
 
 import harvester
 from harvester.collector.discord_client import (
@@ -22,7 +23,10 @@ from harvester.collector.discord_client import (
     to_failure,
 )
 from harvester.collector.events import (
+    ChannelRemoved,
     Disconnected,
+    GuildChanged,
+    GuildRemoved,
     IdentifyRequested,
     Ready,
     RequiredAction,
@@ -30,6 +34,8 @@ from harvester.collector.events import (
     RetryNeeded,
     SessionEnded,
     SupervisorEvent,
+    ThreadAccessLost,
+    ThreadArchived,
 )
 from harvester.collector.failures import ConnectionFailure
 from harvester.db.snapshots import AccessSnapshot
@@ -422,6 +428,7 @@ def test_snapshot_writes_access_only_for_readable_types() -> None:  # covers: AC
     unknown = _fake_channel(discord.TextChannel, 5, 99)
     thread = _fake_channel(discord.Thread, 6, 11)
     thread.parent_id = 3
+    thread.archived = False
 
     state = snapshot_guild(_fake_guild([category, text, forum, voice, unknown], [thread]))
 
@@ -437,3 +444,164 @@ def test_snapshot_without_me_has_no_access() -> None:  # covers: AC-3
     assert state.me_known is False
     assert state.access == ()
     assert len(state.channels) == 1
+
+
+COALESCE = 0.02
+
+
+def _coalescing_client(guild: Any) -> tuple[HarvesterClient, "asyncio.Queue[SupervisorEvent]"]:
+    queue: asyncio.Queue[SupervisorEvent] = asyncio.Queue()
+    client = HarvesterClient(
+        1, queue, lambda: datetime(2026, 11, 1, tzinfo=UTC), coalesce_seconds=COALESCE
+    )
+    client.get_guild = lambda _id: guild  # type: ignore[method-assign]
+    return client, queue
+
+
+def _drain(queue: "asyncio.Queue[SupervisorEvent]") -> list[SupervisorEvent]:
+    events: list[SupervisorEvent] = []
+    while not queue.empty():
+        events.append(queue.get_nowait())
+    return events
+
+
+def _guild_object() -> Any:
+    guild = _fake_guild([_fake_channel(discord.TextChannel, 1, 0)], [])
+    guild.unavailable = False
+    return guild
+
+
+async def test_events_of_one_guild_coalesce_into_one_write() -> None:  # covers: AC-2
+    guild = _guild_object()
+    client, queue = _coalescing_client(guild)
+    channel = SimpleNamespace(guild=guild)
+
+    client.dispatch("guild_channel_create", channel)
+    client.dispatch("guild_channel_update", channel, channel)
+    client.dispatch("guild_role_create", channel)
+    client.dispatch("guild_update", guild, guild)
+    assert queue.empty()
+    await asyncio.sleep(COALESCE * 3)
+
+    events = _drain(queue)
+    assert len(events) == 1 and isinstance(events[0], GuildChanged)
+    await client.close()
+
+
+async def test_busy_guild_is_not_postponed_by_new_events() -> None:  # covers: AC-2
+    guild = _guild_object()
+    client, queue = _coalescing_client(guild)
+    channel = SimpleNamespace(guild=guild)
+
+    for _ in range(6):
+        client.dispatch("guild_channel_update", channel, channel)
+        await asyncio.sleep(COALESCE / 2)
+
+    assert not queue.empty()
+    await client.close()
+
+
+async def test_guild_remove_cancels_the_pending_write() -> None:  # covers: AC-2
+    guild = _guild_object()
+    client, queue = _coalescing_client(guild)
+
+    client.dispatch("guild_available", guild)
+    client.dispatch("guild_remove", guild)
+    await asyncio.sleep(COALESCE * 3)
+
+    assert _drain(queue) == [GuildRemoved(1, guild.id)]
+    await client.close()
+
+
+async def test_guild_gone_at_flush_time_is_dropped() -> None:  # covers: AC-2
+    client, queue = _coalescing_client(None)
+
+    client.dispatch("guild_available", SimpleNamespace(id=9))
+    await asyncio.sleep(COALESCE * 3)
+
+    assert queue.empty()
+    await client.close()
+
+
+async def test_close_cancels_pending_writes() -> None:
+    guild = _guild_object()
+    client, queue = _coalescing_client(guild)
+
+    client.dispatch("guild_available", guild)
+    await client.close()
+    await asyncio.sleep(COALESCE * 3)
+
+    assert queue.empty()
+
+
+async def test_delete_and_archive_events_are_routed() -> None:  # covers: AC-2, AC-8
+    guild = _guild_object()
+    client, queue = _coalescing_client(guild)
+
+    client.dispatch("guild_channel_delete", SimpleNamespace(id=5))
+    client.dispatch("raw_thread_delete", SimpleNamespace(thread_id=6))
+    client.dispatch(
+        "thread_update",
+        SimpleNamespace(archived=False),
+        SimpleNamespace(id=7, archived=True, guild=guild),
+    )
+
+    assert _drain(queue) == [
+        ChannelRemoved(1, 5),
+        ChannelRemoved(1, 6),
+        ThreadArchived(1, 7, True),
+    ]
+    await client.close()
+
+
+async def test_removed_thread_stays_unreadable_in_later_snapshots() -> None:  # covers: AC-8
+    thread = _fake_channel(discord.Thread, 6, 12)
+    thread.archived = False
+    thread.parent_id = 1
+    thread.guild = _fake_guild([], [thread])
+    thread.guild.unavailable = False
+    client, queue = _coalescing_client(thread.guild)
+
+    client.dispatch("thread_remove", thread)
+    client.dispatch("guild_available", thread.guild)
+    await asyncio.sleep(COALESCE * 3)
+
+    lost, changed = _drain(queue)
+    assert lost == ThreadAccessLost(1, 6)
+    assert isinstance(changed, GuildChanged)
+    assert changed.state.access == (AccessSnapshot(6, False),)
+
+    client.dispatch("thread_join", thread)
+    await asyncio.sleep(COALESCE * 3)
+    rejoined = _drain(queue)[0]
+    assert isinstance(rejoined, GuildChanged)
+    assert rejoined.state.access == (AccessSnapshot(6, True),)
+    await client.close()
+
+
+async def test_unarchive_of_uncached_thread_is_detected(monkeypatch: pytest.MonkeyPatch) -> None:
+    # covers: AC-2
+    # 假 guild 走不通库自己的解析器，这里只验证包装层：原解析器换成记录调用。
+    parsed: list[object] = []
+    monkeypatch.setattr(ConnectionState, "parse_thread_update", lambda _self, d: parsed.append(d))
+    guild = _guild_object()
+    guild.get_thread = lambda _id: None
+    client, queue = _coalescing_client(guild)
+    state = client._connection  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr(state, "_get_guild", lambda _id: guild)
+    parse = state.parsers["THREAD_UPDATE"]
+    active = {"guild_id": "9", "id": "7", "thread_metadata": {"archived": False}}
+    archived = {"guild_id": "9", "id": "8", "thread_metadata": {"archived": True}}
+
+    parse(archived)
+    assert queue.empty()
+
+    parse(active)
+    assert parsed == [archived, active]
+    assert _drain(queue) == [ThreadArchived(1, 7, False)]
+
+    # 缓存里已有的线程由库自己派发 thread_update，这里不重复。
+    guild.get_thread = lambda _id: object()
+    parse(active)
+    assert queue.empty()
+    await client.close()

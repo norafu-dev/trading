@@ -16,8 +16,11 @@ from curl_cffi import CurlError
 from discord.gateway import DiscordWebSocket, ReconnectWebSocket
 
 from harvester.collector.events import (
+    ChannelRemoved,
     Disconnected,
     FullSync,
+    GuildChanged,
+    GuildRemoved,
     IdentifyRequested,
     LoggedIn,
     Ready,
@@ -26,6 +29,8 @@ from harvester.collector.events import (
     RetryNeeded,
     SessionEnded,
     SupervisorEvent,
+    ThreadAccessLost,
+    ThreadArchived,
 )
 from harvester.collector.failures import ConnectionFailure
 from harvester.db.snapshots import (
@@ -41,6 +46,8 @@ log = structlog.get_logger("harvester.collector.discord_client")
 # 分类 (4)、文字 (0)、语音 (2)、公告 (5)、舞台 (13)、论坛 (15)、媒体 (16) 加线程；其余类型忽略。
 _SNAPSHOT_CHANNEL_TYPES = frozenset({0, 2, 4, 5, 13, 15, 16, 10, 11, 12})
 
+# 同一个服务器的事件按固定窗口合并，从第一个事件起算（不用尾随 debounce，AC-2）。
+GUILD_COALESCE_SECONDS = 2.0
 GATEWAY_CONNECT_TIMEOUT = 60.0
 MAX_RATELIMIT_TIMEOUT = 60.0
 
@@ -122,15 +129,17 @@ def _channel_snapshot(
     )
 
 
-def snapshot_guild(guild: discord.Guild) -> GuildState:
+def snapshot_guild(guild: discord.Guild, lost_threads: frozenset[int] = frozenset()) -> GuildState:
     """只读 discord.py-self 已缓存的数据转成不可变快照，不发任何请求（spec 0006 AC-1）。
 
-    权限在本地算：同时有「查看频道」和「读取消息历史」才算读得了。
+    权限在本地算：同时有「查看频道」和「读取消息历史」才算读得了。线程的权限只看父频道，
+    所以小号被移出的线程要由调用方通过 lost_threads 传进来，否则快照会把权限写回去。
     """
     snapshot = GuildSnapshot(
         id=guild.id, name=guild.name, icon_hash=guild.icon.key if guild.icon else None
     )
-    members = (*guild.channels, *guild.threads)
+    # 归档的线程可能留在缓存里（THREAD_UPDATE 的兜底分支），不算活跃线程。
+    members = (*guild.channels, *(t for t in guild.threads if not t.archived))
     channels = tuple(
         _channel_snapshot(guild.id, c) for c in members if c.type.value in _SNAPSHOT_CHANNEL_TYPES
     )
@@ -141,7 +150,9 @@ def snapshot_guild(guild: discord.Guild) -> GuildState:
     access = tuple(
         AccessSnapshot(
             c.id,
-            (perms := c.permissions_for(me)).view_channel and perms.read_message_history,
+            c.id not in lost_threads
+            and (perms := c.permissions_for(me)).view_channel
+            and perms.read_message_history,
         )
         for c in members
         if c.type.value in ACCESS_CHANNEL_TYPES
@@ -152,10 +163,25 @@ def snapshot_guild(guild: discord.Guild) -> GuildState:
 FullSyncData = tuple[tuple[GuildState, ...], frozenset[int]]
 
 
-def snapshot_guilds(client: discord.Client) -> FullSyncData:
-    available = tuple(snapshot_guild(g) for g in client.guilds if not g.unavailable)
+def snapshot_guilds(client: discord.Client, lost_threads: frozenset[int]) -> FullSyncData:
+    available = tuple(snapshot_guild(g, lost_threads) for g in client.guilds if not g.unavailable)
     unavailable = frozenset(g.id for g in client.guilds if g.unavailable)
     return available, unavailable
+
+
+# 最后一个参数就是服务器（guild_update 是 old, new）。
+_GUILD_EVENTS = frozenset({"guild_join", "guild_available", "guild_update"})
+# 最后一个参数带 .guild 的事件：频道、角色、新线程。
+_GUILD_OWNED_EVENTS = frozenset(
+    {
+        "guild_channel_create",
+        "guild_channel_update",
+        "guild_role_create",
+        "guild_role_update",
+        "guild_role_delete",
+        "thread_create",
+    }
+)
 
 
 class HarvesterClient(discord.Client):
@@ -167,6 +193,7 @@ class HarvesterClient(discord.Client):
         events: "asyncio.Queue[SupervisorEvent]",
         clock: Callable[[], datetime],
         ws_factory: WebSocketFactory = DiscordWebSocket.from_client,
+        coalesce_seconds: float = GUILD_COALESCE_SECONDS,
     ) -> None:
         super().__init__(
             status=discord.Status.invisible,
@@ -179,7 +206,75 @@ class HarvesterClient(discord.Client):
         self._clock = clock
         self._ws_factory = ws_factory
         self._sockets: list[_Closable] = []
+        self._coalesce_seconds = coalesce_seconds
+        self._pending_guilds: dict[int, asyncio.TimerHandle] = {}
+        self._lost_threads: frozenset[int] = frozenset()
         self._track_sockets()
+        self._watch_thread_updates()
+
+    def _watch_thread_updates(self) -> None:
+        """归档的线程不在缓存里，取消归档时库走兜底分支、不派发事件，只能在解析器这里接住。"""
+        state = self._connection
+        original = state.parsers["THREAD_UPDATE"]
+
+        def parse(data: Any) -> None:
+            guild = state._get_guild(int(data["guild_id"]))
+            thread_id = int(data["id"])
+            cached = guild is not None and guild.get_thread(thread_id) is not None
+            original(data)
+            archived = data.get("thread_metadata", {}).get("archived", False)
+            if guild is not None and not cached and not archived:
+                self._events.put_nowait(ThreadArchived(self._generation, thread_id, False))
+                self._schedule_guild(guild.id)
+
+        state.parsers["THREAD_UPDATE"] = parse
+
+    def _schedule_guild(self, guild_id: int) -> None:
+        if guild_id not in self._pending_guilds:
+            self._pending_guilds[guild_id] = asyncio.get_running_loop().call_later(
+                self._coalesce_seconds, self._flush_guild, guild_id
+            )
+
+    def _flush_guild(self, guild_id: int) -> None:
+        del self._pending_guilds[guild_id]
+        guild = self.get_guild(guild_id)
+        # 已经不在缓存里就丢弃，否则排在 GuildRemoved 之后的写入会把服务器改回 active。
+        if guild is None or guild.unavailable:
+            return
+        state = snapshot_guild(guild, self._lost_threads)
+        self._events.put_nowait(GuildChanged(self._generation, state))
+
+    def _route_channel_event(self, event: str, args: tuple[Any, ...]) -> None:
+        """把库的事件转成监督循环的事件；这里不写库。"""
+        generation = self._generation
+        if event in _GUILD_EVENTS:
+            self._schedule_guild(args[-1].id)
+        elif event in _GUILD_OWNED_EVENTS:
+            self._schedule_guild(args[-1].guild.id)
+        elif event == "member_update":
+            if self.user is not None and args[-1].id == self.user.id:
+                self._schedule_guild(args[-1].guild.id)
+        elif event == "thread_join":
+            self._lost_threads -= {args[0].id}
+            self._schedule_guild(args[0].guild.id)
+        elif event == "thread_update":
+            old, thread = args
+            if old.archived != thread.archived:
+                self._events.put_nowait(ThreadArchived(generation, thread.id, thread.archived))
+            if not thread.archived:
+                self._schedule_guild(thread.guild.id)
+        elif event == "thread_remove":
+            self._lost_threads |= {args[0].id}
+            self._events.put_nowait(ThreadAccessLost(generation, args[0].id))
+        elif event == "raw_thread_delete":
+            self._events.put_nowait(ChannelRemoved(generation, args[0].thread_id))
+        elif event == "guild_channel_delete":
+            self._events.put_nowait(ChannelRemoved(generation, args[0].id))
+        elif event == "guild_remove":
+            pending = self._pending_guilds.pop(args[0].id, None)
+            if pending is not None:
+                pending.cancel()
+            self._events.put_nowait(GuildRemoved(generation, args[0].id))
 
     def _track_sockets(self) -> None:
         """记下每个打开的 socket：预留额度失败时它还没赋给 self.ws，只能从这里关。"""
@@ -200,7 +295,8 @@ class HarvesterClient(discord.Client):
             self._events.put_nowait(Ready(generation, required_action=required))
             if not required:
                 # 紧跟在 Ready 后放入：旧会话的 FullSync 会被下一个会话的代号过滤掉。
-                states, unavailable_ids = snapshot_guilds(self)
+                self._lost_threads = frozenset()
+                states, unavailable_ids = snapshot_guilds(self, self._lost_threads)
                 self._events.put_nowait(FullSync(generation, states, unavailable_ids))
         elif event == "resumed":
             self._events.put_nowait(Resumed(generation))
@@ -208,6 +304,8 @@ class HarvesterClient(discord.Client):
             self._events.put_nowait(Disconnected(generation, self._clock()))
         elif event == "required_action_update" and args and args[0] is not None:
             self._events.put_nowait(RequiredAction(generation))
+        else:
+            self._route_channel_event(event, args)
         super().dispatch(event, *args, **kwargs)
 
     def _new_reply(self) -> "asyncio.Future[Any]":
@@ -342,6 +440,9 @@ class HarvesterClient(discord.Client):
         self._events.put_nowait(ended)
 
     async def close(self) -> None:
+        for pending in self._pending_guilds.values():
+            pending.cancel()
+        self._pending_guilds = {}
         await super().close()
         for socket in self._sockets:
             try:

@@ -7,10 +7,10 @@ from collections.abc import Iterable, Sequence
 from datetime import datetime
 
 import structlog
-from sqlalchemy import select, text, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from harvester.db.ingest import set_guild_status, upsert_guild
+from harvester.db.ingest import set_channel_status, set_guild_status, upsert_guild
 from harvester.db.models import AccountChannelAccess, Channel, DiscordAccount, Guild
 from harvester.db.raw import CHANNEL_COLLECT_CHANGED_CHANNEL, CHANNELS_CHANGED_CHANNEL
 from harvester.db.snapshots import (
@@ -154,6 +154,13 @@ async def apply_guild_state(
     written: frozenset[int] = frozenset()
     for batch in (categories, others, threads):
         written |= await _upsert_batch(session, batch, written)
+    # 快照里的线程都没有归档：离线期间取消归档的线程在这里恢复。
+    if threads:
+        await session.execute(
+            update(Channel)
+            .where(Channel.id.in_([t.id for t in threads]), Channel.status == "archived")
+            .values(status="active", status_changed_at=at, updated_at=func.now())
+        )
     # 自己的成员信息缺失时访问权限算不出来，沿用旧值，包括不执行“缺席写假”。
     if state.me_known:
         await _write_access(session, account_id, state, written, at)
@@ -172,6 +179,45 @@ async def leave_guild(session: AsyncSession, account_id: int, guild_id: int, at:
             AccountChannelAccess.channel_id.in_(
                 select(Channel.id).where(Channel.guild_id == guild_id)
             ),
+        )
+        .values(can_read=False, checked_at=at)
+    )
+
+
+async def delete_channel(session: AsyncSession, channel_id: int, at: datetime) -> None:
+    """明确的删除事件：级联到它的线程，不级联到分类的子频道；消息不动。"""
+    await set_channel_status(session, channel_id, "deleted", at)
+    await session.execute(
+        update(Channel)
+        .where(
+            Channel.parent_id == channel_id,
+            Channel.type.in_(THREAD_CHANNEL_TYPES),
+            Channel.status != "deleted",
+        )
+        .values(status="deleted", status_changed_at=at, updated_at=func.now())
+    )
+
+
+async def set_thread_archived(
+    session: AsyncSession, thread_id: int, archived: bool, at: datetime
+) -> None:
+    """已删除的线程不会被迟到的事件改回来。"""
+    status = "archived" if archived else "active"
+    await session.execute(
+        update(Channel)
+        .where(Channel.id == thread_id, Channel.status.not_in(("deleted", status)))
+        .values(status=status, status_changed_at=at, updated_at=func.now())
+    )
+
+
+async def revoke_access(
+    session: AsyncSession, account_id: int, channel_id: int, at: datetime
+) -> None:
+    await session.execute(
+        update(AccountChannelAccess)
+        .where(
+            AccountChannelAccess.account_id == account_id,
+            AccountChannelAccess.channel_id == channel_id,
         )
         .values(can_read=False, checked_at=at)
     )

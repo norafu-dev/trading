@@ -199,3 +199,64 @@ async def test_fifty_guilds_of_five_hundred_channels_sync_in_reasonable_time(
     # 线上的真实数字在 /check verify 里记录。
     assert elapsed < 15
     assert await session.scalar(select(func.count()).select_from(Channel)) == 50 * 500
+
+
+async def test_delete_cascades_to_threads_but_not_category_children(session: AsyncSession) -> None:
+    # AC-2
+    account_id = await make_account(session)
+    await channel_sync.apply_guild_state(session, account_id, STATE, at(0))
+
+    await channel_sync.delete_channel(session, CHANNEL.id, at(1))
+    await channel_sync.delete_channel(session, CATEGORY.id, at(1))
+
+    rows = dict(list(await session.execute(select(Channel.id, Channel.status))))  # pyright: ignore[reportArgumentType, reportCallIssue]
+    assert rows[CHANNEL.id] == "deleted" and rows[THREAD.id] == "deleted"
+    assert rows[CATEGORY.id] == "deleted"
+    assert rows[FORUM.id] == "active" and rows[POST.id] == "active"
+
+
+async def test_late_snapshot_does_not_revive_deleted_channel(session: AsyncSession) -> None:  # AC-2
+    account_id = await make_account(session)
+    await channel_sync.apply_guild_state(session, account_id, STATE, at(0))
+    await channel_sync.delete_channel(session, CHANNEL.id, at(1))
+
+    await channel_sync.apply_guild_state(session, account_id, STATE, at(2))
+
+    assert await session.scalar(select(Channel.status).where(Channel.id == CHANNEL.id)) == "deleted"
+
+
+async def test_thread_archive_round_trip_and_deleted_stays_deleted(session: AsyncSession) -> None:
+    # AC-2
+    account_id = await make_account(session)
+    await channel_sync.apply_guild_state(session, account_id, STATE, at(0))
+
+    async def status() -> str | None:
+        return await session.scalar(select(Channel.status).where(Channel.id == THREAD.id))
+
+    await channel_sync.set_thread_archived(session, THREAD.id, True, at(1))
+    assert await status() == "archived"
+    await channel_sync.set_thread_archived(session, THREAD.id, False, at(2))
+    assert await status() == "active"
+    await channel_sync.set_channel_status(session, THREAD.id, "deleted", at(3))
+    await channel_sync.set_thread_archived(session, THREAD.id, False, at(4))
+    assert await status() == "deleted"
+
+
+async def test_snapshot_reactivates_archived_thread(session: AsyncSession) -> None:
+    account_id = await make_account(session)
+    await channel_sync.apply_guild_state(session, account_id, STATE, at(0))
+    await channel_sync.set_thread_archived(session, THREAD.id, True, at(1))
+
+    await channel_sync.apply_guild_state(session, account_id, STATE, at(2))
+
+    assert await session.scalar(select(Channel.status).where(Channel.id == THREAD.id)) == "active"
+
+
+async def test_revoke_access_only_touches_that_channel(session: AsyncSession) -> None:  # AC-8
+    account_id = await make_account(session)
+    await channel_sync.apply_guild_state(session, account_id, STATE, at(0))
+
+    await channel_sync.revoke_access(session, account_id, THREAD.id, at(1))
+
+    access = await access_map(session)
+    assert access[THREAD.id] is False and access[CHANNEL.id] is True

@@ -78,6 +78,41 @@ class FullSync:
 
 
 @dataclass(frozen=True)
+class GuildChanged:
+    """一个服务器的内容变了，client 合并 2 秒后取的快照。"""
+
+    generation: int
+    state: GuildState
+
+
+@dataclass(frozen=True)
+class GuildRemoved:
+    generation: int
+    guild_id: int
+
+
+@dataclass(frozen=True)
+class ChannelRemoved:
+    generation: int
+    channel_id: int
+
+
+@dataclass(frozen=True)
+class ThreadArchived:
+    """不依赖快照：归档的线程通常不在缓存里。"""
+
+    generation: int
+    thread_id: int
+    archived: bool
+
+
+@dataclass(frozen=True)
+class ThreadAccessLost:
+    generation: int
+    thread_id: int
+
+
+@dataclass(frozen=True)
 class Wake:
     """账号可能变了（NOTIFY 或轮询）。"""
 
@@ -102,5 +137,10 @@ SessionEvent = (
     | IdentifyRequested
     | SessionEnded
     | FullSync
+    | GuildChanged
+    | GuildRemoved
+    | ChannelRemoved
+    | ThreadArchived
+    | ThreadAccessLost
 )
 SupervisorEvent = SessionEvent | Wake | ChannelsWake | HeartbeatDue

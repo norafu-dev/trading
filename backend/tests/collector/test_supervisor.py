@@ -12,8 +12,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from harvester.collector.events import (
+    ChannelRemoved,
     Disconnected,
     FullSync,
+    GuildChanged,
+    GuildRemoved,
     IdentifyRequested,
     LoggedIn,
     Ready,
@@ -21,6 +24,8 @@ from harvester.collector.events import (
     RetryNeeded,
     SessionEnded,
     SupervisorEvent,
+    ThreadAccessLost,
+    ThreadArchived,
 )
 from harvester.collector.failures import ConnectionFailure
 from harvester.collector.supervisor import (
@@ -43,7 +48,7 @@ from harvester.db.models import (
     DiscordLoginAttempt,
     Guild,
 )
-from harvester.db.snapshots import AccessSnapshot, GuildState
+from harvester.db.snapshots import AccessSnapshot, ChannelSnapshot, GuildState
 from tests.api.conftest import crypto_settings
 from tests.db.builders import CATEGORY, CHANNEL, GUILD, at, seed_channel
 
@@ -992,3 +997,110 @@ async def test_stale_full_sync_after_identity_switch_writes_nothing(harness: Har
     async with harness.factory() as session:
         assert await session.scalar(select(DiscordAccount.channels_synced_at)) is None
         assert await session.scalar(select(func.count()).select_from(Guild)) == 0
+
+
+async def _synced_online(harness: Harness) -> None:
+    await add_account(harness)
+    await harness.seed_collecting()
+    harness.start()
+    await harness.wait_spans(1)
+
+
+async def _open_count(harness: Harness) -> int:
+    async with harness.factory() as session:
+        count = await session.scalar(
+            select(func.count())
+            .select_from(ChannelCoverage)
+            .where(func.upper_inf(ChannelCoverage.span))
+        )
+    return int(count or 0)
+
+
+async def _wait_open_count(harness: Harness, expected: int) -> None:
+    async def reached() -> bool:
+        return await _open_count(harness) == expected
+
+    await harness.wait_until(reached)
+
+
+async def test_incremental_events_close_coverage_and_keep_the_switch(harness: Harness) -> None:
+    # covers: spec 0006 AC-2, AC-8
+    await _synced_online(harness)
+    session = harness.current
+    lost = replace(GUILD_STATE, access=(AccessSnapshot(CHANNEL.id, False),))
+
+    session.queue.put_nowait(GuildChanged(session.generation, lost))
+    await _wait_open_count(harness, 0)
+    async with harness.factory() as db:
+        assert await db.scalar(select(Channel.collect_enabled).where(Channel.id == CHANNEL.id))
+
+    session.queue.put_nowait(GuildChanged(session.generation, GUILD_STATE))
+    await _wait_open_count(harness, 1)
+
+    session.queue.put_nowait(ChannelRemoved(session.generation, CHANNEL.id))
+    await _wait_open_count(harness, 0)
+
+
+async def test_guild_removed_closes_coverage(harness: Harness) -> None:  # covers: spec 0006 AC-8
+    await _synced_online(harness)
+    session = harness.current
+
+    session.queue.put_nowait(GuildRemoved(session.generation, GUILD.id))
+
+    await _wait_open_count(harness, 0)
+    async with harness.factory() as db:
+        assert await db.scalar(select(Guild.status).where(Guild.id == GUILD.id)) == "left"
+
+
+async def test_thread_events_reach_the_database(harness: Harness) -> None:
+    # covers: spec 0006 AC-2, AC-8
+    thread = ChannelSnapshot(
+        id=205, guild_id=GUILD.id, parent_id=CHANNEL.id, type=11, name="t", position=None
+    )
+    state = replace(
+        GUILD_STATE,
+        channels=(*GUILD_STATE.channels, thread),
+        access=(*GUILD_STATE.access, AccessSnapshot(thread.id, True)),
+    )
+    await _synced_online(harness)
+    session = harness.current
+    session.queue.put_nowait(GuildChanged(session.generation, state))
+
+    async def thread_written() -> bool:
+        async with harness.factory() as db:
+            return await db.scalar(select(Channel.id).where(Channel.id == thread.id)) is not None
+
+    await harness.wait_until(thread_written)
+    row = await harness.read()
+    async with harness.factory() as db, db.begin():
+        await db.execute(
+            update(Channel)
+            .where(Channel.id == thread.id)
+            .values(collect_enabled=True, collector_account_id=row.id)
+        )
+    harness.deps.channels_wake.set()
+    await _wait_open_count(harness, 2)
+
+    session.queue.put_nowait(ThreadAccessLost(session.generation, thread.id))
+    await _wait_open_count(harness, 1)
+
+    session.queue.put_nowait(GuildChanged(session.generation, state))
+    await _wait_open_count(harness, 2)
+    session.queue.put_nowait(ThreadArchived(session.generation, thread.id, True))
+    await _wait_open_count(harness, 1)
+
+
+async def test_every_incremental_write_updates_sync_time(harness: Harness) -> None:
+    # covers: spec 0006 AC-11
+    await _synced_online(harness)
+    session = harness.current
+    harness.clock.advance(60)
+    expected = harness.clock()
+
+    session.queue.put_nowait(GuildChanged(session.generation, GUILD_STATE))
+
+    async def updated() -> bool:
+        async with harness.factory() as db:
+            return await db.scalar(select(DiscordAccount.channels_synced_at)) == expected
+
+    await harness.wait_until(updated)

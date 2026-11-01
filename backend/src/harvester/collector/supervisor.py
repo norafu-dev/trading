@@ -2,7 +2,7 @@
 
 import asyncio
 import contextlib
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Protocol
@@ -12,9 +12,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from harvester.collector.events import (
+    ChannelRemoved,
     ChannelsWake,
     Disconnected,
     FullSync,
+    GuildChanged,
+    GuildRemoved,
     HeartbeatDue,
     IdentifyRequested,
     LoggedIn,
@@ -24,6 +27,8 @@ from harvester.collector.events import (
     RetryNeeded,
     SessionEnded,
     SupervisorEvent,
+    ThreadAccessLost,
+    ThreadArchived,
     Wake,
 )
 from harvester.collector.failures import (
@@ -42,6 +47,8 @@ from harvester.db.ingest import close_stale_coverage
 from harvester.db.snapshots import AccountStatus
 
 log = structlog.get_logger("harvester.collector.supervisor")
+
+ChannelEvent = GuildChanged | GuildRemoved | ChannelRemoved | ThreadArchived | ThreadAccessLost
 
 HEARTBEAT_INTERVAL = 30.0
 # 启动时距离上次登录尝试不到这么久就先等，防止崩溃循环连续消耗额度。
@@ -192,25 +199,59 @@ async def _align(deps: Deps, account: AccountRow, state: SessionState) -> None:
         log.info("collector.coverage_aligned", opened=len(plan.to_open), closed=len(plan.to_close))
 
 
-async def _on_full_sync(
-    deps: Deps, account: AccountRow, state: SessionState, event: FullSync
+ChannelWrite = Callable[[AsyncSession, datetime], Awaitable[object]]
+
+
+async def _write_channels(
+    deps: Deps, account: AccountRow, state: SessionState, write: ChannelWrite
 ) -> SessionState:
+    """频道数据的写入都走这里：一个事务里写库、记同步时间、对齐覆盖段、发通知。"""
     now = deps.clock()
-    present = frozenset(s.guild.id for s in event.states) | event.unavailable_ids
     async with deps.factory() as session, session.begin():
-        # 先写同步时间：版本不符说明账号已经换了身份，这批快照不能再写。
+        # 先写同步时间：版本不符说明账号已经换了身份，这批数据不能再写。
         if not await channel_sync.record_synced(session, account.id, account.config_version, now):
             return replace(state, done=True)
-        for guild_state in event.states:
-            await channel_sync.apply_guild_state(session, account.id, guild_state, now)
-        await channel_sync.mark_missing_guilds_left(session, account.id, present, now)
+        await write(session, now)
         if state.status == "online":
             await align_coverage(session, account.id, now)
         await channel_sync.notify_channels_changed(session)
+    return state
+
+
+async def _on_full_sync(
+    deps: Deps, account: AccountRow, state: SessionState, event: FullSync
+) -> SessionState:
+    present = frozenset(s.guild.id for s in event.states) | event.unavailable_ids
+
+    async def write(session: AsyncSession, now: datetime) -> None:
+        for guild_state in event.states:
+            await channel_sync.apply_guild_state(session, account.id, guild_state, now)
+        await channel_sync.mark_missing_guilds_left(session, account.id, present, now)
+
+    next_state = await _write_channels(deps, account, state, write)
     log.info(
         "collector.full_sync", guilds=len(event.states), unavailable=len(event.unavailable_ids)
     )
-    return state
+    return next_state
+
+
+def _channel_write(account: AccountRow, event: ChannelEvent) -> ChannelWrite:
+    def write(session: AsyncSession, now: datetime) -> Awaitable[object]:
+        match event:
+            case GuildChanged():
+                return channel_sync.apply_guild_state(session, account.id, event.state, now)
+            case GuildRemoved():
+                return channel_sync.leave_guild(session, account.id, event.guild_id, now)
+            case ChannelRemoved():
+                return channel_sync.delete_channel(session, event.channel_id, now)
+            case ThreadArchived():
+                return channel_sync.set_thread_archived(
+                    session, event.thread_id, event.archived, now
+                )
+            case ThreadAccessLost():
+                return channel_sync.revoke_access(session, account.id, event.thread_id, now)
+
+    return write
 
 
 async def _on_disconnected(
@@ -370,6 +411,14 @@ async def handle_event(
             return await _on_ended(deps, account, state, event)
         case FullSync():
             return await _on_full_sync(deps, account, state, event)
+        case (
+            GuildChanged()
+            | GuildRemoved()
+            | ChannelRemoved()
+            | ThreadArchived()
+            | ThreadAccessLost()
+        ):
+            return await _write_channels(deps, account, state, _channel_write(account, event))
         case Wake():
             return await _on_wake(deps, account, state)
         case ChannelsWake():
