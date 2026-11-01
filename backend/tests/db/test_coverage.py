@@ -4,7 +4,7 @@ from dataclasses import replace
 from datetime import datetime
 
 import pytest
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, select, text, update
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -160,6 +160,8 @@ async def test_crash_recovery_without_heartbeat_drops_open_segments(  # value so
 async def test_crash_recovery_closes_disabled_channels_of_other_accounts(
     session: AsyncSession,
 ) -> None:
+    # 这一版最多一个账号，但覆盖段的规则按多账号写（spec 0002）；只在这个事务里去掉限制。
+    await session.execute(text("DROP INDEX uq_discord_account_single"))
     mine = await add_account(session, "main", last_heartbeat_at=at(10))
     other = await add_account(session, "other", last_heartbeat_at=at(30))
     await assign(session, CHANNEL.id, other, enabled=False)
@@ -172,6 +174,8 @@ async def test_crash_recovery_closes_disabled_channels_of_other_accounts(
 async def test_crash_recovery_leaves_other_accounts_active_segments_open(
     session: AsyncSession,
 ) -> None:
+    # 这一版最多一个账号，但覆盖段的规则按多账号写（spec 0002）；只在这个事务里去掉限制。
+    await session.execute(text("DROP INDEX uq_discord_account_single"))
     mine = await add_account(session, "main", last_heartbeat_at=at(10))
     other = await add_account(session, "other", last_heartbeat_at=at(30))
     await assign(session, THIRD.id, other)

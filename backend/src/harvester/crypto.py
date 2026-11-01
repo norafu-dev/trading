@@ -17,6 +17,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 KEY_BYTES = 32
 NONCE_BYTES = 12
 PURPOSE_TOTP = "totp"
+PURPOSE_DISCORD_TOKEN = "discord_token"
 
 
 @dataclass(frozen=True)

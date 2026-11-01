@@ -67,10 +67,30 @@ class DiscordAccount(Base):
     status_changed_at: Mapped[datetime] = _now()
     last_error: Mapped[str | None]
     last_heartbeat_at: Mapped[datetime | None]
+    discord_username: Mapped[str | None]
+    retry_at: Mapped[datetime | None]
+    config_version: Mapped[int] = mapped_column(Integer, server_default=text("1"))
     created_at: Mapped[datetime] = _now()
     updated_at: Mapped[datetime] = _now()
 
-    __table_args__ = (CheckConstraint(_in("status", get_args(AccountStatus)), name="status"),)
+    __table_args__ = (
+        CheckConstraint(_in("status", get_args(AccountStatus)), name="status"),
+        CheckConstraint("(status = 'login_paused') = (retry_at IS NOT NULL)", name="retry_at_pair"),
+        # 这一版最多一个账号（spec 0005）；做多账号时用迁移删掉。
+        Index("uq_discord_account_single", text("(true)"), unique=True),
+    )
+
+
+class DiscordLoginAttempt(Base):
+    __tablename__ = "discord_login_attempt"
+
+    id: Mapped[int] = mapped_column(Identity(always=True), primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("discord_account.id", ondelete="CASCADE"))
+    attempted_at: Mapped[datetime] = _now()
+
+    __table_args__ = (
+        Index("ix_discord_login_attempt_account_id_attempted_at", "account_id", "attempted_at"),
+    )
 
 
 class Guild(Base):

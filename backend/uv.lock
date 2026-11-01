@@ -1111,7 +1111,7 @@ requires-dist = [
     { name = "argon2-cffi", specifier = ">=25.1.0" },
     { name = "asyncpg", specifier = ">=0.32.0" },
     { name = "cryptography", specifier = ">=50.0.2" },
-    { name = "discord-py-self", specifier = ">=2.1.0" },
+    { name = "discord-py-self", specifier = "==2.1.0" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.162.0" },
     { name = "pydantic-settings", specifier = ">=2.16.2" },
     { name = "pyotp", specifier = ">=2.10.0" },

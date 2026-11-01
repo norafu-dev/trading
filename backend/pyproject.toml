@@ -8,7 +8,7 @@ dependencies = [
     "argon2-cffi>=25.1.0",
     "asyncpg>=0.32.0",
     "cryptography>=50.0.2",
-    "discord-py-self>=2.1.0",
+    "discord-py-self==2.1.0",
     "fastapi[standard]>=0.162.0",
     "pydantic-settings>=2.16.2",
     "pyotp>=2.10.0",

@@ -11,7 +11,15 @@ from typing import Literal, NotRequired, TypedDict, cast
 
 # Value sets shared by the CHECK constraints in `models` and the function signatures.
 AccountStatus = Literal[
-    "connecting", "online", "reconnecting", "token_invalid", "banned", "disabled"
+    "connecting",
+    "online",
+    "reconnecting",
+    "token_invalid",
+    "banned",
+    "disabled",
+    "verification_required",
+    "login_paused",
+    "account_mismatch",
 ]
 GuildStatus = Literal["active", "left", "deleted"]
 ChannelStatus = Literal["active", "archived", "deleted"]
