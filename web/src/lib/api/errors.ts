@@ -53,6 +53,19 @@ const REJECTED_BY_CODE: Readonly<Record<string, Pick<UiError, "title" | "detail"
   totp_invalid: { title: "验证码不对", detail: "看一下验证器 App 里的最新验证码，再试一次。" },
   already_set_up: { title: "已经设置过了", detail: "请直接登录。" },
   setup_required: { title: "还没有完成设置", detail: "请先完成首次设置。" },
+  account_exists: {
+    title: "已经有一个账号了",
+    detail: "这一版只支持一个账号，刷新页面看看它的状态。",
+  },
+  account_not_found: { title: "账号不存在", detail: "还没有添加账号，刷新页面后重新添加。" },
+  invalid_account_state: {
+    title: "现在不能这样操作",
+    detail: "账号状态刚刚变了，请看最新状态再操作。",
+  },
+  token_format_invalid: {
+    title: "token 的格式不对",
+    detail: "请粘贴账号 token 本身，不要带空格，也不要带 Bot 前缀。",
+  },
   bad_origin: { title: "请求被拒绝", detail: "请求来源不被允许，请从 dashboard 的网址打开。" },
 };
 

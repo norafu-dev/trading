@@ -22,6 +22,7 @@ type AppShellProps = Readonly<{
   guilds: readonly GuildInput[];
   channels: readonly ChannelInput[];
   collectorStatus: CollectorStatus;
+  accountLink?: ReactNode;
   /** 频道链接的地址，默认是 `channelHref`；预览页换成指向自己的地址。 */
   hrefFor?: (channelId: string) => string;
   className?: string;
@@ -32,6 +33,7 @@ type NavigationProps = Readonly<{
   guilds: readonly GuildInput[];
   channels: readonly ChannelInput[];
   collectorStatus: CollectorStatus;
+  accountLink?: ReactNode;
   hrefFor: (channelId: string) => string;
   choice: GuildChoice;
   onChoose: (choice: GuildChoice) => void;
@@ -62,6 +64,7 @@ function Navigation(props: NavigationProps) {
         selectedGuildId={guildId}
         onSelectGuild={(id) => props.onChoose({ guildId: id, channelId: selectedChannelId })}
         collectorStatus={props.collectorStatus}
+        accountLink={props.accountLink}
       />
       <ChannelSidebar
         guildName={guildName}
@@ -152,6 +155,7 @@ export function AppShell({
   guilds,
   channels,
   collectorStatus,
+  accountLink,
   hrefFor = channelHref,
   className,
   children,
@@ -164,6 +168,7 @@ export function AppShell({
     guilds,
     channels,
     collectorStatus,
+    accountLink,
     hrefFor,
     choice,
     onChoose: setChoice,

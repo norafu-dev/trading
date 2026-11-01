@@ -3,6 +3,7 @@
 import { cn } from "cn";
 import { ShieldIcon } from "lucide-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import { LogoutButton } from "@/components/auth/logout-button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -18,6 +19,8 @@ type ServerRailProps = Readonly<{
   selectedGuildId: string | null;
   onSelectGuild: (guildId: string) => void;
   collectorStatus: CollectorStatus;
+  /** 账号入口要取数，由真实页面传入；预览页不传，不发请求。 */
+  accountLink?: ReactNode;
 }>;
 
 function GuildIcon({ guild, selected }: Readonly<{ guild: GuildInput; selected: boolean }>) {
@@ -42,12 +45,13 @@ function GuildIcon({ guild, selected }: Readonly<{ guild: GuildInput; selected: 
   );
 }
 
-// 72px 宽的服务器图标栏：顶部是首页，中间是服务器，底部是安全、登出和采集进程状态。
+// 72px 宽的服务器图标栏：顶部是首页，中间是服务器，底部是账号、安全、登出和采集进程状态。
 export function ServerRail({
   guilds,
   selectedGuildId,
   onSelectGuild,
   collectorStatus,
+  accountLink,
 }: ServerRailProps) {
   return (
     <nav
@@ -94,6 +98,7 @@ export function ServerRail({
           );
         })}
       </ul>
+      {accountLink}
       <Tooltip>
         <TooltipTrigger
           render={

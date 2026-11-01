@@ -1,17 +1,18 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
-import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useMemo } from "react";
 
+import { describeAccount, STALE_TEXT } from "@/components/discord/account-status";
+import { useDiscordAccount } from "@/components/discord/use-discord-account";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { api } from "@/lib/api/client";
 import { ApiResponseError, toUiError } from "@/lib/api/errors";
-import { AUTH_STATE_KEY } from "@/lib/auth/use-auth-state";
+import { useEventStream } from "@/lib/events/event-stream";
 import { createTimeFormat } from "@/lib/format/time";
-
-type Heartbeat = { server_time: string };
 
 function useHealth() {
   return useQuery({
@@ -23,29 +24,6 @@ function useHealth() {
     },
     refetchInterval: 15_000,
   });
-}
-
-function useLastHeartbeat() {
-  const [lastHeartbeat, setLastHeartbeat] = useState<string | null>(null);
-  const [connected, setConnected] = useState(false);
-  const queryClient = useQueryClient();
-
-  useEffect(() => {
-    const source = new EventSource("/api/events");
-    source.onopen = () => setConnected(true);
-    source.onerror = () => {
-      setConnected(false);
-      // 可能是会话失效被断开；重新查登录状态，由 AuthGate 决定要不要跳转（AC-14）。
-      void queryClient.invalidateQueries({ queryKey: AUTH_STATE_KEY });
-    };
-    source.addEventListener("heartbeat", (event) => {
-      const beat = JSON.parse(event.data) as Heartbeat;
-      setLastHeartbeat(beat.server_time);
-    });
-    return () => source.close();
-  }, [queryClient]);
-
-  return { connected, lastHeartbeat };
 }
 
 type Tone = "ok" | "pending" | "error";
@@ -80,7 +58,8 @@ function StatusRow({
 
 export function SystemStatus() {
   const health = useHealth();
-  const { connected, lastHeartbeat } = useLastHeartbeat();
+  const { connected, lastHeartbeat } = useEventStream();
+  const account = useDiscordAccount();
   const format = useMemo(
     () => createTimeFormat(Intl.DateTimeFormat().resolvedOptions().timeZone),
     [],
@@ -91,6 +70,13 @@ export function SystemStatus() {
     : health.isError
       ? ({ tone: "error", value: "不可用", detail: toUiError(health.error).detail } as const)
       : ({ tone: "ok", value: "正常", detail: `数据库 ${health.data.database}` } as const);
+
+  const accountInfo = account.data ? describeAccount(account.data, format.fullTime) : null;
+  const accountRow = account.data?.collector_stale
+    ? ({ tone: "error", value: STALE_TEXT } as const)
+    : accountInfo
+      ? ({ tone: accountInfo.tone, value: accountInfo.text } as const)
+      : ({ tone: "pending", value: account.data === null ? "还没有添加" : "检查中" } as const);
 
   return (
     <section
@@ -115,6 +101,10 @@ export function SystemStatus() {
           value={connected ? "已连接" : "未连接"}
           detail={lastHeartbeat ? `最近心跳 ${format.fullTime(lastHeartbeat)}` : undefined}
         />
+        <Separator />
+        <Link href="/settings/discord" className="rounded-md hover:bg-muted/50">
+          <StatusRow label="Discord 账号" {...accountRow} />
+        </Link>
       </dl>
     </section>
   );
