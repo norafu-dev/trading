@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from harvester.collector.failures import ConnectionFailure
+from harvester.db.snapshots import GuildState
 
 
 @dataclass(frozen=True)
@@ -67,8 +68,23 @@ class SessionEnded:
 
 
 @dataclass(frozen=True)
+class FullSync:
+    """READY 之后紧接着放入：当前缓存里所有服务器的状态（spec 0006）。"""
+
+    generation: int
+    states: tuple[GuildState, ...]
+    # 缓存里有但暂时不可用的服务器：不能据此判断已经退出。
+    unavailable_ids: frozenset[int]
+
+
+@dataclass(frozen=True)
 class Wake:
     """账号可能变了（NOTIFY 或轮询）。"""
+
+
+@dataclass(frozen=True)
+class ChannelsWake:
+    """频道的采集开关可能变了（NOTIFY 或轮询）：只做覆盖对齐。"""
 
 
 @dataclass(frozen=True)
@@ -85,5 +101,6 @@ SessionEvent = (
     | RetryNeeded
     | IdentifyRequested
     | SessionEnded
+    | FullSync
 )
-SupervisorEvent = SessionEvent | Wake | HeartbeatDue
+SupervisorEvent = SessionEvent | Wake | ChannelsWake | HeartbeatDue

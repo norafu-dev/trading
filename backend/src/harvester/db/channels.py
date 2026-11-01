@@ -1,0 +1,200 @@
+"""频道管理页的读写（spec 0006）。这里的函数都不提交事务，可预期的结果用返回值表达。
+
+`collect_enabled` 只由这里改；写操作和通知在同一个事务里。
+"""
+
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Literal
+
+from sqlalchemy import Row, and_, case, exists, func, or_, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from harvester.db import account as accounts
+from harvester.db.channel_sync import notify_channels_changed, notify_collect_changed
+from harvester.db.models import AccountChannelAccess, Channel, DiscordAccount, Guild
+from harvester.db.snapshots import (
+    CATEGORY_CHANNEL_TYPE,
+    COLLECTABLE_CHANNEL_TYPES,
+    THREAD_CHANNEL_TYPES,
+    ChannelStatus,
+    GuildStatus,
+)
+
+# 管理页能看到的类型：分类、文字、公告、论坛、媒体加线程；语音和舞台不显示。
+LISTED_CHANNEL_TYPES = (CATEGORY_CHANNEL_TYPE, 0, 5, 15, 16, *THREAD_CHANNEL_TYPES)
+
+CollectError = Literal[
+    "channel_not_found",
+    "account_not_found",
+    "channel_not_collectable",
+    "channel_no_access",
+    "channel_unavailable",
+]
+
+
+@dataclass(frozen=True)
+class GuildRow:
+    id: int
+    name: str
+    icon_hash: str | None
+    status: GuildStatus
+    enabled_count: int
+
+
+@dataclass(frozen=True)
+class ChannelRow:
+    id: int
+    guild_id: int
+    parent_id: int | None
+    type: int
+    name: str
+    position: int | None
+    status: ChannelStatus
+    collect_enabled: bool
+    collectable: bool
+    can_read: bool
+
+
+def _can_read_column():  # SQLAlchemy 的标签列类型太长，这里不标注。
+    return exists(
+        select(1).where(
+            AccountChannelAccess.channel_id == Channel.id, AccountChannelAccess.can_read
+        )
+    ).label("can_read")
+
+
+def _channel_select():
+    return select(
+        Channel.id,
+        Channel.guild_id,
+        Channel.parent_id,
+        Channel.type,
+        Channel.name,
+        Channel.position,
+        Channel.status,
+        Channel.collect_enabled,
+        _can_read_column(),
+    )
+
+
+def _to_channel_row(
+    row: Row[int, int, int | None, int, str, int | None, ChannelStatus, bool, bool],
+) -> ChannelRow:
+    return ChannelRow(
+        id=row.id,
+        guild_id=row.guild_id,
+        parent_id=row.parent_id,
+        type=row.type,
+        name=row.name,
+        position=row.position,
+        status=row.status,
+        collect_enabled=row.collect_enabled,
+        collectable=row.type in COLLECTABLE_CHANNEL_TYPES,
+        can_read=row.can_read,
+    )
+
+
+async def get_synced_at(session: AsyncSession) -> datetime | None:
+    return await session.scalar(select(DiscordAccount.channels_synced_at))
+
+
+async def list_guilds(session: AsyncSession) -> tuple[GuildRow, ...]:
+    """退出的服务器排在最后；已开启的数量把失去权限但仍开启的频道也算进去。"""
+    enabled = (
+        select(func.count())
+        .where(
+            Channel.guild_id == Guild.id,
+            Channel.collect_enabled,
+            Channel.status == "active",
+        )
+        .scalar_subquery()
+    )
+    rows = await session.execute(
+        select(Guild.id, Guild.name, Guild.icon_hash, Guild.status, enabled.label("enabled_count"))
+        .where(Guild.status.in_(("active", "left")))
+        .order_by(case((Guild.status == "left", 1), else_=0), func.lower(Guild.name), Guild.id)
+    )
+    return tuple(
+        GuildRow(r.id, r.name, r.icon_hash, r.status, r.enabled_count)  # pyright: ignore[reportArgumentType]
+        for r in rows
+    )
+
+
+async def list_guild_channels(
+    session: AsyncSession, guild_id: int
+) -> tuple[ChannelRow, ...] | Literal["guild_not_found"]:
+    """active 的可显示频道，加上已开启的 archived 线程；语音、舞台和 deleted 的不返回。"""
+    if await session.scalar(select(Guild.id).where(Guild.id == guild_id)) is None:
+        return "guild_not_found"
+    rows = await session.execute(
+        _channel_select()
+        .where(
+            Channel.guild_id == guild_id,
+            Channel.type.in_(LISTED_CHANNEL_TYPES),
+            or_(
+                Channel.status == "active",
+                and_(
+                    Channel.status == "archived",
+                    Channel.collect_enabled,
+                    Channel.type.in_(THREAD_CHANNEL_TYPES),
+                ),
+            ),
+        )
+        .order_by(Channel.position.asc().nulls_last(), func.lower(Channel.name), Channel.id)
+    )
+    return tuple(_to_channel_row(r) for r in rows)
+
+
+async def _get_channel_row(session: AsyncSession, channel_id: int) -> ChannelRow:
+    row = (await session.execute(_channel_select().where(Channel.id == channel_id))).one()
+    return _to_channel_row(row)
+
+
+async def _enable_blocker(
+    session: AsyncSession, channel: Channel, account: accounts.AccountRow
+) -> CollectError | None:
+    """打开前的检查，顺序固定：类型、可用性、读取权限。"""
+    if channel.type not in COLLECTABLE_CHANNEL_TYPES:
+        return "channel_not_collectable"
+    guild_status = await session.scalar(select(Guild.status).where(Guild.id == channel.guild_id))
+    if channel.status == "deleted" or guild_status != "active":
+        return "channel_unavailable"
+    can_read = await session.scalar(
+        select(AccountChannelAccess.can_read).where(
+            AccountChannelAccess.account_id == account.id,
+            AccountChannelAccess.channel_id == channel.id,
+        )
+    )
+    if can_read is False:
+        return "channel_no_access"
+    # 没有访问行：从未同步或换身份后还没重新同步时放行，同步后由覆盖对齐决定是否开段。
+    if can_read is None and await get_synced_at(session) is not None:
+        return "channel_no_access"
+    return None
+
+
+async def set_collect(
+    session: AsyncSession, channel_id: int, enabled: bool
+) -> ChannelRow | CollectError:
+    """打开或关闭一个频道的采集。已经是目标值时不写也不通知；关闭不会被拦住。"""
+    channel = await session.scalar(
+        select(Channel).where(Channel.id == channel_id).with_for_update()
+    )
+    if channel is None:
+        return "channel_not_found"
+    if channel.collect_enabled == enabled:
+        return await _get_channel_row(session, channel_id)
+    values: dict[str, object] = {"collect_enabled": enabled, "updated_at": func.now()}
+    if enabled:
+        account = await accounts.get_account(session)
+        if account is None:
+            return "account_not_found"
+        blocker = await _enable_blocker(session, channel, account)
+        if blocker is not None:
+            return blocker
+        values["collector_account_id"] = account.id
+    await session.execute(update(Channel).where(Channel.id == channel_id).values(**values))
+    await notify_collect_changed(session)
+    await notify_channels_changed(session)
+    return await _get_channel_row(session, channel_id)

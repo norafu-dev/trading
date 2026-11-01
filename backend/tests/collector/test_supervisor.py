@@ -7,12 +7,13 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import insert, select, text, update
+from sqlalchemy import func, insert, select, text, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from harvester.collector.events import (
     Disconnected,
+    FullSync,
     IdentifyRequested,
     LoggedIn,
     Ready,
@@ -25,21 +26,34 @@ from harvester.collector.failures import ConnectionFailure
 from harvester.collector.supervisor import (
     Deps,
     GatewaySession,
+    LoopState,
+    SessionState,
     UnexpectedFailureError,
+    handle_event,
     run_supervisor,
 )
 from harvester.crypto import PURPOSE_DISCORD_TOKEN, encrypt
 from harvester.db import account as accounts
 from harvester.db.account import AccountRow
-from harvester.db.models import Channel, ChannelCoverage, DiscordLoginAttempt
+from harvester.db.models import (
+    AccountChannelAccess,
+    Channel,
+    ChannelCoverage,
+    DiscordAccount,
+    DiscordLoginAttempt,
+    Guild,
+)
+from harvester.db.snapshots import AccessSnapshot, GuildState
 from tests.api.conftest import crypto_settings
-from tests.db.builders import CHANNEL, at, seed_channel
+from tests.db.builders import CATEGORY, CHANNEL, GUILD, at, seed_channel
 
 Factory = async_sessionmaker[AsyncSession]
 TOKEN = "fake-discord-token.abc123.XYZ"
 USER_ID = 111
 KEYS = crypto_settings().key_ring
 Queue = asyncio.Queue[SupervisorEvent]
+# READY 之后 FullSync 带的服务器：和 seed_channel 种下的数据一致，否则它们会被判成已退出。
+GUILD_STATE = GuildState(GUILD, (CATEGORY, CHANNEL), (AccessSnapshot(CHANNEL.id, True),))
 
 
 @dataclass
@@ -61,6 +75,7 @@ class FakeSession:
     queue: Queue
     user_id: int
     tokens: list[str]
+    states: list[GuildState]
     closed: bool = False
     finished: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -75,7 +90,11 @@ class FakeSession:
             self.queue.put_nowait(SessionEnded(self.generation))
             return
         self.queue.put_nowait(Ready(self.generation, required_action=False))
+        self.queue.put_nowait(self.full_sync())
         await self.finished.wait()
+
+    def full_sync(self) -> FullSync:
+        return FullSync(self.generation, tuple(self.states), frozenset())
 
     async def identify(self) -> bool:
         reply: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
@@ -110,6 +129,7 @@ class Harness:
     sessions: list[FakeSession]
     tokens: list[str]
     user_id: list[int]
+    states: list[GuildState]
     task: "asyncio.Task[None] | None" = None
 
     def start(self) -> None:
@@ -137,6 +157,12 @@ class Harness:
         await self.wait_until(matches)
         return await self.read()
 
+    async def wait_spans(self, count: int) -> None:
+        async def reached() -> bool:
+            return len(await self.spans()) >= count
+
+        await self.wait_until(reached)
+
     async def attempts(self) -> int:
         async with self.factory() as session:
             count = await session.scalar(select(text("count(*)")).select_from(DiscordLoginAttempt))
@@ -147,7 +173,8 @@ class Harness:
             await write(session)
         self.deps.wake.set()
 
-    async def seed_collecting_channel(self) -> None:
+    async def seed_collecting(self) -> None:
+        """种下一个开了采集、读得了的频道；之后的 FullSync 会带上它所在的服务器。"""
         row = await self.read()
         async with self.factory() as session, session.begin():
             await seed_channel(session)
@@ -156,6 +183,12 @@ class Harness:
                 .where(Channel.id == CHANNEL.id)
                 .values(collector_account_id=row.id, collect_enabled=True)
             )
+            await session.execute(
+                insert(AccountChannelAccess).values(
+                    account_id=row.id, channel_id=CHANNEL.id, can_read=True
+                )
+            )
+        self.states.append(GUILD_STATE)
 
     async def spans(self) -> list[object]:
         async with self.factory() as session:
@@ -182,9 +215,10 @@ async def harness(engine: AsyncEngine) -> AsyncIterator[Harness]:
     sessions: list[FakeSession] = []
     tokens: list[str] = []
     user_id = [USER_ID]
+    states: list[GuildState] = []
 
     def new_session(generation: int, queue: Queue, _clock: object) -> GatewaySession:
-        session = FakeSession(generation, queue, user_id[0], tokens)
+        session = FakeSession(generation, queue, user_id[0], tokens, states)
         sessions.append(session)
         return session
 
@@ -195,10 +229,11 @@ async def harness(engine: AsyncEngine) -> AsyncIterator[Harness]:
         clock=clock,
         uniform=lambda _low, _high: 0.001,  # 退避压到几毫秒，测试不用真的等。
         wake=asyncio.Event(),
+        channels_wake=asyncio.Event(),
         heartbeat_interval=3600,
         crash_guard_seconds=0,
     )
-    h = Harness(factory, clock, deps, sessions, tokens, user_id)
+    h = Harness(factory, clock, deps, sessions, tokens, user_id, states)
     yield h
     if h.task is not None:
         h.task.cancel()
@@ -291,7 +326,7 @@ async def test_resume_costs_no_budget_and_keeps_coverage(harness: Harness) -> No
     await add_account(harness)
     harness.start()
     await harness.wait_status("online")
-    await harness.seed_collecting_channel()
+    await harness.seed_collecting()
     session = harness.current
 
     session.queue.put_nowait(Disconnected(session.generation, harness.clock()))
@@ -306,14 +341,7 @@ async def test_reidentify_closes_coverage_at_disconnect_time(harness: Harness) -
     await add_account(harness)
     await harness.add_attempts(0)
     # 先有频道，READY 时才会打开覆盖段。
-    row = await harness.read()
-    async with harness.factory() as session, session.begin():
-        await seed_channel(session)
-        await session.execute(
-            update(Channel)
-            .where(Channel.id == CHANNEL.id)
-            .values(collector_account_id=row.id, collect_enabled=True)
-        )
+    await harness.seed_collecting()
     harness.start()
     await harness.wait_status("online")
     opened_at = harness.clock()
@@ -326,8 +354,10 @@ async def test_reidentify_closes_coverage_at_disconnect_time(harness: Harness) -
     assert await session.identify()
     assert await harness.attempts() == 2
     session.queue.put_nowait(Ready(session.generation, required_action=False))
+    session.queue.put_nowait(session.full_sync())
     await harness.wait_status("online")
 
+    await harness.wait_spans(2)
     spans = await harness.spans()
     assert len(spans) == 2
     assert spans[0].upper == disconnect_at  # type: ignore[attr-defined]
@@ -338,14 +368,7 @@ async def test_disable_during_outage_closes_at_disconnect_time(
     harness: Harness,
 ) -> None:  # AC-6
     await add_account(harness)
-    row = await harness.read()
-    async with harness.factory() as session, session.begin():
-        await seed_channel(session)
-        await session.execute(
-            update(Channel)
-            .where(Channel.id == CHANNEL.id)
-            .values(collector_account_id=row.id, collect_enabled=True)
-        )
+    await harness.seed_collecting()
     harness.start()
     await harness.wait_status("online")
     session = harness.current
@@ -668,16 +691,10 @@ async def test_cancel_closes_client_and_coverage_without_status_change(
     harness: Harness,
 ) -> None:  # covers: AC-17
     await add_account(harness)
-    row = await harness.read()
-    async with harness.factory() as session, session.begin():
-        await seed_channel(session)
-        await session.execute(
-            update(Channel)
-            .where(Channel.id == CHANNEL.id)
-            .values(collector_account_id=row.id, collect_enabled=True)
-        )
+    await harness.seed_collecting()
     harness.start()
     await harness.wait_status("online")
+    await harness.wait_spans(1)
     session = harness.current
     harness.clock.advance(50)
 
@@ -902,3 +919,76 @@ async def test_startup_keeps_stopped_status(harness: Harness) -> None:  # covers
 
 async def _is_closed(session: FakeSession) -> bool:
     return session.closed
+
+
+async def test_full_sync_records_time_and_opens_coverage(harness: Harness) -> None:
+    # covers: spec 0006 AC-1, AC-7, AC-11
+    await add_account(harness)
+    await harness.seed_collecting()
+    harness.start()
+
+    await harness.wait_spans(1)
+
+    async with harness.factory() as session:
+        synced = await session.scalar(select(DiscordAccount.channels_synced_at))
+    assert synced == harness.clock()
+    assert (await harness.spans())[0].upper is None  # type: ignore[attr-defined]
+
+
+async def test_channels_wake_aligns_without_reconnecting(harness: Harness) -> None:
+    # covers: spec 0006 AC-7
+    await add_account(harness)
+    harness.start()
+    await harness.wait_status("online")
+    await harness.seed_collecting()
+
+    harness.deps.channels_wake.set()
+
+    await harness.wait_spans(1)
+    assert len(harness.sessions) == 1
+    assert await harness.attempts() == 1
+
+
+async def test_heartbeat_aligns_when_the_notification_was_lost(harness: Harness) -> None:
+    # covers: spec 0006 AC-7
+    await add_account(harness)
+    harness.deps = replace(harness.deps, heartbeat_interval=0.02)
+    harness.start()
+    await harness.wait_status("online")
+
+    await harness.seed_collecting()
+
+    await harness.wait_spans(1)
+
+
+async def test_no_alignment_while_reconnecting(harness: Harness) -> None:
+    # covers: spec 0006 AC-7
+    await add_account(harness)
+    harness.start()
+    await harness.wait_status("online")
+    session = harness.current
+    session.queue.put_nowait(Disconnected(session.generation, harness.clock()))
+    await harness.wait_status("reconnecting")
+    await harness.seed_collecting()
+
+    harness.deps.channels_wake.set()
+    await asyncio.sleep(0.05)
+    assert await harness.spans() == []
+
+    session.queue.put_nowait(Resumed(session.generation))
+    await harness.wait_spans(1)
+
+
+async def test_stale_full_sync_after_identity_switch_writes_nothing(harness: Harness) -> None:
+    # covers: spec 0006 AC-11
+    row = await add_account(harness)
+    async with harness.factory() as session, session.begin():
+        await session.execute(update(DiscordAccount).values(config_version=2))
+    state = SessionState(loop=LoopState(generation=1), status="online")
+
+    after = await handle_event(harness.deps, row, state, FullSync(1, (GUILD_STATE,), frozenset()))
+
+    assert after.done
+    async with harness.factory() as session:
+        assert await session.scalar(select(DiscordAccount.channels_synced_at)) is None
+        assert await session.scalar(select(func.count()).select_from(Guild)) == 0

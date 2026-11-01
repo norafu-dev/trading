@@ -11,11 +11,13 @@ from typing import Any, Protocol
 
 import aiohttp
 import discord
+import structlog
 from curl_cffi import CurlError
 from discord.gateway import DiscordWebSocket, ReconnectWebSocket
 
 from harvester.collector.events import (
     Disconnected,
+    FullSync,
     IdentifyRequested,
     LoggedIn,
     Ready,
@@ -26,6 +28,18 @@ from harvester.collector.events import (
     SupervisorEvent,
 )
 from harvester.collector.failures import ConnectionFailure
+from harvester.db.snapshots import (
+    ACCESS_CHANNEL_TYPES,
+    AccessSnapshot,
+    ChannelSnapshot,
+    GuildSnapshot,
+    GuildState,
+)
+
+log = structlog.get_logger("harvester.collector.discord_client")
+
+# 分类 (4)、文字 (0)、语音 (2)、公告 (5)、舞台 (13)、论坛 (15)、媒体 (16) 加线程；其余类型忽略。
+_SNAPSHOT_CHANNEL_TYPES = frozenset({0, 2, 4, 5, 13, 15, 16, 10, 11, 12})
 
 GATEWAY_CONNECT_TIMEOUT = 60.0
 MAX_RATELIMIT_TIMEOUT = 60.0
@@ -89,6 +103,61 @@ def reconnect_failure(ws: Any) -> ConnectionFailure:
     return ConnectionFailure("network")
 
 
+def _channel_snapshot(
+    guild_id: int, channel: discord.abc.GuildChannel | discord.Thread
+) -> ChannelSnapshot:
+    if isinstance(channel, discord.Thread):
+        parent_id: int | None = channel.parent_id
+        position = None
+    else:
+        parent_id = channel.category_id
+        position = channel.position
+    return ChannelSnapshot(
+        id=channel.id,
+        guild_id=guild_id,
+        parent_id=parent_id,
+        type=channel.type.value,
+        name=channel.name,
+        position=position,
+    )
+
+
+def snapshot_guild(guild: discord.Guild) -> GuildState:
+    """只读 discord.py-self 已缓存的数据转成不可变快照，不发任何请求（spec 0006 AC-1）。
+
+    权限在本地算：同时有「查看频道」和「读取消息历史」才算读得了。
+    """
+    snapshot = GuildSnapshot(
+        id=guild.id, name=guild.name, icon_hash=guild.icon.key if guild.icon else None
+    )
+    members = (*guild.channels, *guild.threads)
+    channels = tuple(
+        _channel_snapshot(guild.id, c) for c in members if c.type.value in _SNAPSHOT_CHANNEL_TYPES
+    )
+    me = guild.me
+    if me is None:  # pyright: ignore[reportUnnecessaryComparison]
+        log.warning("discord_client.me_unknown", guild_id=guild.id)
+        return GuildState(snapshot, channels, (), me_known=False)
+    access = tuple(
+        AccessSnapshot(
+            c.id,
+            (perms := c.permissions_for(me)).view_channel and perms.read_message_history,
+        )
+        for c in members
+        if c.type.value in ACCESS_CHANNEL_TYPES
+    )
+    return GuildState(snapshot, channels, access)
+
+
+FullSyncData = tuple[tuple[GuildState, ...], frozenset[int]]
+
+
+def snapshot_guilds(client: discord.Client) -> FullSyncData:
+    available = tuple(snapshot_guild(g) for g in client.guilds if not g.unavailable)
+    unavailable = frozenset(g.id for g in client.guilds if g.unavailable)
+    return available, unavailable
+
+
 class HarvesterClient(discord.Client):
     """每个会话新建一个，不复用；所有退出路径都要 close()。"""
 
@@ -129,6 +198,10 @@ class HarvesterClient(discord.Client):
         if event == "ready":
             required = self.required_action is not None
             self._events.put_nowait(Ready(generation, required_action=required))
+            if not required:
+                # 紧跟在 Ready 后放入：旧会话的 FullSync 会被下一个会话的代号过滤掉。
+                states, unavailable_ids = snapshot_guilds(self)
+                self._events.put_nowait(FullSync(generation, states, unavailable_ids))
         elif event == "resumed":
             self._events.put_nowait(Resumed(generation))
         elif event == "disconnect":

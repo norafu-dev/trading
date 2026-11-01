@@ -70,6 +70,8 @@ class DiscordAccount(Base):
     discord_username: Mapped[str | None]
     retry_at: Mapped[datetime | None]
     config_version: Mapped[int] = mapped_column(Integer, server_default=text("1"))
+    # collector 上次把服务器和频道对账写库的时间；换身份时清空（spec 0006）。
+    channels_synced_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = _now()
     updated_at: Mapped[datetime] = _now()
 

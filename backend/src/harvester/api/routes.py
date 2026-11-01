@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+from harvester.api.channel_routes import channel_router
 from harvester.api.deps import (
     ClockDep,
     CurrentSessionDep,
@@ -22,8 +23,12 @@ from harvester.db import SessionDep, SessionFactoryDep
 # 不管有没有事件，都按这个间隔发心跳并重新检查会话（AC-14）。
 HEARTBEAT_INTERVAL = 20.0
 
+# 只通知“数据变了”的事件：不带载荷，前端收到后重新取数。
+_REFETCH_EVENTS = frozenset({"account_status", "channels_changed"})
+
 router = protected_router
 router.include_router(discord_router)
+router.include_router(channel_router)
 
 
 def get_broadcaster(request: Request) -> Broadcaster:
@@ -60,7 +65,7 @@ async def events(
     factory: SessionFactoryDep,
     clock: ClockDep,
 ) -> AsyncIterable[ServerSentEvent]:
-    """A heartbeat every 20 s plus new_message and account_status notifications."""
+    """A heartbeat every 20 s plus new_message, account_status, channels_changed."""
     loop = asyncio.get_running_loop()
     async with broadcaster.subscribe() as queue:
         yield ServerSentEvent(data=Heartbeat(server_time=clock()), event="heartbeat")
@@ -81,10 +86,10 @@ async def events(
                 payload = await asyncio.wait_for(queue.get(), timeout=remaining)
             except TimeoutError:
                 continue
-            if payload.get("type") == "account_status":
+            if payload.get("type") in _REFETCH_EVENTS:
                 # 事件本身不带状态，前端收到后重新取数。data 不能省：没有 data 的 SSE 事件
                 # 浏览器不会派发。
-                yield ServerSentEvent(data={}, event="account_status")
+                yield ServerSentEvent(data={}, event=payload["type"])
                 continue
             message_id = payload.get("message_id")
             yield ServerSentEvent(

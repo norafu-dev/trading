@@ -446,6 +446,123 @@
         }
       }
     },
+    "/api/discord/guilds": {
+      "get": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "List Guilds",
+        "operationId": "list_guilds_api_discord_guilds_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuildsOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/guilds/{guild_id}/channels": {
+      "get": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "List Guild Channels",
+        "operationId": "list_guild_channels_api_discord_guilds__guild_id__channels_get",
+        "parameters": [
+          {
+            "name": "guild_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Guild Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/channels/{channel_id}/collect": {
+      "put": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "Set Channel Collect",
+        "operationId": "set_channel_collect_api_discord_channels__channel_id__collect_put",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Channel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -473,7 +590,7 @@
           "system"
         ],
         "summary": "Events",
-        "description": "A heartbeat every 20 s plus new_message and account_status notifications.",
+        "description": "A heartbeat every 20 s plus new_message, account_status, channels_changed.",
         "operationId": "events_api_events_get",
         "responses": {
           "200": {
@@ -565,6 +682,112 @@
           "state"
         ],
         "title": "AuthState"
+      },
+      "ChannelOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "guild_id": {
+            "type": "string",
+            "title": "Guild Id"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "type": {
+            "type": "integer",
+            "title": "Type"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived",
+              "deleted"
+            ],
+            "title": "Status"
+          },
+          "collect_enabled": {
+            "type": "boolean",
+            "title": "Collect Enabled"
+          },
+          "collectable": {
+            "type": "boolean",
+            "title": "Collectable"
+          },
+          "can_read": {
+            "type": "boolean",
+            "title": "Can Read"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "guild_id",
+          "parent_id",
+          "type",
+          "name",
+          "position",
+          "status",
+          "collect_enabled",
+          "collectable",
+          "can_read"
+        ],
+        "title": "ChannelOut"
+      },
+      "ChannelsOut": {
+        "properties": {
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/ChannelOut"
+            },
+            "type": "array",
+            "title": "Channels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channels"
+        ],
+        "title": "ChannelsOut"
+      },
+      "CollectBody": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "CollectBody"
       },
       "DiscordAccountOut": {
         "properties": {
@@ -672,6 +895,80 @@
           "collector_stale"
         ],
         "title": "DiscordAccountOut"
+      },
+      "GuildOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "icon_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Hash"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "left",
+              "deleted"
+            ],
+            "title": "Status"
+          },
+          "enabled_count": {
+            "type": "integer",
+            "title": "Enabled Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "icon_hash",
+          "status",
+          "enabled_count"
+        ],
+        "title": "GuildOut"
+      },
+      "GuildsOut": {
+        "properties": {
+          "synced_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Synced At"
+          },
+          "guilds": {
+            "items": {
+              "$ref": "#/components/schemas/GuildOut"
+            },
+            "type": "array",
+            "title": "Guilds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "synced_at",
+          "guilds"
+        ],
+        "title": "GuildsOut"
       },
       "HTTPValidationError": {
         "properties": {

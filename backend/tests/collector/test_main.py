@@ -7,7 +7,7 @@ import time
 from collections.abc import Awaitable, Callable
 
 import pytest
-from sqlalchemy import select, text, update
+from sqlalchemy import func, insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from harvester.collector import main
@@ -16,9 +16,10 @@ from harvester.crypto import PURPOSE_DISCORD_TOKEN, encrypt
 from harvester.db import account as accounts
 from harvester.db import raw
 from harvester.db.account import AccountRow
-from harvester.db.models import Channel, ChannelCoverage
+from harvester.db.models import AccountChannelAccess, Channel, ChannelCoverage
+from harvester.db.snapshots import GuildState
 from tests.api.conftest import crypto_settings
-from tests.collector.test_supervisor import USER_ID, FakeSession, Queue
+from tests.collector.test_supervisor import GUILD_STATE, USER_ID, FakeSession, Queue
 from tests.db.builders import CHANNEL, seed_channel
 
 Factory = async_sessionmaker[AsyncSession]
@@ -34,13 +35,19 @@ def factory(engine: AsyncEngine) -> Factory:
 
 
 @pytest.fixture
-def sessions(monkeypatch: pytest.MonkeyPatch) -> list[FakeSession]:
+def states() -> list[GuildState]:
+    """会话 READY 之后 FullSync 带的服务器，测试按需往里放。"""
+    return []
+
+
+@pytest.fixture
+def sessions(monkeypatch: pytest.MonkeyPatch, states: list[GuildState]) -> list[FakeSession]:
     """把真正连 Discord 的 new_client 换掉，其余都走真实流程。"""
     created: list[FakeSession] = []
     tokens: list[str] = []
 
     def new_client(generation: int, queue: Queue, _clock: object) -> FakeSession:
-        session = FakeSession(generation, queue, USER_ID, tokens)
+        session = FakeSession(generation, queue, USER_ID, tokens, states)
         created.append(session)
         return session
 
@@ -150,7 +157,7 @@ async def test_losing_the_lock_connection_exits_immediately(
 
 
 async def test_sigterm_closes_session_and_coverage_without_status_change(
-    factory: Factory, sessions: list[FakeSession]
+    factory: Factory, sessions: list[FakeSession], states: list[GuildState]
 ) -> None:  # covers: AC-17
     row = await add_account(factory)
     async with factory() as session, session.begin():
@@ -160,8 +167,23 @@ async def test_sigterm_closes_session_and_coverage_without_status_change(
             .where(Channel.id == CHANNEL.id)
             .values(collector_account_id=row.id, collect_enabled=True)
         )
+        await session.execute(
+            insert(AccountChannelAccess).values(
+                account_id=row.id, channel_id=CHANNEL.id, can_read=True
+            )
+        )
+    states.append(GUILD_STATE)
     task = asyncio.create_task(main.run())
     await wait_online(factory)
+
+    async def coverage_open() -> bool:
+        async with factory() as session:
+            count = await session.scalar(select(func.count()).select_from(ChannelCoverage))
+        return bool(count)
+
+    async with asyncio.timeout(5):
+        while not await coverage_open():  # noqa: ASYNC110  # 等的是数据库状态。
+            await asyncio.sleep(0.01)
     started = time.monotonic()
 
     assert await stop_with_sigterm(task) == main.EXIT_OK

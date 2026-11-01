@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from harvester.db import account as accounts
 from harvester.db.account import AccountRow, LoginBudgetExhausted
+from harvester.db.ingest import open_realtime_coverage
 from harvester.db.models import (
     AccountChannelAccess,
     Channel,
@@ -218,17 +219,16 @@ async def test_disable_twice_does_not_bump_version(session: AsyncSession) -> Non
     assert first.config_version == second.config_version
 
 
-async def test_coverage_helpers_follow_collect_flag(session: AsyncSession) -> None:
+async def test_close_account_coverage_closes_open_segments(session: AsyncSession) -> None:
     await seed_channel(session)
     row = await new_account(session)
-    assert await accounts.open_account_coverage(session, row.id, at(0)) == 0
-
     await session.execute(
         update(Channel)
         .where(Channel.id == CHANNEL.id)
         .values(collector_account_id=row.id, collect_enabled=True)
     )
-    assert await accounts.open_account_coverage(session, row.id, at(0)) == 1
+    await open_realtime_coverage(session, CHANNEL.id, at(0))
+
     assert await accounts.close_account_coverage(session, row.id, at(5)) == 1
 
     span = await session.scalar(select(ChannelCoverage.span))

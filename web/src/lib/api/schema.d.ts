@@ -246,6 +246,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/discord/guilds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Guilds */
+        get: operations["list_guilds_api_discord_guilds_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/guilds/{guild_id}/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Guild Channels */
+        get: operations["list_guild_channels_api_discord_guilds__guild_id__channels_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/channels/{channel_id}/collect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Channel Collect */
+        put: operations["set_channel_collect_api_discord_channels__channel_id__collect_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -272,7 +323,7 @@ export interface paths {
         };
         /**
          * Events
-         * @description A heartbeat every 20 s plus new_message and account_status notifications.
+         * @description A heartbeat every 20 s plus new_message, account_status, channels_changed.
          */
         get: operations["events_api_events_get"];
         put?: never;
@@ -309,6 +360,42 @@ export interface components {
              */
             state: "setup_required" | "unauthenticated" | "authenticated";
         };
+        /** ChannelOut */
+        ChannelOut: {
+            /** Id */
+            id: string;
+            /** Guild Id */
+            guild_id: string;
+            /** Parent Id */
+            parent_id: string | null;
+            /** Type */
+            type: number;
+            /** Name */
+            name: string;
+            /** Position */
+            position: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "archived" | "deleted";
+            /** Collect Enabled */
+            collect_enabled: boolean;
+            /** Collectable */
+            collectable: boolean;
+            /** Can Read */
+            can_read: boolean;
+        };
+        /** ChannelsOut */
+        ChannelsOut: {
+            /** Channels */
+            channels: components["schemas"]["ChannelOut"][];
+        };
+        /** CollectBody */
+        CollectBody: {
+            /** Enabled */
+            enabled: boolean;
+        };
         /** DiscordAccountOut */
         DiscordAccountOut: {
             /** Id */
@@ -337,6 +424,29 @@ export interface components {
             retry_at: string | null;
             /** Collector Stale */
             collector_stale: boolean;
+        };
+        /** GuildOut */
+        GuildOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Icon Hash */
+            icon_hash: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "left" | "deleted";
+            /** Enabled Count */
+            enabled_count: number;
+        };
+        /** GuildsOut */
+        GuildsOut: {
+            /** Synced At */
+            synced_at: string | null;
+            /** Guilds */
+            guilds: components["schemas"]["GuildOut"][];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -825,6 +935,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DiscordAccountOut"];
+                };
+            };
+        };
+    };
+    list_guilds_api_discord_guilds_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuildsOut"];
+                };
+            };
+        };
+    };
+    list_guild_channels_api_discord_guilds__guild_id__channels_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                guild_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_channel_collect_api_discord_channels__channel_id__collect_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CollectBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -131,3 +131,12 @@ async def transaction_now(session: AsyncSession) -> datetime:
     value = await session.scalar(text("SELECT now()"))
     assert isinstance(value, datetime)
     return value
+
+
+async def make_account(session: AsyncSession) -> int:
+    """数据库最多一个账号，返回它的 id。"""
+    from harvester.db import account as accounts
+
+    row = await accounts.create_account(session, "main", b"cipher", 1)
+    assert not isinstance(row, str)
+    return row.id

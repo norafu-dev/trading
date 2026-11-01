@@ -21,6 +21,7 @@ log = structlog.get_logger("harvester.api.notifications")
 _EVENT_TYPES = {
     raw.NEW_MESSAGE_CHANNEL: "new_message",
     raw.ACCOUNT_CHANGED_CHANNEL: "account_status",
+    raw.CHANNELS_CHANGED_CHANNEL: "channels_changed",
 }
 
 RECONNECT_MIN = 1.0

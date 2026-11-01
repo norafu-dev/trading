@@ -11,7 +11,7 @@ from sqlalchemy import delete, func, insert, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from harvester.db.ingest import close_realtime_coverage, open_realtime_coverage
+from harvester.db.ingest import close_realtime_coverage
 from harvester.db.models import (
     AccountChannelAccess,
     Channel,
@@ -195,7 +195,7 @@ async def request_reconnect(session: AsyncSession) -> AccountRow | NotFound | In
 
 
 async def switch_identity(session: AsyncSession) -> AccountRow | NotFound | InvalidState:
-    """清空身份和权限记录；消息、频道开关和 collector_account_id 不动（AC-11）。"""
+    """清空身份、权限记录和同步时间；消息、频道开关和 collector_account_id 不动（AC-11）。"""
     row = await get_account(session, for_update=True)
     if row is None:
         return "not_found"
@@ -205,7 +205,12 @@ async def switch_identity(session: AsyncSession) -> AccountRow | NotFound | Inva
         delete(AccountChannelAccess).where(AccountChannelAccess.account_id == row.id)
     )
     return await _apply_api_write(
-        session, row, "connecting", discord_user_id=None, discord_username=None
+        session,
+        row,
+        "connecting",
+        discord_user_id=None,
+        discord_username=None,
+        channels_synced_at=None,
     )
 
 
@@ -337,17 +342,6 @@ async def record_heartbeat(session: AsyncSession, account_id: int, expected_vers
         )
         .values(last_heartbeat_at=func.now())
     )
-
-
-async def open_account_coverage(session: AsyncSession, account_id: int, at: datetime) -> int:
-    """全新登录时，给这个账号负责且开着采集的频道各打开一段（spec 0002）。"""
-    channel_ids = await session.scalars(
-        select(Channel.id).where(
-            Channel.collector_account_id == account_id, Channel.collect_enabled
-        )
-    )
-    results = [await open_realtime_coverage(session, cid, at) for cid in channel_ids.all()]
-    return results.count("opened")
 
 
 async def close_account_coverage(session: AsyncSession, account_id: int, at: datetime) -> int:

@@ -12,7 +12,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from harvester.collector.events import (
+    ChannelsWake,
     Disconnected,
+    FullSync,
     HeartbeatDue,
     IdentifyRequested,
     LoggedIn,
@@ -33,7 +35,9 @@ from harvester.collector.failures import (
 )
 from harvester.crypto import PURPOSE_DISCORD_TOKEN, DecryptError, KeyRing, decrypt
 from harvester.db import account as accounts
+from harvester.db import channel_sync
 from harvester.db.account import AccountRow, LoginBudgetExhausted
+from harvester.db.coverage_plan import align_coverage
 from harvester.db.ingest import close_stale_coverage
 from harvester.db.snapshots import AccountStatus
 
@@ -74,6 +78,8 @@ class Deps:
     uniform: Callable[[float, float], float]
     # NOTIFY 和轮询都只是把它设上；监督循环自己读库比较版本。
     wake: asyncio.Event
+    # 频道开关变了的 NOTIFY 和轮询把它设上；只触发覆盖对齐，不读账号，不打断退避等待。
+    channels_wake: asyncio.Event
     heartbeat_interval: float = HEARTBEAT_INTERVAL
     crash_guard_seconds: float = CRASH_GUARD_SECONDS
 
@@ -147,13 +153,8 @@ async def _on_ready(
     if event.required_action:
         return await _on_required_action(deps, account, state)
     now = deps.clock()
-    async with deps.factory() as session, session.begin():
-        result = await accounts.record_status(
-            session, account.id, account.config_version, "online", None
-        )
-        if result == "updated":
-            await accounts.open_account_coverage(session, account.id, now)
-    if result != "updated":
+    # 覆盖段不在这里打开：紧接着的 FullSync 对齐之后才打开（spec 0006）。
+    if not await _write_status(deps, account.id, account.config_version, "online", None):
         return replace(state, done=True)
     log.info("collector.online", generation=event.generation)
     return replace(
@@ -171,12 +172,45 @@ async def _on_resumed(deps: Deps, account: AccountRow, state: SessionState) -> S
     if not await _write_status(deps, account.id, account.config_version, "online", None):
         return replace(state, done=True)
     log.info("collector.resumed")
-    return replace(
+    resumed = replace(
         state,
         status="online",
         stable_since=deps.clock(),
         loop=replace(state.loop, disconnected_at=None),
     )
+    await _align(deps, account, resumed)
+    return resumed
+
+
+async def _align(deps: Deps, account: AccountRow, state: SessionState) -> None:
+    """只在会话 online 时对齐；reconnecting 期间既不开也不关（AC-7）。"""
+    if state.status != "online":
+        return
+    async with deps.factory() as session, session.begin():
+        plan = await align_coverage(session, account.id, deps.clock())
+    if plan.to_open or plan.to_close:
+        log.info("collector.coverage_aligned", opened=len(plan.to_open), closed=len(plan.to_close))
+
+
+async def _on_full_sync(
+    deps: Deps, account: AccountRow, state: SessionState, event: FullSync
+) -> SessionState:
+    now = deps.clock()
+    present = frozenset(s.guild.id for s in event.states) | event.unavailable_ids
+    async with deps.factory() as session, session.begin():
+        # 先写同步时间：版本不符说明账号已经换了身份，这批快照不能再写。
+        if not await channel_sync.record_synced(session, account.id, account.config_version, now):
+            return replace(state, done=True)
+        for guild_state in event.states:
+            await channel_sync.apply_guild_state(session, account.id, guild_state, now)
+        await channel_sync.mark_missing_guilds_left(session, account.id, present, now)
+        if state.status == "online":
+            await align_coverage(session, account.id, now)
+        await channel_sync.notify_channels_changed(session)
+    log.info(
+        "collector.full_sync", guilds=len(event.states), unavailable=len(event.unavailable_ids)
+    )
+    return state
 
 
 async def _on_disconnected(
@@ -292,9 +326,16 @@ async def _on_heartbeat(deps: Deps, account: AccountRow, state: SessionState) ->
     try:
         async with deps.factory() as session, session.begin():
             await accounts.record_heartbeat(session, account.id, account.config_version)
+        # 顺带一次覆盖对齐，通知丢了也能在 30 秒内补上。
+        await _align(deps, account, state)
     except (SQLAlchemyError, OSError) as exc:
         # 单次失败只记日志；数据库真的断了时，由锁连接探测触发退出。
         log.warning("collector.heartbeat_failed", error_type=type(exc).__name__)
+    return state
+
+
+async def _on_channels_wake(deps: Deps, account: AccountRow, state: SessionState) -> SessionState:
+    await _align(deps, account, state)
     return state
 
 
@@ -327,8 +368,12 @@ async def handle_event(
             return await _on_identify(deps, account, state, event)
         case SessionEnded():
             return await _on_ended(deps, account, state, event)
+        case FullSync():
+            return await _on_full_sync(deps, account, state, event)
         case Wake():
             return await _on_wake(deps, account, state)
+        case ChannelsWake():
+            return await _on_channels_wake(deps, account, state)
         case HeartbeatDue():
             return await _on_heartbeat(deps, account, state)
 
@@ -338,6 +383,13 @@ async def _forward_wake(deps: Deps, queue: "asyncio.Queue[SupervisorEvent]") -> 
         await deps.wake.wait()
         deps.wake.clear()
         queue.put_nowait(Wake())
+
+
+async def _forward_channels_wake(deps: Deps, queue: "asyncio.Queue[SupervisorEvent]") -> None:
+    while True:
+        await deps.channels_wake.wait()
+        deps.channels_wake.clear()
+        queue.put_nowait(ChannelsWake())
 
 
 async def _tick_heartbeat(deps: Deps, queue: "asyncio.Queue[SupervisorEvent]") -> None:
@@ -362,6 +414,7 @@ async def run_session(
     tasks = (
         asyncio.create_task(client.run_session(token), name="discord-session"),
         asyncio.create_task(_forward_wake(deps, queue), name="session-wake"),
+        asyncio.create_task(_forward_channels_wake(deps, queue), name="session-channels-wake"),
         asyncio.create_task(_tick_heartbeat(deps, queue), name="session-heartbeat"),
     )
     try:

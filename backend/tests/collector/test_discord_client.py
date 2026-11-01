@@ -5,7 +5,9 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import MagicMock
 
 import discord
 import pytest
@@ -16,6 +18,7 @@ from harvester.collector.discord_client import (
     HarvesterClient,
     new_client,
     reconnect_failure,
+    snapshot_guild,
     to_failure,
 )
 from harvester.collector.events import (
@@ -29,6 +32,7 @@ from harvester.collector.events import (
     SupervisorEvent,
 )
 from harvester.collector.failures import ConnectionFailure
+from harvester.db.snapshots import AccessSnapshot
 
 
 class FakeSocket:
@@ -372,3 +376,64 @@ async def test_required_action_update_only_counts_when_set() -> None:  # covers:
     client.dispatch("required_action_update", "AGREEMENTS")
     assert queue.get_nowait() == RequiredAction(7)
     await client.close()
+
+
+def _permissions(*, view: bool, history: bool) -> discord.Permissions:
+    return discord.Permissions(view_channel=view, read_message_history=history)
+
+
+def _fake_channel(
+    cls: type, channel_id: int, type_value: int, perms: discord.Permissions | None = None
+) -> MagicMock:
+    channel = MagicMock(spec=cls)
+    channel.id = channel_id
+    channel.name = f"c{channel_id}"
+    channel.type = SimpleNamespace(value=type_value)
+    channel.category_id = None
+    channel.position = 1
+    channel.permissions_for.return_value = (
+        _permissions(view=True, history=True) if perms is None else perms
+    )
+    return channel
+
+
+def _fake_guild(channels: list[MagicMock], threads: list[MagicMock], me: object = "me") -> Any:
+    return SimpleNamespace(id=9, name="g", icon=None, channels=channels, threads=threads, me=me)
+
+
+@pytest.mark.parametrize(
+    ("view", "history", "expected"),
+    [(True, True, True), (True, False, False), (False, True, False), (False, False, False)],
+)
+def test_can_read_needs_both_permissions(view: bool, history: bool, expected: bool) -> None:
+    # covers: AC-3
+    channel = _fake_channel(discord.TextChannel, 1, 0, _permissions(view=view, history=history))
+
+    state = snapshot_guild(_fake_guild([channel], []))
+
+    assert state.access == (AccessSnapshot(1, expected),)
+
+
+def test_snapshot_writes_access_only_for_readable_types() -> None:  # covers: AC-1
+    category = _fake_channel(discord.CategoryChannel, 1, 4)
+    text = _fake_channel(discord.TextChannel, 2, 0)
+    forum = _fake_channel(discord.ForumChannel, 3, 15)
+    voice = _fake_channel(discord.VoiceChannel, 4, 2)
+    unknown = _fake_channel(discord.TextChannel, 5, 99)
+    thread = _fake_channel(discord.Thread, 6, 11)
+    thread.parent_id = 3
+
+    state = snapshot_guild(_fake_guild([category, text, forum, voice, unknown], [thread]))
+
+    assert [c.id for c in state.channels] == [1, 2, 3, 4, 6]
+    assert {a.channel_id for a in state.access} == {2, 3, 6}
+    snapshot = state.channels[-1]
+    assert (snapshot.parent_id, snapshot.position) == (3, None)
+
+
+def test_snapshot_without_me_has_no_access() -> None:  # covers: AC-3
+    state = snapshot_guild(_fake_guild([_fake_channel(discord.TextChannel, 1, 0)], [], me=None))
+
+    assert state.me_known is False
+    assert state.access == ()
+    assert len(state.channels) == 1

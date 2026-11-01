@@ -81,12 +81,17 @@ async def run() -> int:
         loop.add_signal_handler(sig, stop.set)
 
     wake = asyncio.Event()
+    channels_wake = asyncio.Event()
 
     # 复用锁连接：断开即退出。先 LISTEN 再第一次读账号，不会漏通知。
     def on_account_changed(_conn: object, _pid: int, _channel: str, _payload: object) -> None:
         wake.set()
 
+    def on_collect_changed(_conn: object, _pid: int, _channel: str, _payload: object) -> None:
+        channels_wake.set()
+
     await lock_conn.add_listener(raw.ACCOUNT_CHANGED_CHANNEL, on_account_changed)
+    await lock_conn.add_listener(raw.CHANNEL_COLLECT_CHANGED_CHANNEL, on_collect_changed)
 
     engine = get_engine()
     try:
@@ -103,6 +108,7 @@ async def run() -> int:
                     clock=_utc_now,
                     uniform=random.uniform,
                     wake=wake,
+                    channels_wake=channels_wake,
                 )
             ),
             name="supervisor",

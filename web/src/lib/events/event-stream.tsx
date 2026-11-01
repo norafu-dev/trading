@@ -6,6 +6,9 @@ import { createContext, type ReactNode, useContext, useEffect, useState } from "
 import { AUTH_STATE_KEY } from "@/lib/auth/use-auth-state";
 
 export const DISCORD_ACCOUNT_KEY = ["discord-account"] as const;
+export const GUILDS_KEY = ["discord-guilds"] as const;
+export const GUILD_CHANNELS_KEY = ["discord-guild-channels"] as const;
+export const COLLECTED_KEY = ["discord-collected"] as const;
 
 type Heartbeat = { server_time: string };
 
@@ -16,7 +19,8 @@ const EventStreamContext = createContext<EventStreamState>({
   lastHeartbeat: null,
 });
 
-// 整个 dashboard 共用一条 SSE 连接。账号状态变化和重新连上时都让账号查询失效（spec 0005）。
+// 整个 dashboard 共用一条 SSE 连接。账号状态变化和重新连上时都让账号查询失效（spec 0005）；
+// 频道数据变化和重新连上时，三个频道查询一起失效（spec 0006 AC-12）。
 export function EventStreamProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [state, setState] = useState<EventStreamState>({ connected: false, lastHeartbeat: null });
   const queryClient = useQueryClient();
@@ -24,10 +28,16 @@ export function EventStreamProvider({ children }: Readonly<{ children: ReactNode
   useEffect(() => {
     const refreshAccount = () =>
       void queryClient.invalidateQueries({ queryKey: DISCORD_ACCOUNT_KEY });
+    const refreshChannels = () => {
+      for (const queryKey of [GUILDS_KEY, GUILD_CHANNELS_KEY, COLLECTED_KEY]) {
+        void queryClient.invalidateQueries({ queryKey });
+      }
+    };
     const source = new EventSource("/api/events");
     source.onopen = () => {
       setState((current) => ({ ...current, connected: true }));
       refreshAccount();
+      refreshChannels();
     };
     source.onerror = () => {
       setState((current) => ({ ...current, connected: false }));
@@ -39,6 +49,7 @@ export function EventStreamProvider({ children }: Readonly<{ children: ReactNode
       setState((current) => ({ ...current, lastHeartbeat: beat.server_time }));
     });
     source.addEventListener("account_status", refreshAccount);
+    source.addEventListener("channels_changed", refreshChannels);
     return () => source.close();
   }, [queryClient]);
 

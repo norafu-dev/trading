@@ -41,6 +41,13 @@ LoginOutcome = Literal[
 # Must match the `ck_channel_collectable_type` constraint; a test keeps the two in sync.
 COLLECTABLE_CHANNEL_TYPES: tuple[int, ...] = (0, 5, 10, 11, 12)
 
+CATEGORY_CHANNEL_TYPE = 4
+# 公告线程 (10)、公开线程 (11)、私密线程 (12)：parent_id 指向父频道。
+THREAD_CHANNEL_TYPES: tuple[int, ...] = (10, 11, 12)
+# 文字 (0)、公告 (5)、论坛 (15)、媒体 (16)：和线程一样会算 can_read。线程的覆盖资格要看
+# 父频道的 can_read，所以论坛和媒体频道也要有访问行（spec 0006 实现时对设计的补充）。
+ACCESS_CHANNEL_TYPES: tuple[int, ...] = (0, 5, 15, 16, *THREAD_CHANNEL_TYPES)
+
 # Default (0) and reply (19); every other message type is skipped.
 STORED_MESSAGE_TYPES: tuple[int, ...] = (0, 19)
 
@@ -98,6 +105,23 @@ class ChannelSnapshot:
     type: int
     name: str
     position: int | None
+
+
+@dataclass(frozen=True)
+class AccessSnapshot:
+    channel_id: int
+    can_read: bool
+
+
+@dataclass(frozen=True)
+class GuildState:
+    """collector 从 discord.py-self 的缓存里取出的一个服务器的完整状态（spec 0006）。"""
+
+    guild: GuildSnapshot
+    channels: tuple[ChannelSnapshot, ...]
+    access: tuple[AccessSnapshot, ...]
+    # 缓存里找不到自己的成员信息时为假：这时 access 为空，应用端不能据此判断权限。
+    me_known: bool = True
 
 
 @dataclass(frozen=True)
