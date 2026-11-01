@@ -48,6 +48,7 @@
     {
       "includes": [
         "next.config.ts",
+        "vitest.config.mts",
         "postcss.config.mjs",
         "src/app/**/page.tsx",
         "src/app/**/page.dev.tsx",
