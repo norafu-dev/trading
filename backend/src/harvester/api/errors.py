@@ -1,7 +1,9 @@
 """统一错误格式：{"error": {"code", "message", "retry_after_seconds"?, "fields"?}}。"""
 
+import socket
 from typing import Any
 
+import asyncpg
 import structlog
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -10,6 +12,20 @@ from sqlalchemy.exc import InterfaceError, OperationalError
 from starlette.exceptions import HTTPException
 
 log = structlog.get_logger("harvester.api")
+
+# 连接阶段的错误 SQLAlchemy 不会包装，asyncpg 和系统网络错误会原样抛出。
+# 这里不写 OSError：文件之类的无关错误不能报成数据库不可用。
+_DATABASE_UNAVAILABLE_ERRORS: tuple[type[Exception], ...] = (
+    OperationalError,
+    InterfaceError,
+    asyncpg.PostgresConnectionError,
+    asyncpg.CannotConnectNowError,
+    asyncpg.TooManyConnectionsError,
+    asyncpg.InterfaceError,
+    ConnectionError,
+    TimeoutError,
+    socket.gaierror,
+)
 
 
 class ApiError(Exception):
@@ -86,9 +102,16 @@ async def _handle_database_unavailable(_request: Request, exc: Exception) -> JSO
     )
 
 
+async def _handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+    # 异常内容可能带密钥，只记类型。
+    log.error("api.unexpected_error", error_type=type(exc).__name__, path=request.url.path)
+    return error_response(status.HTTP_500_INTERNAL_SERVER_ERROR, "internal_error", "服务器内部错误")
+
+
 def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ApiError, _handle_api_error)
     app.add_exception_handler(RequestValidationError, _handle_validation_error)
     app.add_exception_handler(HTTPException, _handle_http_exception)
-    for db_error in (OperationalError, InterfaceError, OSError):
+    for db_error in _DATABASE_UNAVAILABLE_ERRORS:
         app.add_exception_handler(db_error, _handle_database_unavailable)
+    app.add_exception_handler(Exception, _handle_unexpected_error)
