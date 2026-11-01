@@ -24,10 +24,7 @@ export function useMarkdownParser(timeoutMs: number = TIMEOUT_MS): ParserStatus 
     const timer = window.setTimeout(() => settle("failed"), timeoutMs);
     initParser().then(
       () => settle("ready"),
-      (error: unknown) => {
-        if (!settled) console.error("Discord markdown 解析器加载失败，消息改用纯文本显示", error);
-        settle("failed");
-      },
+      () => settle("failed"),
     );
     return () => {
       settled = true;

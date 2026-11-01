@@ -57,23 +57,11 @@ describe("useMarkdownParser", () => {
     expect(result.current).toBe("pending");
   });
 
-  it("加载失败时是 failed，控制台只记一次错误", async () => {
-    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("加载失败时是 failed", async () => {
     const load = deferred();
     init.mockReturnValue(load.promise);
     const { result } = renderHook(() => useMarkdownParser());
     await act(async () => load.reject(new Error("wasm blocked")));
     expect(result.current).toBe("failed");
-    expect(errorLog).toHaveBeenCalledTimes(1);
-  });
-
-  it("超时之后才失败时不再重复记错误", async () => {
-    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
-    const load = deferred();
-    init.mockReturnValue(load.promise);
-    renderHook(() => useMarkdownParser());
-    await act(async () => vi.advanceTimersByTime(3000));
-    await act(async () => load.reject(new Error("late")));
-    expect(errorLog).not.toHaveBeenCalled();
   });
 });

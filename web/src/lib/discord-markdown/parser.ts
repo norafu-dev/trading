@@ -72,12 +72,13 @@ export type ParseResult =
   | Readonly<{ ok: false; error: unknown }>;
 
 // 对「模块级变量只能是常量」规则的有意例外（spec 0003）：缓存 WASM 初始化的 promise，
-// 保证整个页面只初始化一次。只在第一次调用时赋值（失败时清空以便重试）。
+// 保证整个页面只初始化一次。失败也缓存，不重试，所以错误只记一次，已降级的页面也不会
+// 再切换显示方式（AC-10）；刷新页面才会重新加载。
 let initPromise: Promise<void> | null = null;
 
 export function initParser(): Promise<void> {
   initPromise ??= init().catch((error: unknown) => {
-    initPromise = null;
+    console.error("Discord markdown 解析器加载失败，消息改用纯文本显示", error);
     throw error;
   });
   return initPromise;
