@@ -16,23 +16,23 @@ _步骤来自 spec 0005 的验收标准。`/check verify` 跑这些步骤，`/te
 - [ ] 小号：`kill -9` collector 超过 120 秒 → 叠加显示“采集进程无响应” → AC-15
 
 ## Commands
-- [ ] `cd backend && uv run pytest tests/collector tests/db/test_account.py tests/api/test_discord_account.py` → 全部通过 → AC-3, AC-5, AC-6, AC-7, AC-8, AC-9, AC-10, AC-11, AC-13, AC-16, AC-17
-- [ ] 手动在库里插入 10 行 24 小时内的 `discord_login_attempt`，再重启 collector → 变成 `login_paused`，不发任何请求，`retry_at` 等于最早一行加 24 小时 → AC-7
-- [ ] 把 `attempted_at` 改成 25 小时前 → 这些行不再计数，到点自动继续 → AC-7
-- [ ] 跑完整流程后 `grep` collector 和 api 日志 → 搜不到测试 token；`psql` 查 `token_ciphertext` → 没有原文 → AC-4
-- [ ] 用错误的 Origin 和没登录的请求访问每个 `/api/discord/account` 接口 → 分别被拒绝和返回 401 → AC-16
+- [x] `cd backend && uv run pytest tests/collector tests/db/test_account.py tests/api/test_discord_account.py` → 全部通过 → AC-3, AC-5, AC-6, AC-7, AC-8, AC-9, AC-10, AC-11, AC-13, AC-16, AC-17
+- [x] 手动在库里插入 10 行 24 小时内的 `discord_login_attempt`，再重启 collector → 变成 `login_paused`，不发任何请求，`retry_at` 等于最早一行加 24 小时 → AC-7
+- [x] 把 `attempted_at` 改成 25 小时前 → 这些行不再计数，到点自动继续 → AC-7
+- [x] 跑完整流程后 `grep` collector 和 api 日志 → 搜不到测试 token；`psql` 查 `token_ciphertext` → 没有原文 → AC-4
+- [x] 用错误的 Origin 和没登录的请求访问每个 `/api/discord/account` 接口 → 分别被拒绝和返回 401 → AC-16
 - [ ] 对运行中的 collector 发 SIGTERM → 10 秒内退出，账号状态不变，开放的覆盖段已关闭 → AC-17
-- [ ] 断开锁连接（`pg_terminate_backend`）→ 进程以退出码 4 结束，重启拿到锁后才登录 → AC-14
-- [ ] `uv run ruff check . && uv run pyright && pnpm lint && pnpm typecheck` → 通过；`grep -rl "import discord\|from discord" backend/src` → 只有 `collector/discord_client.py` → AC-18
+- [x] 断开锁连接（`pg_terminate_backend`）→ 进程以退出码 4 结束，重启拿到锁后才登录 → AC-14
+- [x] `uv run ruff check . && uv run pyright && pnpm lint && pnpm typecheck` → 通过；`grep -rl "import discord\|from discord" backend/src` → 只有 `collector/discord_client.py` → AC-18
 
 ## Value sourcing
-- [ ] 换一个 `TOKEN_ENCRYPTION_KEY` 重启 collector → `token_undecryptable`，不发请求（`token_ciphertext` 和 `crypto.decrypt` 的来源）
+- [x] 换一个 `TOKEN_ENCRYPTION_KEY` 重启 collector → `token_undecryptable`，不发请求（`token_ciphertext` 和 `crypto.decrypt` 的来源）
 - [ ] 把数据库时区和浏览器时区设成不同的值 → `retry_at` 和 `collector_stale` 都按数据库 `now()` 判断，界面按浏览器时区显示
 - [ ] 让 `client.user` 的用户名变化后重新登录 → `discord_username` 更新
 - [ ] 跑 `next_delay` 的上下限，以及 HTTP 429 带 `retry_after` 的情况 → 等待时间取两者较大值
 - [ ] 小号：断网超过 5 分钟，再恢复，会话仍有效 → 恢复后一般 30 秒内回到在线，最坏约 90 秒，不新增额度行 → AC-5
 - [ ] 小号：断网久到 RESUME 被拒，再恢复 → RESUME 被拒后最多等 30 秒就发出全新登录，额度多 1 行，状态回到在线，覆盖段按断线时间关闭 → AC-5, AC-6, AC-7
-- [ ] 把 `last_heartbeat_at` 改成 121 秒前和 `NULL` → `collector_stale` 分别为真和假
+- [x] 把 `last_heartbeat_at` 改成 121 秒前和 `NULL` → `collector_stale` 分别为真和假
 - [ ] 改备注名 → `config_version` 不变，会话不断；换 token → 加 1，会话重连
 
 ## Acceptance-criteria coverage

@@ -19,7 +19,7 @@ _这些都是让构建保持有序的建议，不是硬性要求。不合适的�
 | 4   | Dashboard 界面基础   | Foundation | done        |
 | 5   | Dashboard 访问保护   | Slice 1    | done        |
 | 6   | Discord 账号连接     | Slice 1    | done |
-| 7   | 频道管理             | Slice 1    | planned     |
+| 7   | 频道管理             | Slice 1    | in-progress |
 | 8   | 实时消息流           | Slice 1    | planned     |
 | 9   | 部署与常驻运行       | Slice 1    | planned     |
 | 10  | 按时间段采集历史消息 | Slice 2    | planned     |
@@ -110,12 +110,20 @@ spec [0005](../specs/0005-discord-account-connection/index.md) · code in `backe
 - [x] Verify it: `/check verify Discord 账号连接`
 - [x] Test it: `/test Discord 账号连接`
 
-### 7. 频道管理
+### 7. 频道管理 · in-progress
 
 列出账号所在的服务器和频道，勾选开关决定采集哪些。
 **Done when:** dashboard 按服务器分组显示频道；勾选或取消后几秒内生效，无需重启；看不到或无权限的频道有清楚标识。
+spec [0006](../specs/0006-channel-management/index.md) · code in `backend/src/harvester/collector/`, `backend/src/harvester/db/channel_sync.py`, `backend/src/harvester/db/channels.py`, `backend/src/harvester/db/coverage_plan.py`, `backend/src/harvester/api/channel_routes.py`, `web/src/components/channels/`
 
+- [x] Design it (spec): `/architect 频道管理`
 - [ ] Build it: `/develop 频道管理`
+  - [x] 打通细线：迁移，`FullSync` 同步和权限计算，覆盖对齐，列表和开关接口，最小的管理页，AC-1, AC-3, AC-5 到 AC-7
+  - [ ] 增量同步：频道、线程、服务器和权限事件，合并窗口，线程依赖父频道，权限丢失和恢复联动，AC-2, AC-8
+  - [ ] 管理页加粗：频道树、搜索、无权限显示、分类批量、SSE 和轮询、乐观更新、窄屏，AC-4, AC-5, AC-9 到 AC-12, AC-14, AC-16
+  - [ ] 侧栏接真实数据和设置页入口，AC-13
+  - [ ] 测试和收口：鉴权、OpenAPI 同步、各项检查，AC-15, AC-17
+- [ ] Verify it: `/check verify 频道管理`
 
 ### 8. 实时消息流
 
