@@ -17,6 +17,12 @@ from harvester.db import raw
 
 log = structlog.get_logger("harvester.api.notifications")
 
+# 每个通道对应的 SSE 事件名，放进载荷的 type 字段。
+_EVENT_TYPES = {
+    raw.NEW_MESSAGE_CHANNEL: "new_message",
+    raw.ACCOUNT_CHANGED_CHANNEL: "account_status",
+}
+
 RECONNECT_MIN = 1.0
 RECONNECT_MAX = 30.0
 SUBSCRIBER_QUEUE_SIZE = 256
@@ -47,12 +53,12 @@ class Broadcaster:
 async def _listen_until_closed(broadcaster: Broadcaster) -> None:
     """Open one LISTEN connection and return once PostgreSQL closes it."""
 
-    def on_notify(_conn: object, _pid: int, _channel: str, payload: object) -> None:
+    def on_notify(_conn: object, _pid: int, channel: str, payload: object) -> None:
         if not isinstance(payload, str):
             log.warning("notifications.bad_payload")
             return
         try:
-            broadcaster.publish(json.loads(payload))
+            broadcaster.publish({"type": _EVENT_TYPES[channel], **json.loads(payload)})
         except json.JSONDecodeError:
             log.warning("notifications.bad_payload")
 
@@ -60,8 +66,9 @@ async def _listen_until_closed(broadcaster: Broadcaster) -> None:
     try:
         closed = asyncio.Event()
         conn.add_termination_listener(lambda _c: closed.set())
-        await conn.add_listener(raw.NEW_MESSAGE_CHANNEL, on_notify)
-        log.info("notifications.listening", channel=raw.NEW_MESSAGE_CHANNEL)
+        for channel in _EVENT_TYPES:
+            await conn.add_listener(channel, on_notify)
+        log.info("notifications.listening", channels=list(_EVENT_TYPES))
         await closed.wait()
     finally:
         if not conn.is_closed():

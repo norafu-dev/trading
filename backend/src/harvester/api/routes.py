@@ -15,6 +15,7 @@ from harvester.api.deps import (
     protected_router,
     session_still_valid,
 )
+from harvester.api.discord_routes import discord_router
 from harvester.api.notifications import Broadcaster
 from harvester.db import SessionDep, SessionFactoryDep
 
@@ -22,6 +23,7 @@ from harvester.db import SessionDep, SessionFactoryDep
 HEARTBEAT_INTERVAL = 20.0
 
 router = protected_router
+router.include_router(discord_router)
 
 
 def get_broadcaster(request: Request) -> Broadcaster:
@@ -58,7 +60,7 @@ async def events(
     factory: SessionFactoryDep,
     clock: ClockDep,
 ) -> AsyncIterable[ServerSentEvent]:
-    """Demo stream: a heartbeat every 20 s plus any new_message notifications."""
+    """A heartbeat every 20 s plus new_message and account_status notifications."""
     loop = asyncio.get_running_loop()
     async with broadcaster.subscribe() as queue:
         yield ServerSentEvent(data=Heartbeat(server_time=clock()), event="heartbeat")
@@ -78,6 +80,11 @@ async def events(
             try:
                 payload = await asyncio.wait_for(queue.get(), timeout=remaining)
             except TimeoutError:
+                continue
+            if payload.get("type") == "account_status":
+                # 事件本身不带状态，前端收到后重新取数。data 不能省：没有 data 的 SSE 事件
+                # 浏览器不会派发。
+                yield ServerSentEvent(data={}, event="account_status")
                 continue
             message_id = payload.get("message_id")
             yield ServerSentEvent(

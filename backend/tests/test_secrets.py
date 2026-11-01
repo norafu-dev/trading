@@ -51,6 +51,13 @@ def test_no_api_schema_exposes_a_token_field() -> None:  # covers: AC-9
         ApiSettings(site_origin="http://localhost:8080", session_cookie_secure=False),
         CryptoSettings(token_encryption_key=SecretStr(f"1:{base64.b64encode(bytes(32)).decode()}")),
     )
-    names = property_names(app.openapi())
+    schema = app.openapi()
+    # 只有这两个请求体可以有 token 字段：token 只写不读（spec 0005）。
+    write_only = {"AccountCreate", "TokenUpdate"}
+    components = schema["components"]["schemas"]
+    assert write_only <= set(components)
+    names = property_names(
+        {**schema, "components": {k: v for k, v in components.items() if k not in write_only}}
+    )
 
     assert not {n for n in names if "token" in n.lower()}

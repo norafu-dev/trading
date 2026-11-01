@@ -220,6 +220,232 @@
         }
       }
     },
+    "/api/discord/account": {
+      "get": {
+        "tags": [
+          "discord"
+        ],
+        "summary": "Get Discord Account",
+        "operationId": "get_discord_account_api_discord_account_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "discord"
+        ],
+        "summary": "Add Discord Account",
+        "operationId": "add_discord_account_api_discord_account_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordAccountOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/account/label": {
+      "put": {
+        "tags": [
+          "discord"
+        ],
+        "summary": "Update Discord Label",
+        "operationId": "update_discord_label_api_discord_account_label_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordAccountOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/account/token": {
+      "put": {
+        "tags": [
+          "discord"
+        ],
+        "summary": "Replace Discord Token",
+        "operationId": "replace_discord_token_api_discord_account_token_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordAccountOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/account/disable": {
+      "post": {
+        "tags": [
+          "discord"
+        ],
+        "summary": "Disable Discord Account",
+        "operationId": "disable_discord_account_api_discord_account_disable_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordAccountOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/account/enable": {
+      "post": {
+        "tags": [
+          "discord"
+        ],
+        "summary": "Enable Discord Account",
+        "operationId": "enable_discord_account_api_discord_account_enable_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordAccountOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/account/reconnect": {
+      "post": {
+        "tags": [
+          "discord"
+        ],
+        "summary": "Reconnect Discord Account",
+        "operationId": "reconnect_discord_account_api_discord_account_reconnect_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordAccountOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/account/switch-identity": {
+      "post": {
+        "tags": [
+          "discord"
+        ],
+        "summary": "Switch Discord Identity",
+        "operationId": "switch_discord_identity_api_discord_account_switch_identity_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordAccountOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -247,7 +473,7 @@
           "system"
         ],
         "summary": "Events",
-        "description": "Demo stream: a heartbeat every 20 s plus any new_message notifications.",
+        "description": "A heartbeat every 20 s plus new_message and account_status notifications.",
         "operationId": "events_api_events_get",
         "responses": {
           "200": {
@@ -281,6 +507,47 @@
   },
   "components": {
     "schemas": {
+      "AccountCreate": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "token": {
+            "type": "string",
+            "format": "password",
+            "title": "Token",
+            "writeOnly": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "token"
+        ],
+        "title": "AccountCreate"
+      },
+      "AccountEnvelope": {
+        "properties": {
+          "account": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiscordAccountOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "account"
+        ],
+        "title": "AccountEnvelope"
+      },
       "AuthState": {
         "properties": {
           "state": {
@@ -298,6 +565,113 @@
           "state"
         ],
         "title": "AuthState"
+      },
+      "DiscordAccountOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "discord_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discord User Id"
+          },
+          "discord_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discord Username"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "connecting",
+              "online",
+              "reconnecting",
+              "token_invalid",
+              "banned",
+              "disabled",
+              "verification_required",
+              "login_paused",
+              "account_mismatch"
+            ],
+            "title": "Status"
+          },
+          "status_changed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Status Changed At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_heartbeat_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Heartbeat At"
+          },
+          "retry_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry At"
+          },
+          "collector_stale": {
+            "type": "boolean",
+            "title": "Collector Stale"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "discord_user_id",
+          "discord_username",
+          "status",
+          "status_changed_at",
+          "last_error",
+          "last_heartbeat_at",
+          "retry_at",
+          "collector_stale"
+        ],
+        "title": "DiscordAccountOut"
       },
       "HTTPValidationError": {
         "properties": {
@@ -349,6 +723,21 @@
           "database"
         ],
         "title": "Health"
+      },
+      "LabelUpdate": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "title": "LabelUpdate"
       },
       "Liveness": {
         "properties": {
@@ -491,6 +880,21 @@
           "totp_code"
         ],
         "title": "SetupCompleteBody"
+      },
+      "TokenUpdate": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "format": "password",
+            "title": "Token",
+            "writeOnly": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "title": "TokenUpdate"
       },
       "ValidationError": {
         "properties": {
