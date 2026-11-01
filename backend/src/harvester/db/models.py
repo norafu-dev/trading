@@ -21,7 +21,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, TSTZRANGE, Range
+from sqlalchemy.dialects.postgresql import INET, JSONB, TSTZRANGE, Range
 from sqlalchemy.orm import Mapped, mapped_column
 
 from harvester.db.base import Base
@@ -35,6 +35,7 @@ from harvester.db.snapshots import (
     EmbedData,
     ForwardedData,
     GuildStatus,
+    LoginOutcome,
     MessageSource,
     UserKind,
 )
@@ -227,3 +228,57 @@ class ChannelCoverage(Base):
             postgresql_where=text("source = 'realtime' AND upper_inf(span)"),
         ),
     )
+
+
+# Feature 5 tables (spec 0004).
+class DashboardCredential(Base):
+    __tablename__ = "dashboard_credential"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, autoincrement=False)
+    password_hash: Mapped[str]
+    totp_secret_enc: Mapped[bytes] = mapped_column(LargeBinary)
+    totp_last_step: Mapped[int | None]
+    created_at: Mapped[datetime] = _now()
+    updated_at: Mapped[datetime] = _now()
+
+    __table_args__ = (CheckConstraint("id = 1", name="single_row"),)
+
+
+class DashboardSession(Base):
+    __tablename__ = "dashboard_session"
+
+    token_hash: Mapped[bytes] = mapped_column(LargeBinary, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
+    last_seen_at: Mapped[datetime] = _now()
+    ip: Mapped[str] = mapped_column(INET)
+    user_agent: Mapped[str | None]
+
+    __table_args__ = (CheckConstraint("octet_length(token_hash) = 32", name="token_hash_length"),)
+
+
+class LoginEvent(Base):
+    __tablename__ = "login_event"
+
+    id: Mapped[int] = mapped_column(Identity(always=True), primary_key=True)
+    occurred_at: Mapped[datetime] = _now()
+    ip: Mapped[str | None] = mapped_column(INET)
+    user_agent: Mapped[str | None]
+    outcome: Mapped[LoginOutcome] = mapped_column(Text)
+
+    __table_args__ = (
+        CheckConstraint(_in("outcome", get_args(LoginOutcome)), name="outcome"),
+        Index("ix_login_event_ip_occurred_at", "ip", text("occurred_at DESC")),
+        Index("ix_login_event_occurred_at", text("occurred_at DESC")),
+    )
+
+
+class DashboardSetupCode(Base):
+    __tablename__ = "dashboard_setup_code"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, autoincrement=False)
+    code_hash: Mapped[bytes] = mapped_column(LargeBinary)
+    pending_totp_secret_enc: Mapped[bytes | None] = mapped_column(LargeBinary)
+    expires_at: Mapped[datetime]
+    created_at: Mapped[datetime] = _now()
+
+    __table_args__ = (CheckConstraint("id = 1", name="single_row"),)

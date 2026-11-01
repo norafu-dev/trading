@@ -6,9 +6,18 @@
 }
 
 :8080 {
+	# 不让别的网站把 dashboard 嵌进框里（点击劫持）；登录相关响应不进任何缓存。
+	header Content-Security-Policy "frame-ancestors 'none'"
+	header /api/auth/* Cache-Control no-store
+
 	handle /api/* {
+		request_body {
+			max_size 64KB
+		}
 		reverse_proxy host.docker.internal:8000 {
 			flush_interval -1
+			# 只传真实客户端 IP，覆盖请求自带的值；api 的按 IP 限速依赖它。
+			header_up X-Forwarded-For {remote_host}
 		}
 	}
 

@@ -1,7 +1,7 @@
 # 0004. Dashboard 访问保护
 
 **Date**: 2026-10-31
-**Status**: Proposed
+**Status**: In Progress
 
 ## Summary
 

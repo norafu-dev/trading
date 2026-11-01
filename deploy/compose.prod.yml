@@ -11,7 +11,9 @@ x-backend: &backend
   image: ${IMAGE_PREFIX:?set in .env}-backend:${IMAGE_TAG:?set by deploy.sh}
   environment:
     DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-    TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
+    TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?set in .env}
+    TOKEN_ENCRYPTION_OLD_KEYS: ${TOKEN_ENCRYPTION_OLD_KEYS:-}
+    SITE_ORIGIN: https://${SITE_DOMAIN:?set in .env}
     LOG_LEVEL: ${LOG_LEVEL:-INFO}
   logging: *logging
 

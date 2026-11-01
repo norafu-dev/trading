@@ -5,6 +5,221 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/livez": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Livez",
+        "description": "只回答 ok，不查库，给外部监控用。",
+        "operationId": "livez_api_livez_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Liveness"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/state": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Auth State",
+        "operationId": "auth_state_api_auth_state_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthState"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Login",
+        "operationId": "login_api_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/setup/begin": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Setup Begin",
+        "operationId": "setup_begin_api_auth_setup_begin_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupBeginBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupBeginResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/setup/complete": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Setup Complete",
+        "operationId": "setup_complete_api_auth_setup_complete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupCompleteBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Logout",
+        "operationId": "logout_api_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        }
+      }
+    },
+    "/api/auth/login-events": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Login Events",
+        "operationId": "login_events_api_auth_login_events_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LoginEventOut"
+                  },
+                  "title": "Response Login Events Api Auth Login Events Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -66,6 +281,37 @@
   },
   "components": {
     "schemas": {
+      "AuthState": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "setup_required",
+              "unauthenticated",
+              "authenticated"
+            ],
+            "title": "State"
+          }
+        },
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "AuthState"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
       "Health": {
         "properties": {
           "status": {
@@ -103,6 +349,188 @@
           "database"
         ],
         "title": "Health"
+      },
+      "Liveness": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "Liveness"
+      },
+      "LoginBody": {
+        "properties": {
+          "password": {
+            "type": "string",
+            "title": "Password"
+          },
+          "totp_code": {
+            "type": "string",
+            "maxLength": 32,
+            "title": "Totp Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "password",
+          "totp_code"
+        ],
+        "title": "LoginBody"
+      },
+      "LoginEventOut": {
+        "properties": {
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Occurred At"
+          },
+          "ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ip"
+          },
+          "user_agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Agent"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "success",
+              "bad_credentials",
+              "rate_limited",
+              "setup_bad_code",
+              "setup_completed",
+              "logout",
+              "reset"
+            ],
+            "title": "Outcome"
+          }
+        },
+        "type": "object",
+        "required": [
+          "occurred_at",
+          "ip",
+          "user_agent",
+          "outcome"
+        ],
+        "title": "LoginEventOut"
+      },
+      "SetupBeginBody": {
+        "properties": {
+          "setup_code": {
+            "type": "string",
+            "maxLength": 256,
+            "title": "Setup Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "setup_code"
+        ],
+        "title": "SetupBeginBody"
+      },
+      "SetupBeginResult": {
+        "properties": {
+          "otpauth_uri": {
+            "type": "string",
+            "title": "Otpauth Uri"
+          },
+          "secret": {
+            "type": "string",
+            "title": "Secret"
+          }
+        },
+        "type": "object",
+        "required": [
+          "otpauth_uri",
+          "secret"
+        ],
+        "title": "SetupBeginResult"
+      },
+      "SetupCompleteBody": {
+        "properties": {
+          "setup_code": {
+            "type": "string",
+            "maxLength": 256,
+            "title": "Setup Code"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
+          },
+          "totp_code": {
+            "type": "string",
+            "pattern": "^[0-9]{6}$",
+            "title": "Totp Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "setup_code",
+          "password",
+          "totp_code"
+        ],
+        "title": "SetupCompleteBody"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
       }
     }
   }

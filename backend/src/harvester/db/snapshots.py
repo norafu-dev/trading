@@ -19,6 +19,15 @@ UserKind = Literal["user", "bot", "webhook"]
 MessageSource = Literal["realtime", "history"]
 DeleteSource = Literal["realtime", "reconciled"]
 CoverageSource = Literal["realtime", "history"]
+LoginOutcome = Literal[
+    "success",
+    "bad_credentials",
+    "rate_limited",
+    "setup_bad_code",
+    "setup_completed",
+    "logout",
+    "reset",
+]
 
 # Text (0), announcement (5), announcement thread (10), public thread (11), private thread (12).
 # Must match the `ck_channel_collectable_type` constraint; a test keeps the two in sync.

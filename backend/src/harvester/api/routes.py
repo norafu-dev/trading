@@ -1,20 +1,27 @@
 import asyncio
 from collections.abc import AsyncIterable
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import Depends, Request, Response, status
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+from harvester.api.deps import (
+    ClockDep,
+    CurrentSessionDep,
+    protected_router,
+    session_still_valid,
+)
 from harvester.api.notifications import Broadcaster
-from harvester.db import SessionDep
+from harvester.db import SessionDep, SessionFactoryDep
 
+# 不管有没有事件，都按这个间隔发心跳并重新检查会话（AC-14）。
 HEARTBEAT_INTERVAL = 20.0
 
-router = APIRouter(prefix="/api")
+router = protected_router
 
 
 def get_broadcaster(request: Request) -> Broadcaster:
@@ -45,17 +52,32 @@ async def health(session: SessionDep, response: Response) -> Health:
 
 
 @router.get("/events", response_class=EventSourceResponse, tags=["system"])
-async def events(broadcaster: BroadcasterDep) -> AsyncIterable[ServerSentEvent]:
+async def events(
+    broadcaster: BroadcasterDep,
+    current: CurrentSessionDep,
+    factory: SessionFactoryDep,
+    clock: ClockDep,
+) -> AsyncIterable[ServerSentEvent]:
     """Demo stream: a heartbeat every 20 s plus any new_message notifications."""
+    loop = asyncio.get_running_loop()
     async with broadcaster.subscribe() as queue:
-        yield ServerSentEvent(data=Heartbeat(server_time=datetime.now(UTC)), event="heartbeat")
+        yield ServerSentEvent(data=Heartbeat(server_time=clock()), event="heartbeat")
+        next_check = loop.time() + HEARTBEAT_INTERVAL
         while True:
+            remaining = next_check - loop.time()
+            if remaining <= 0:
+                try:
+                    still_valid = await session_still_valid(factory, current.token_hash, clock)
+                except (SQLAlchemyError, OSError):
+                    still_valid = False
+                if not still_valid:
+                    return
+                yield ServerSentEvent(data=Heartbeat(server_time=clock()), event="heartbeat")
+                next_check = loop.time() + HEARTBEAT_INTERVAL
+                continue
             try:
-                payload = await asyncio.wait_for(queue.get(), timeout=HEARTBEAT_INTERVAL)
+                payload = await asyncio.wait_for(queue.get(), timeout=remaining)
             except TimeoutError:
-                yield ServerSentEvent(
-                    data=Heartbeat(server_time=datetime.now(UTC)), event="heartbeat"
-                )
                 continue
             message_id = payload.get("message_id")
             yield ServerSentEvent(

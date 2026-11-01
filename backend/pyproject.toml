@@ -5,10 +5,13 @@ description = "Discord channel collector: collector and api processes sharing on
 requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.20.1",
+    "argon2-cffi>=25.1.0",
     "asyncpg>=0.32.0",
+    "cryptography>=50.0.2",
     "discord-py-self>=2.1.0",
     "fastapi[standard]>=0.162.0",
     "pydantic-settings>=2.16.2",
+    "pyotp>=2.10.0",
     "sqlalchemy[asyncio]>=2.1.6",
     "structlog>=26.1.0",
 ]
@@ -26,15 +29,14 @@ dev = [
     "ruff>=0.17.3",
 ]
 
-[tool.fastapi]
-entrypoint = "harvester.api.main:app"
-
 [tool.ruff]
 line-length = 100
 target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "ASYNC", "RUF"]
+# 注释和界面文案是简体中文（AGENTS.md），全角标点不是"易混淆字符"。
+ignore = ["RUF001", "RUF002", "RUF003"]
 
 [tool.pyright]
 include = ["src", "migrations"]
