@@ -31,6 +31,7 @@ Reasoning and options: see [rationale.md](rationale.md).
 | API 框架 | FastAPI（自带 SSE） | 原生 async，和 selfbot 的 asyncio 一致；`fastapi.sse.EventSourceResponse` 直接做实时推送，不需要额外库 |
 | 前端 | Next.js（App Router，`output: 'export'` 静态导出）+ React + TypeScript | 你指定的框架；静态导出后不需要常驻 Node 进程，私人 dashboard 也不需要服务端渲染 |
 | 前端数据层 | TanStack Query + `openapi-fetch`，类型由 `openapi-typescript` 从 FastAPI 的 OpenAPI 生成 | 后端改字段，前端编译时就报错；缓存、加载、重试交给 TanStack Query |
+| 前端界面 | Tailwind CSS v4 + shadcn/ui（底层 Base UI）；长消息列表用 TanStack Virtual | 由 [spec 0003](../0003-dashboard-ui-foundation/index.md) 决定，细节和理由都在那里；组件代码生成在仓库里可以直接改，虚拟滚动撑得住几万条消息 |
 | 实时推送 | collector 写入后 `NOTIFY` → api `LISTEN` → SSE → 浏览器 | 秒级延迟，不加 Redis；SSE 自带断线重连 |
 | 主数据库 | PostgreSQL 18 + `pgvector` 扩展（镜像 `pgvector/pgvector:pg18`；构建时确认标签存在，不存在就用 `pg17`） | 多进程并发写、下单所需的事务、AI 向量检索、进程间通知，一个库全包 |
 | 数据访问 | SQLAlchemy 2.x（async）+ `asyncpg` 驱动 + Alembic 迁移 | 最成熟的组合；collector 和 api 共用一套模型；pgvector 有官方 SQLAlchemy 支持 |

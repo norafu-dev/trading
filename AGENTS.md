@@ -5,7 +5,7 @@
 ## Stack
 
 - **后端**：Python 3.13（`uv`），FastAPI（SSE），SQLAlchemy 2.x async + `asyncpg` + Alembic，`discord.py-self`，`pydantic-settings`，`structlog`
-- **前端**：Next.js 16（App Router，`output: 'export'` 静态导出），React 19，TypeScript，TanStack Query + `openapi-fetch`（类型由 `openapi-typescript` 从 `backend/openapi.json` 生成），`pnpm`
+- **前端**：Next.js 16（App Router，`output: 'export'` 静态导出），React 19，TypeScript，TanStack Query + `openapi-fetch`（类型由 `openapi-typescript` 从 `backend/openapi.json` 生成），Tailwind CSS v4 + shadcn/ui（Base UI）+ TanStack Virtual，`pnpm`
 - **数据库**：PostgreSQL 18 + `pgvector`；进程间用 `LISTEN/NOTIFY` 和任务表（`FOR UPDATE SKIP LOCKED`）
 - **运行与发布**：Docker Compose + Caddy（HTTPS，同源），AWS Lightsail 单机；GitHub Actions 推镜像到 GHCR，`deploy/deploy.sh` 按改动路径只更新受影响的服务
 - 完整架构、不变量和发布规则见 [spec 0001](docs/specs/0001-stack-and-architecture/index.md)
@@ -56,8 +56,8 @@ uv run python -m harvester.api.export_openapi && cd ../web && pnpm gen:api   # �
 - **后端**：`ruff` 做 lint 和格式化，规则集 `E, F, I, B, UP, SIM, ASYNC, RUF`；`pyright` 设为 `strict`。
 - **前端**：Biome 做 lint 和格式化（不用 ESLint 和 Prettier）。
 - **提交前**：`pre-commit` 框架，对改动的文件跑 ruff 和 Biome，再跑 pyright 和 `tsc --noEmit`。
-- **测试**：单元加集成测试。后端 pytest，集成测试连真实 PostgreSQL；前端 Vitest。新功能带测试（框架由 `/test` 装）。
-- **CI**：在现有检查之外补上 `biome check`、`pnpm typecheck`、pytest 和 Vitest。
+- **测试**：单元加集成测试。后端 pytest，集成测试连真实 PostgreSQL；前端 Vitest。新功能带测试。
+- **CI**：跑 ruff、pyright、pytest、OpenAPI 类型同步检查、`pnpm lint`（Biome）、`pnpm typecheck`、Vitest、`pnpm build` 和 Docker 镜像构建。
 
 ## Git
 
@@ -73,6 +73,11 @@ uv run python -m harvester.api.export_openapi && cd ../web && pnpm gen:api   # �
 - [postgresql-table-design](.claude/skills/postgresql-table-design/)：`wshobson/agents`，表结构、索引和约束设计
 - [shadcn](.claude/skills/shadcn/)：`shadcn-ui/ui`，shadcn/ui 组件的添加、组合和样式
 - [tailwind-4-docs](.claude/skills/tailwind-4-docs/)：`lombiq/tailwind-agent-skills`，Tailwind CSS v4 的文档和用法
+- [vitest](.claude/skills/vitest/)：`antfu/skills`，Vitest 的写法、mock 和覆盖率
+- [python-testing-patterns](.claude/skills/python-testing-patterns/)：`wshobson/agents`，pytest 的 fixture、mock 和测试模式
+- [security-review](.claude/skills/security-review/)：`getsentry/skills`，安全审查，适合认证、加密和 token 相关的代码
+
+Declined: `tanstack-skills/tanstack-skills@tanstack-virtual`
 
 Declined: Lightsail 部署 skill (`aws/agent-toolkit-for-aws`)，其他未核实的社区 skill，全部 MCP 服务器（GitHub、Next.js DevTools、Postgres）
 
