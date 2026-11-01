@@ -132,7 +132,7 @@ Compose 服务和启动顺序：`postgres`（`pg_isready` 健康检查）→ `mi
 
 - 镜像推到 GHCR 并设为私有，标签是 git sha，同时打 `latest`。服务器用一个只有 `read:packages` 权限的 PAT 执行一次 `docker login ghcr.io`。
 - compose 用 `${IMAGE_TAG}` 引用镜像；回滚就是 `IMAGE_TAG=<旧 sha> ./deploy/deploy.sh`。
-- 每次发布都更新 `caddy` 和 `api`。**只有改动碰到 `backend/src/harvester/collector/`、`backend/src/harvester/db/`、`backend/migrations/` 或后端依赖（`pyproject.toml`、`uv.lock`）时，才更新 `collector`**。CI 根据路径算出要更新哪些服务，传给 `deploy.sh`，脚本执行 `docker compose up -d <这些服务>`。有新迁移时，先跑 `migrate`。
+- 每次发布都更新 `caddy` 和 `api`。**只有改动碰到 `backend/src/harvester/collector/`、`backend/src/harvester/db/`、collector 也用的 `config.py`、`crypto.py`、`logging.py`、`backend/migrations/` 或后端依赖（`pyproject.toml`、`uv.lock`）时，才更新 `collector`**。CI 根据路径算出要更新哪些服务，传给 `deploy.sh`，脚本执行 `docker compose up -d <这些服务>`。有新迁移时，先跑 `migrate`。
 
 ### 我替你定下的细节
 

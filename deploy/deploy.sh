@@ -4,7 +4,7 @@
 #   IMAGE_TAG=<git sha> ./deploy.sh [service ...]
 #
 # Services default to "caddy api". Add "collector" only when collector code, db models,
-# migrations or backend dependencies changed (CI works this out), so the Discord
+# shared config, crypto or logging, migrations or backend dependencies changed (CI works this out), so the Discord
 # session is not restarted for dashboard only releases. "migrate" runs migrations first.
 # Rollback: IMAGE_TAG=<old sha> ./deploy.sh caddy api collector
 set -euo pipefail

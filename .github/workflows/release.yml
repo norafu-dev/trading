@@ -31,7 +31,7 @@ jobs:
             services="migrate caddy api collector"
           else
             changed=$(git diff --name-only "$BEFORE" "$GITHUB_SHA")
-            if grep -qE '^backend/(src/harvester/(collector|db)/|migrations/|pyproject\.toml$|uv\.lock$)' <<<"$changed"; then
+            if grep -qE '^backend/(src/harvester/(collector|db)/|src/harvester/(config|crypto|logging)\.py$|migrations/|pyproject\.toml$|uv\.lock$)' <<<"$changed"; then
               services="$services collector"
             fi
             if grep -q '^backend/migrations/' <<<"$changed"; then
