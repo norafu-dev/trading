@@ -297,6 +297,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/discord/categories/{category_id}/collect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Category Collect */
+        put: operations["set_category_collect_api_discord_categories__category_id__collect_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/collected": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Collected */
+        get: operations["list_collected_api_discord_collected_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -360,6 +394,13 @@ export interface components {
              */
             state: "setup_required" | "unauthenticated" | "authenticated";
         };
+        /** CategoryCollectOut */
+        CategoryCollectOut: {
+            /** Changed */
+            changed: number;
+            /** Skipped No Access */
+            skipped_no_access: number;
+        };
         /** ChannelOut */
         ChannelOut: {
             /** Id */
@@ -396,6 +437,13 @@ export interface components {
             /** Enabled */
             enabled: boolean;
         };
+        /** CollectedOut */
+        CollectedOut: {
+            /** Guilds */
+            guilds: components["schemas"]["GuildBriefOut"][];
+            /** Channels */
+            channels: components["schemas"]["ChannelOut"][];
+        };
         /** DiscordAccountOut */
         DiscordAccountOut: {
             /** Id */
@@ -424,6 +472,15 @@ export interface components {
             retry_at: string | null;
             /** Collector Stale */
             collector_stale: boolean;
+        };
+        /** GuildBriefOut */
+        GuildBriefOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Icon Hash */
+            icon_hash: string | null;
         };
         /** GuildOut */
         GuildOut: {
@@ -1021,6 +1078,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_category_collect_api_discord_categories__category_id__collect_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                category_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CollectBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryCollectOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_collected_api_discord_collected_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CollectedOut"];
                 };
             };
         };

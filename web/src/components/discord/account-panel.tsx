@@ -1,6 +1,7 @@
 "use client";
 
 import { PlugIcon } from "lucide-react";
+import Link from "next/link";
 import { type FormEvent, useId, useMemo, useState } from "react";
 
 import { FormField } from "@/components/auth/auth-card";
@@ -266,7 +267,12 @@ export function AccountPanel() {
         ) : account.data === null ? (
           <AddAccountForm />
         ) : (
-          <AccountCard account={account.data} />
+          <>
+            <AccountCard account={account.data} />
+            <Link href="/settings/channels" className="self-start text-link underline">
+              管理采集频道
+            </Link>
+          </>
         )}
       </div>
     </div>

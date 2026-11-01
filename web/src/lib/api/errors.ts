@@ -66,6 +66,12 @@ const REJECTED_BY_CODE: Readonly<Record<string, Pick<UiError, "title" | "detail"
     title: "token 的格式不对",
     detail: "请粘贴账号 token 本身，不要带空格，也不要带 Bot 前缀。",
   },
+  channel_not_collectable: { title: "不能采集", detail: "这种类型的频道不能采集。" },
+  channel_no_access: { title: "没有权限", detail: "小号读不了这个频道。" },
+  channel_unavailable: { title: "频道不可用", detail: "频道已删除，或者已经退出这个服务器。" },
+  channel_not_found: { title: "频道不存在", detail: "刷新页面看看最新的频道列表。" },
+  category_not_found: { title: "分类不存在", detail: "刷新页面看看最新的频道列表。" },
+  not_a_category: { title: "不是分类", detail: "刷新页面看看最新的频道列表。" },
   bad_origin: { title: "请求被拒绝", detail: "请求来源不被允许，请从 dashboard 的网址打开。" },
 };
 

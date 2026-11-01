@@ -33,7 +33,7 @@ export type ChannelGroup = Readonly<{
 type Sortable = Readonly<{ position: number | null; name: string; id: string }>;
 
 // 按 position 升序，没有 position 的排最后，再按名字。
-function compareChannels(a: Sortable, b: Sortable): number {
+export function compareChannels(a: Sortable, b: Sortable): number {
   if (a.position !== b.position) {
     if (a.position === null) return 1;
     if (b.position === null) return -1;

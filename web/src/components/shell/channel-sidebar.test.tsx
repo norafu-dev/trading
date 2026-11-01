@@ -88,6 +88,11 @@ describe("ChannelSidebar", () => {
   it("没有开启采集的频道时显示空状态", () => {
     renderSidebar({ groups: [] });
     expect(screen.getByText("还没有开启采集的频道")).toBeInTheDocument();
+    // covers: spec 0006 AC-13
+    expect(screen.getByRole("link", { name: "管理采集频道" })).toHaveAttribute(
+      "href",
+      "/settings/channels",
+    );
   });
 
   it("显示服务器名，没有时显示 Harvester", () => {

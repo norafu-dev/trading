@@ -12,6 +12,7 @@ import {
 import Link from "next/link";
 
 import { EmptyState } from "@/components/states/empty-state";
+import { buttonVariants } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -25,7 +26,7 @@ type ChannelSidebarProps = Readonly<{
   onNavigate?: () => void;
 }>;
 
-function iconFor(type: number): LucideIcon {
+export function iconFor(type: number): LucideIcon {
   if (type === 5) return MegaphoneIcon;
   if (type === 10 || type === 11 || type === 12 || type === 15 || type === 16) {
     return MessagesSquareIcon;
@@ -105,6 +106,15 @@ export function ChannelSidebar({
           icon={RadioTowerIcon}
           title="还没有开启采集的频道"
           description="打开频道的采集开关后，它会出现在这里。"
+          action={
+            <Link
+              href="/settings/channels"
+              onClick={onNavigate}
+              className={buttonVariants({ variant: "secondary" })}
+            >
+              管理采集频道
+            </Link>
+          }
           className="px-4"
         />
       ) : (

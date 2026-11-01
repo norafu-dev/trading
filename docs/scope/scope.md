@@ -117,12 +117,12 @@ spec [0005](../specs/0005-discord-account-connection/index.md) · code in `backe
 spec [0006](../specs/0006-channel-management/index.md) · code in `backend/src/harvester/collector/`, `backend/src/harvester/db/channel_sync.py`, `backend/src/harvester/db/channels.py`, `backend/src/harvester/db/coverage_plan.py`, `backend/src/harvester/api/channel_routes.py`, `web/src/components/channels/`
 
 - [x] Design it (spec): `/architect 频道管理`
-- [ ] Build it: `/develop 频道管理`
+- [x] Build it: `/develop 频道管理`
   - [x] 打通细线：迁移，`FullSync` 同步和权限计算，覆盖对齐，列表和开关接口，最小的管理页，AC-1, AC-3, AC-5 到 AC-7
   - [x] 增量同步：频道、线程、服务器和权限事件，合并窗口，线程依赖父频道，权限丢失和恢复联动，AC-2, AC-8
-  - [ ] 管理页加粗：频道树、搜索、无权限显示、分类批量、SSE 和轮询、乐观更新、窄屏，AC-4, AC-5, AC-9 到 AC-12, AC-14, AC-16
-  - [ ] 侧栏接真实数据和设置页入口，AC-13
-  - [ ] 测试和收口：鉴权、OpenAPI 同步、各项检查，AC-15, AC-17
+  - [x] 管理页加粗：频道树、搜索、无权限显示、分类批量、SSE 和轮询、乐观更新、窄屏，AC-4, AC-5, AC-9 到 AC-12, AC-14, AC-16
+  - [x] 侧栏接真实数据和设置页入口，AC-13
+  - [x] 测试和收口：鉴权、OpenAPI 同步、各项检查，AC-15, AC-17
 - [ ] Verify it: `/check verify 频道管理`
 
 ### 8. 实时消息流

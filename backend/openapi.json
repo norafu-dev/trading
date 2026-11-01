@@ -563,6 +563,80 @@
         }
       }
     },
+    "/api/discord/categories/{category_id}/collect": {
+      "put": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "Set Category Collect",
+        "operationId": "set_category_collect_api_discord_categories__category_id__collect_put",
+        "parameters": [
+          {
+            "name": "category_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Category Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryCollectOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/collected": {
+      "get": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "List Collected",
+        "operationId": "list_collected_api_discord_collected_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectedOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -683,6 +757,24 @@
         ],
         "title": "AuthState"
       },
+      "CategoryCollectOut": {
+        "properties": {
+          "changed": {
+            "type": "integer",
+            "title": "Changed"
+          },
+          "skipped_no_access": {
+            "type": "integer",
+            "title": "Skipped No Access"
+          }
+        },
+        "type": "object",
+        "required": [
+          "changed",
+          "skipped_no_access"
+        ],
+        "title": "CategoryCollectOut"
+      },
       "ChannelOut": {
         "properties": {
           "id": {
@@ -788,6 +880,30 @@
           "enabled"
         ],
         "title": "CollectBody"
+      },
+      "CollectedOut": {
+        "properties": {
+          "guilds": {
+            "items": {
+              "$ref": "#/components/schemas/GuildBriefOut"
+            },
+            "type": "array",
+            "title": "Guilds"
+          },
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/ChannelOut"
+            },
+            "type": "array",
+            "title": "Channels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "guilds",
+          "channels"
+        ],
+        "title": "CollectedOut"
       },
       "DiscordAccountOut": {
         "properties": {
@@ -895,6 +1011,36 @@
           "collector_stale"
         ],
         "title": "DiscordAccountOut"
+      },
+      "GuildBriefOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "icon_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "icon_hash"
+        ],
+        "title": "GuildBriefOut"
       },
       "GuildOut": {
         "properties": {

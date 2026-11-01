@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from harvester.db import channel_sync
 from tests.api.conftest import FakeClock, complete_setup, do_login, make_client
-from tests.db.builders import CHANNEL, GUILD, at, make_account
+from tests.db.builders import CATEGORY, CHANNEL, GUILD, at, make_account
 from tests.db.test_channel_sync import STATE, VOICE
 
 Factory = async_sessionmaker[AsyncSession]
@@ -17,6 +17,8 @@ ROUTES = (
     ("GET", "/api/discord/guilds"),
     ("GET", f"/api/discord/guilds/{GUILD.id}/channels"),
     ("PUT", f"/api/discord/channels/{CHANNEL.id}/collect"),
+    ("PUT", f"/api/discord/categories/{CATEGORY.id}/collect"),
+    ("GET", "/api/discord/collected"),
 )
 
 
@@ -96,3 +98,28 @@ async def test_error_codes(logged_in: httpx.AsyncClient, factory: Factory) -> No
     assert (voice.status_code, voice.json()["error"]["code"]) == (409, "channel_not_collectable")
     assert (missing.status_code, missing.json()["error"]["code"]) == (404, "channel_not_found")
     assert invalid.status_code == 422
+
+
+async def test_category_collect_and_collected(
+    logged_in: httpx.AsyncClient, factory: Factory
+) -> None:  # AC-9, AC-13
+    await seed(factory)
+
+    bulk = await logged_in.put(ROUTES[3][1], json={"enabled": True})
+    collected = (await logged_in.get("/api/discord/collected")).json()
+
+    assert bulk.json() == {"changed": 1, "skipped_no_access": 0}
+    assert collected["guilds"] == [{"id": "100", "name": "Signals", "icon_hash": "abc"}]
+    assert {c["id"] for c in collected["channels"]} == {str(CHANNEL.id), str(CATEGORY.id)}
+
+
+async def test_category_error_codes(logged_in: httpx.AsyncClient, factory: Factory) -> None:  # AC-9
+    await seed(factory)
+
+    missing = await logged_in.put("/api/discord/categories/1/collect", json={"enabled": True})
+    wrong = await logged_in.put(
+        f"/api/discord/categories/{CHANNEL.id}/collect", json={"enabled": True}
+    )
+
+    assert (missing.status_code, missing.json()["error"]["code"]) == (404, "category_not_found")
+    assert (wrong.status_code, wrong.json()["error"]["code"]) == (409, "not_a_category")

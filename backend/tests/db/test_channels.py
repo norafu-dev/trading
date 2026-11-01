@@ -8,10 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from harvester.db import account as accounts
 from harvester.db import channel_sync, channels, raw
-from harvester.db.channels import ChannelRow
+from harvester.db.channels import CategoryCollectResult, ChannelRow
 from harvester.db.ingest import upsert_channel, upsert_guild
 from harvester.db.models import AccountChannelAccess, Channel, DiscordAccount, Guild
-from harvester.db.snapshots import ChannelSnapshot
+from harvester.db.snapshots import AccessSnapshot, ChannelSnapshot
 from tests.db.builders import CATEGORY, CHANNEL, GUILD, at, make_account, seed_channel
 from tests.db.test_channel_sync import POST, STATE, THREAD, VOICE
 
@@ -221,3 +221,100 @@ async def test_channel_without_access_row_reads_as_no_access(session: AsyncSessi
 
     assert not isinstance(rows, str)
     assert not {c.id: c for c in rows}[CHANNEL.id].can_read
+
+
+BLOCKED = ChannelSnapshot(id=207, guild_id=100, parent_id=200, type=0, name="blocked", position=4)
+ENABLED = ChannelSnapshot(id=208, guild_id=100, parent_id=200, type=5, name="news", position=5)
+
+
+async def seeded_category(session: AsyncSession) -> int:
+    account_id = await make_account(session)
+    state = replace(
+        STATE,
+        channels=(*STATE.channels, BLOCKED, ENABLED),
+        access=(
+            *STATE.access,
+            AccessSnapshot(BLOCKED.id, False),
+            AccessSnapshot(ENABLED.id, True),
+        ),
+    )
+    await channel_sync.apply_guild_state(session, account_id, state, at(0))
+    await channel_sync.record_synced(session, account_id, 1, at(0))
+    await channels.set_collect(session, ENABLED.id, True)
+    return account_id
+
+
+async def enabled_ids(session: AsyncSession) -> set[int]:
+    rows = await session.scalars(
+        select(Channel.id).where(Channel.collect_enabled).execution_options(populate_existing=True)
+    )
+    return set(rows)
+
+
+async def test_category_enable_skips_unreadable_voice_and_threads(session: AsyncSession) -> None:
+    # AC-9：语音不可采集，论坛不可采集，线程不是直接子频道，已开启的不计数。
+    await seeded_category(session)
+
+    result = await channels.set_category_collect(session, CATEGORY.id, True)
+
+    assert result == CategoryCollectResult(changed=1, skipped_no_access=1)
+    assert await enabled_ids(session) == {CHANNEL.id, ENABLED.id}
+
+
+async def test_category_disable_counts_only_real_changes(session: AsyncSession) -> None:  # AC-9
+    await seeded_category(session)
+    await channels.set_collect(session, THREAD.id, True)
+
+    result = await channels.set_category_collect(session, CATEGORY.id, False)
+
+    assert result == CategoryCollectResult(changed=1, skipped_no_access=0)
+    assert await enabled_ids(session) == {THREAD.id}
+
+
+async def test_category_errors(session: AsyncSession) -> None:  # AC-9
+    await seed_channel(session)
+    assert await channels.set_category_collect(session, 999, True) == "category_not_found"
+    assert await channels.set_category_collect(session, CHANNEL.id, True) == "not_a_category"
+    assert await channels.set_category_collect(session, CATEGORY.id, True) == "account_not_found"
+    disabled = await channels.set_category_collect(session, CATEGORY.id, False)
+    assert disabled == CategoryCollectResult(changed=0, skipped_no_access=0)
+
+
+async def test_category_in_left_guild_skips_everything_on_enable(session: AsyncSession) -> None:
+    # AC-9
+    await seeded_category(session)
+    await session.execute(update(Guild).values(status="left"))
+
+    on = await channels.set_category_collect(session, CATEGORY.id, True)
+    off = await channels.set_category_collect(session, CATEGORY.id, False)
+
+    assert on == CategoryCollectResult(changed=0, skipped_no_access=3)
+    assert off == CategoryCollectResult(changed=1, skipped_no_access=0)
+
+
+async def test_category_never_synced_allows_channels_without_rows(session: AsyncSession) -> None:
+    # AC-14
+    await seed_channel(session)
+    await make_account(session)
+
+    result = await channels.set_category_collect(session, CATEGORY.id, True)
+
+    assert result == CategoryCollectResult(changed=1, skipped_no_access=0)
+
+
+async def test_collected_includes_ancestors_and_guilds(session: AsyncSession) -> None:  # AC-13
+    await seeded(session)
+    await channels.set_collect(session, THREAD.id, True)
+
+    guilds, rows = await channels.list_collected(session)
+
+    assert [g.id for g in guilds] == [GUILD.id]
+    # 线程、它的父频道和父频道所在的分类。
+    assert {c.id for c in rows} == {THREAD.id, CHANNEL.id, CATEGORY.id}
+    assert {c.id for c in rows if c.collect_enabled} == {THREAD.id}
+
+
+async def test_collected_is_empty_without_enabled_channels(session: AsyncSession) -> None:  # AC-13
+    await seeded(session)
+
+    assert await channels.list_collected(session) == ((), ())

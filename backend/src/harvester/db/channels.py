@@ -33,6 +33,22 @@ CollectError = Literal[
 ]
 
 
+CategoryCollectError = Literal["category_not_found", "not_a_category", "account_not_found"]
+
+
+@dataclass(frozen=True)
+class CategoryCollectResult:
+    changed: int
+    skipped_no_access: int
+
+
+@dataclass(frozen=True)
+class GuildBrief:
+    id: int
+    name: str
+    icon_hash: str | None
+
+
 @dataclass(frozen=True)
 class GuildRow:
     id: int
@@ -198,3 +214,94 @@ async def set_collect(
     await notify_collect_changed(session)
     await notify_channels_changed(session)
     return await _get_channel_row(session, channel_id)
+
+
+async def set_category_collect(
+    session: AsyncSession, category_id: int, enabled: bool
+) -> CategoryCollectResult | CategoryCollectError:
+    """一次开关分类的直接子频道（不含线程）。一个事务，只在值真的变化时才计数和通知。"""
+    category = await session.scalar(select(Channel).where(Channel.id == category_id))
+    if category is None:
+        return "category_not_found"
+    if category.type != CATEGORY_CHANNEL_TYPE:
+        return "not_a_category"
+    account = await accounts.get_account(session)
+    if enabled and account is None:
+        return "account_not_found"
+    children = (
+        await session.scalars(
+            select(Channel)
+            .where(
+                Channel.parent_id == category_id,
+                Channel.type.in_(COLLECTABLE_CHANNEL_TYPES),
+                Channel.status == "active",
+            )
+            .with_for_update()
+        )
+    ).all()
+    if not enabled:
+        changed = [c.id for c in children if c.collect_enabled]
+        skipped = 0
+        values: dict[str, object] = {"collect_enabled": False, "updated_at": func.now()}
+    else:
+        assert account is not None
+        guild_status = await session.scalar(
+            select(Guild.status).where(Guild.id == category.guild_id)
+        )
+        if guild_status != "active":
+            return CategoryCollectResult(changed=0, skipped_no_access=len(children))
+        readable = await _readable_ids(session, account.id, [c.id for c in children])
+        pending = [c.id for c in children if not c.collect_enabled]
+        changed = [channel_id for channel_id in pending if channel_id in readable]
+        skipped = len(pending) - len(changed)
+        values = {
+            "collect_enabled": True,
+            "collector_account_id": account.id,
+            "updated_at": func.now(),
+        }
+    if changed:
+        await session.execute(update(Channel).where(Channel.id.in_(changed)).values(**values))
+        await notify_collect_changed(session)
+        await notify_channels_changed(session)
+    return CategoryCollectResult(changed=len(changed), skipped_no_access=skipped)
+
+
+async def _readable_ids(
+    session: AsyncSession, account_id: int, channel_ids: list[int]
+) -> frozenset[int]:
+    """规则和单个开关相同：有访问行看 can_read；没有访问行时，只有从未同步才放行。"""
+    rows = await session.execute(
+        select(AccountChannelAccess.channel_id, AccountChannelAccess.can_read).where(
+            AccountChannelAccess.account_id == account_id,
+            AccountChannelAccess.channel_id.in_(channel_ids),
+        )
+    )
+    access = {channel_id: can_read for channel_id, can_read in rows}
+    never_synced = await get_synced_at(session) is None
+    return frozenset(c for c in channel_ids if access.get(c, never_synced))
+
+
+async def list_collected(
+    session: AsyncSession,
+) -> tuple[tuple[GuildBrief, ...], tuple[ChannelRow, ...]]:
+    """已开启的频道，加上侧栏分组要用的分类和父频道（线程的父频道还可能有分类）。"""
+    found: dict[int, ChannelRow] = {}
+    rows = await session.execute(
+        _channel_select().where(Channel.collect_enabled, Channel.status != "deleted")
+    )
+    current = [_to_channel_row(r) for r in rows]
+    while current:
+        found |= {c.id: c for c in current}
+        parent_ids = {c.parent_id for c in current if c.parent_id is not None} - found.keys()
+        if not parent_ids:
+            break
+        rows = await session.execute(_channel_select().where(Channel.id.in_(parent_ids)))
+        current = [_to_channel_row(r) for r in rows]
+    guild_ids = {c.guild_id for c in found.values() if c.collect_enabled}
+    guilds = await session.execute(
+        select(Guild.id, Guild.name, Guild.icon_hash).where(Guild.id.in_(guild_ids))
+    )
+    return (
+        tuple(GuildBrief(g.id, g.name, g.icon_hash) for g in guilds),
+        tuple(found.values()),
+    )

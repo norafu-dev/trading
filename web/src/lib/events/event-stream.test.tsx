@@ -54,6 +54,19 @@ describe("EventStreamProvider", () => {
   beforeEach(() => vi.stubGlobal("EventSource", FakeEventSource));
   afterEach(() => vi.unstubAllGlobals());
 
+  // covers: spec 0006 AC-12
+  it("channels_changed 事件让三个频道查询失效", () => {
+    const { invalidate, source } = setup();
+
+    act(() => source.emit("channels_changed", "{}"));
+
+    expect(invalidate.mock.calls.map((call) => call[0]?.queryKey)).toEqual([
+      ["discord-guilds"],
+      ["discord-guild-channels"],
+      ["discord-collected"],
+    ]);
+  });
+
   // covers: AC-15
   it("account_status 事件让账号查询失效", () => {
     const { invalidate, source } = setup();

@@ -48,3 +48,38 @@ export function useSetCollect() {
     },
   });
 }
+
+// 分类批量不做乐观更新：哪些频道会被跳过要由服务器决定，结果用 toast 说明（AC-9）。
+export function useSetCategoryCollect() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      categoryId,
+      enabled,
+    }: Readonly<{ categoryId: string; enabled: boolean }>) => {
+      const { data, error, response } = await api.PUT(
+        "/api/discord/categories/{category_id}/collect",
+        { params: { path: { category_id: categoryId } }, body: { enabled } },
+      );
+      if (!data) throw toApiError(response.status, error);
+      return data;
+    },
+    onSuccess: ({ changed, skipped_no_access: skipped }, { enabled }) => {
+      const action = enabled ? "开启" : "关闭";
+      toast.success(
+        skipped > 0
+          ? `已${action} ${changed} 个频道，跳过 ${skipped} 个无权限频道`
+          : `已${action} ${changed} 个频道`,
+      );
+    },
+    onError: (error) => {
+      const { title, detail } = toUiError(error);
+      toast.error(title, { description: detail });
+    },
+    onSettled: () => {
+      for (const queryKey of [GUILDS_KEY, GUILD_CHANNELS_KEY, COLLECTED_KEY]) {
+        void queryClient.invalidateQueries({ queryKey });
+      }
+    },
+  });
+}
