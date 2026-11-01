@@ -1,0 +1,60 @@
+# 0005. Discord 账号连接：决策记录
+
+## Context
+
+> ⚠️ Premise note: selfbot 违反 Discord 服务条款，再怎么限速也不能消除封号风险。scope 里“像正常人一样”的要求，这里只落实为少发请求、遵守限制和遇到验证就停下；伪装客户端指纹、自动解验证码这类规避检测的做法不在设计范围内。因此真正要设计的问题是：出了事不要变得更糟，并且能换号恢复。
+
+collector 是唯一持有 Discord 会话的进程，要 24 小时运行，api 只能通过 PostgreSQL 和它协作（spec 0001）。token 是这个系统最敏感的数据（spec 0002、0004）。
+
+`discord.py-self` 2.1.0 的源码带来这些限制：
+
+- 登录时 401 统一抛 `LoginFailure`，分不清 token 失效和被封。
+- `Client.connect` 内部有自己的循环：退避最大约 17 分钟且没有参数可改；断网和多数 close code 都变成 `ReconnectWebSocket`，并立即重连。
+- `before_identify_hook` 在 IDENTIFY 发送前执行，`login` 只是一次 REST 请求，完成后就能拿到用户身份。
+- 关闭后的 client 不能安全重用；事件处理器是并发任务，异常会被吞掉。
+- 不设置 `captcha_handler` 时抛 `CaptchaRequired`。
+
+最需要避免的失败是反复登录。进程崩溃循环、错误分类不当或误操作，都可能在封号风险最高的时刻继续发请求。
+
+## Options considered
+
+### Option 1: 单会话监督循环，边界覆盖 `connect`
+
+Client 子类用 `before_identify_hook` 做额度关卡，覆盖 `connect` 只掌管等待和 RESUME 判定。
+
+- **Pros**：退避和额度都精确生效；断网不消耗额度，RESUME 成功时也不产生覆盖空洞。
+- **Cons**：依赖库的内部接口，要锁定版本。
+
+### Option 2: 使用库自带的循环，只加额度关卡
+
+用 `before_identify_hook` 做额度关卡，不覆盖 `connect`。
+
+- **Pros**：代码最少，升级最省心。
+- **Cons**：退避最长可能约 17 分钟，并且断网和多数 close code 都立即重连，完全不等待。
+
+### Option 3: 关闭库的重连，每次全新登录
+
+`reconnect=False`，外层循环重新 `start`。
+
+- **Pros**：完全不碰内部接口。
+- **Cons**：每次断线都是一次全新登录，10 次额度很快用完，还会反复关闭覆盖段，产生更多要补采的空洞。
+
+## Rationale
+
+选 Option 1，因为额度用公开的 hook 就能管住，但你选的退避和“不立即连续重连”只有覆盖 `connect` 才能做到，同时断网时还要保留 RESUME。内部接口的风险可控：只有一个文件、大约 50 行，版本已锁定，有测试。
+
+**你在对话中做出的决定**：单账号、隐身、401 统一记为 `token_invalid`、验证时新增状态并停止、5 秒到 5 分钟退避、每 24 小时 10 次且不能绕过、频道同步放到第 7 项、NOTIFY 加 30 秒轮询、token 先保存再由 collector 连接、不要求二次 TOTP、数据库断开就退出、30 秒心跳和 120 秒告警、显式确认换身份。
+
+**我替你定的细节**：
+
+- **`config_version` 乐观并发**：防止 collector 用旧状态盖掉你的操作。备选是把 desired 和 observed 拆成两列，那样要改更多模型，而现在只需收敛到最新状态。
+- **一个 NOTIFY 通道同时服务 collector 和 SSE**：collector 靠比较版本忽略自己发的通知。备选是两个通道，没有实际好处。
+- **保留固定的 advisory lock key**：spec 0001、0002 原本计划按账号区分，但 collector 启动时可能还没有账号，而且这一版只有一个会话，固定 key 已能保证“最多一个 collector”。备选是等账号出现后再拿锁，这会在启动时留下一段没有锁的窗口。
+- **把 `discord` logger 固定在 `WARNING`**：这个库走标准 logging，绕过了 structlog 的过滤。备选是写一个 logging 过滤器，但不如不产生这些日志可靠。
+- **`((true))` 唯一索引**：用数据库保证单账号。备选是只在应用层检查，挡不住并发。
+- **事件队列加会话代号**：让所有写库按序执行，旧会话的迟到事件被丢弃，写库失败也不会被库吞掉。备选是在处理器里直接写库，这会出现乱序，版本号也拦不住。
+- **`required_action` 非空时断开**：宁可停下等你处理，也不带着未完成的验证继续挂着。备选是只记日志。
+- **`sync_presence=False`**：每次登录不去改账号设置。备选是默认值，它每次全新登录都可能写一次设置。
+- **`collector_stale` 在服务端用数据库时间计算**：不依赖浏览器时钟。备选是前端计算。
+
+10 次额度是你选的保守值，不是 Discord 公布的限制。一天发布很多次时可能触发暂停；这个代价已写入 Consequences，需要时改常量即可。
