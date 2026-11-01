@@ -16,7 +16,7 @@ _这些都是让构建保持有序的建议，不是硬性要求。不合适的�
 | 1   | 技术栈与架构         | Foundation | done        |
 | 2   | 编码规范与工具       | Foundation | done        |
 | 3   | 数据模型             | Foundation | done        |
-| 4   | Dashboard 界面基础   | Foundation | in-progress |
+| 4   | Dashboard 界面基础   | Foundation | done        |
 | 5   | Dashboard 访问保护   | Slice 1    | done        |
 | 6   | Discord 账号连接     | Slice 1    | in-progress |
 | 7   | 频道管理             | Slice 1    | planned     |
@@ -68,7 +68,7 @@ dashboard 的视觉风格、布局和基础组件，让频道列表、消息流�
 spec [0003](../specs/0003-dashboard-ui-foundation/index.md) · code in `web/src/components/`, `web/src/lib/`, `web/DESIGN.md`
 
 - [x] Design it (spec): `/architect Dashboard 界面基础`
-- [ ] Build it: `/develop Dashboard 界面基础`
+- [x] Build it: `/develop Dashboard 界面基础`
   - [x] 打通细线：Tailwind v4、shadcn、两套 token、空外壳、`/dev/preview` 开关和生产构建排除，并验证 WASM markdown 解析器，AC-1, AC-9, AC-10, AC-15
   - [x] 纯函数、shadcn 组件和外壳（图标栏、频道列表、窄屏抽屉），AC-2, AC-3, AC-5, AC-6, AC-7, AC-12, AC-13
   - [x] 虚拟消息列表和假数据：贴底、回到最新、加载更早不跳动，AC-4, AC-5, AC-7, AC-8, AC-15

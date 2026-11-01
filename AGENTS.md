@@ -24,6 +24,11 @@ uv run python -m harvester.collector                   # collector
 cd web && pnpm install && pnpm dev                     # 前端，:3000
 uv run ruff check . && uv run ruff format --check . && uv run pyright   # 后端检查
 pnpm typecheck && pnpm build                           # 前端检查和构建
+uv run pytest                                          # 后端测试（连真实 PostgreSQL）
+pnpm lint && pnpm test && pnpm check:contrast          # 前端 Biome、Vitest、设计 token 对比度检查
+uv run python -m harvester.crypto genkey               # 生成 TOKEN_ENCRYPTION_KEY
+uv run python -m harvester.api.setup_code              # 第一次打开 dashboard 前生成设置码
+uv run python -m harvester.api.auth_reset              # 重置 dashboard 登录凭据和所有会话
 uv run python -m harvester.api.export_openapi && cd ../web && pnpm gen:api   # 改接口后同步前端类型
 ```
 
@@ -66,6 +71,8 @@ uv run python -m harvester.api.export_openapi && cd ../web && pnpm gen:api   # �
 - [vercel-react-best-practices](.claude/skills/vercel-react-best-practices/)：`vercel-labs/agent-skills`，React 和 Next.js 的性能惯例
 - [tanstack-query](.claude/skills/tanstack-query/)：`tanstack-skills/tanstack-skills`，前端取数、缓存和 SSE 之外的服务端状态
 - [postgresql-table-design](.claude/skills/postgresql-table-design/)：`wshobson/agents`，表结构、索引和约束设计
+- [shadcn](.claude/skills/shadcn/)：`shadcn-ui/ui`，shadcn/ui 组件的添加、组合和样式
+- [tailwind-4-docs](.claude/skills/tailwind-4-docs/)：`lombiq/tailwind-agent-skills`，Tailwind CSS v4 的文档和用法
 
 Declined: Lightsail 部署 skill (`aws/agent-toolkit-for-aws`)，其他未核实的社区 skill，全部 MCP 服务器（GitHub、Next.js DevTools、Postgres）
 
