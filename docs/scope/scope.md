@@ -21,7 +21,7 @@ _这些都是让构建保持有序的建议，不是硬性要求。不合适的�
 | 6   | Discord 账号连接     | Slice 1    | done |
 | 7   | 频道管理             | Slice 1    | in-progress |
 | 8   | 实时消息流           | Slice 1    | in-progress |
-| 9   | 部署与常驻运行       | Slice 1    | planned     |
+| 9   | 部署与常驻运行       | Slice 1    | in-progress |
 | 10  | 按时间段采集历史消息 | Slice 2    | planned     |
 | 11  | 编辑与删除留痕       | Slice 3    | planned     |
 | 12  | 附件与图片保存       | Slice 4    | planned     |
@@ -141,12 +141,20 @@ spec [0008](../specs/0008-realtime-message-stream/index.md) · code in `backend/
   - [x] 测试和收口：鉴权、OpenAPI 同步、各项检查，AC-24
 - [ ] Verify it: `/check verify 实时消息流`
 
-### 9. 部署与常驻运行 · needs a decision
+### 9. 部署与常驻运行 · in-progress
 
 部署到云服务器，进程崩溃或服务器重启后自动恢复，并能看到它是否还活着。
 **Done when:** 服务器重启后采集自动恢复；dashboard 能看到采集进程最近一次心跳时间；有备份数据的办法；上线后跑完 spec [0004 的 verify.md](../specs/0004-dashboard-access-protection/verify.md) 里没勾的 4 个线上步骤。
+spec [0009](../specs/0009-deploy-and-keep-running/index.md) · code in `deploy/`, `backend/src/harvester/db/system.py`, `backend/src/harvester/api/system_routes.py`, `web/src/components/system/`
 
-- [ ] Design it (spec): `/architect 部署与常驻运行`
+- [x] Design it (spec): `/architect 部署与常驻运行`
+- [ ] Build it: `/develop 部署与常驻运行`
+  - [x] 打通心跳细线：两张表的迁移、collector 进程心跳、`collector_stale` 取或、`/api/system/status`、首页和设置页显示，AC-3, AC-4, AC-16
+  - [ ] 上线服务器：`bootstrap.sh`、systemd 模板、`restore.sh`、`deploy.sh` 加锁、Release 手动入口，按手册迁移并第一次发布，AC-1, AC-2, AC-10 到 AC-13
+  - [ ] 备份：`backup.sh`、R2 和 `backup.env`、首页「备份」行和图标栏红点，AC-5 到 AC-8
+  - [ ] 恢复演练和收尾：Mac 上演练恢复、手册补全、spec 0004 的 4 个线上步骤，AC-9, AC-13 到 AC-15
+  - [x] 测试：`harvester.db.system` 和接口的集成测试、前端渲染测试、脚本语法检查，AC-3, AC-4, AC-6, AC-7, AC-16
+- [ ] Verify it: `/check verify 部署与常驻运行`
 
 ### 16. 睡眠登录保护和日志文件 · Beta · in-progress
 
