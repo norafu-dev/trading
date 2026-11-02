@@ -10,7 +10,9 @@ import pytest
 from sqlalchemy import func, insert, select, text, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from structlog.testing import CapturingLogger
 
+from harvester.collector import supervisor
 from harvester.collector.events import (
     ChannelRemoved,
     Disconnected,
@@ -1104,3 +1106,93 @@ async def test_every_incremental_write_updates_sync_time(harness: Harness) -> No
             return await db.scalar(select(DiscordAccount.channels_synced_at)) == expected
 
     await harness.wait_until(updated)
+
+
+@pytest.fixture
+def captured(monkeypatch: pytest.MonkeyPatch) -> CapturingLogger:
+    # 不用 capture_logs：别的测试调过 configure_logging 后，模块级 logger 可能已缓存旧配置。
+    logger = CapturingLogger()
+    monkeypatch.setattr(supervisor, "log", logger)
+    return logger
+
+
+def _logged(logger: CapturingLogger, event: str) -> list[dict[str, object]]:
+    return [c.kwargs for c in logger.calls if c.args == (event,)]
+
+
+@pytest.mark.parametrize(
+    ("resume_rejected", "disconnected_at", "reason"),
+    [
+        (True, at(0), "resume_rejected"),
+        (True, None, "resume_rejected"),
+        (False, at(0), "after_disconnect"),
+        (False, None, "initial"),
+    ],
+)
+async def test_identify_reservation_logs_its_reason(  # covers: AC-11
+    harness: Harness,
+    captured: CapturingLogger,
+    resume_rejected: bool,
+    disconnected_at: datetime | None,
+    reason: str,
+) -> None:
+    row = await add_account(harness)
+    # 代号 2：断线之后新建的 client，断线时间是跨会话留下来的。
+    state = SessionState(LoopState(generation=2, disconnected_at=disconnected_at), "reconnecting")
+    reply: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+
+    await handle_event(harness.deps, row, state, IdentifyRequested(2, reply, resume_rejected))
+
+    assert reply.result() is True
+    assert _logged(captured, "collector.identify_reserved") == [{"reason": reason}]
+
+
+async def test_exhausted_identify_logs_retry_at_and_keeps_coverage_rule(  # covers: AC-6, AC-11
+    harness: Harness, captured: CapturingLogger
+) -> None:
+    await add_account(harness)
+    await harness.seed_collecting()
+    harness.start()
+    await harness.wait_status("online")
+    await harness.wait_spans(1)
+    harness.clock.advance(30)  # 不然这一段是空范围，关闭时会被删掉。
+    disconnected_at = harness.clock.now
+    harness.current.queue.put_nowait(Disconnected(harness.current.generation, disconnected_at))
+    await harness.wait_status("reconnecting")
+    await harness.add_attempts(10)
+    harness.clock.advance(60)
+
+    assert await harness.current.identify() is False
+    row = await harness.wait_status("login_paused")
+
+    [span] = await harness.spans()
+    assert span.upper == disconnected_at  # pyright: ignore[reportAttributeAccessIssue]
+    assert row.retry_at is not None
+    assert _logged(captured, "collector.login_budget_exhausted")[0] == {
+        "retry_at": row.retry_at.isoformat()
+    }
+    assert _logged(captured, "collector.identify_reserved") == [{"reason": "initial"}]
+
+
+async def test_failures_log_only_kind_and_codes(  # covers: AC-11
+    harness: Harness, captured: CapturingLogger
+) -> None:
+    row = await add_account(harness)
+    state = SessionState(LoopState(generation=1), "reconnecting")
+    reply: asyncio.Future[float | None] = asyncio.get_running_loop().create_future()
+
+    await handle_event(
+        harness.deps,
+        row,
+        state,
+        RetryNeeded(1, ConnectionFailure("gateway_closed", close_code=4000), False, reply),
+    )
+    await handle_event(
+        harness.deps, row, state, SessionEnded(1, ConnectionFailure("http", http_status=503))
+    )
+
+    assert _logged(captured, "collector.connection_failed") == [
+        {"kind": "gateway_closed", "close_code": 4000, "http_status": None},
+        {"kind": "http", "close_code": None, "http_status": 503},
+    ]
+    assert TOKEN not in str(captured.calls)

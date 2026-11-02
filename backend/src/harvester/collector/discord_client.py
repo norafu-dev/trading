@@ -209,6 +209,7 @@ class HarvesterClient(discord.Client):
         self._coalesce_seconds = coalesce_seconds
         self._pending_guilds: dict[int, asyncio.TimerHandle] = {}
         self._lost_threads: frozenset[int] = frozenset()
+        self._resume_rejected = False
         self._track_sockets()
         self._watch_thread_updates()
 
@@ -313,7 +314,7 @@ class HarvesterClient(discord.Client):
 
     async def before_identify_hook(self, *, initial: bool = False) -> None:
         reply: asyncio.Future[bool] = self._new_reply()
-        self._events.put_nowait(IdentifyRequested(self._generation, reply))
+        self._events.put_nowait(IdentifyRequested(self._generation, reply, self._resume_rejected))
         if not await reply:
             raise _IdentifyDenied
 
@@ -348,6 +349,7 @@ class HarvesterClient(discord.Client):
             try:
                 coro = self._ws_factory(self, **params)
                 self.ws = await asyncio.wait_for(coro, timeout=GATEWAY_CONNECT_TIMEOUT)
+                self._resume_rejected = False
                 params = {"initial": False}
                 while True:
                     await self.ws.poll_event()
@@ -356,11 +358,12 @@ class HarvesterClient(discord.Client):
                     return
                 self.dispatch("disconnect")
                 params = self._next_params(resume=exc.resume)
+                self._resume_rejected = resuming and not exc.resume
                 proceed = await self._wait_before_retry(
                     reconnect_failure(self.ws),
                     immediate_allowed=params.get("resume", False),
                     resume_ready=params.get("resume", False),
-                    resume_rejected=resuming and not exc.resume,
+                    resume_rejected=self._resume_rejected,
                 )
             except discord.ConnectionClosed:
                 # 不可恢复的 close code（包括 4004）：结束这个会话，由监督循环决定下一步。
@@ -381,6 +384,7 @@ class HarvesterClient(discord.Client):
                 self.dispatch("disconnect")
                 failure = to_failure(exc)
                 assert failure is not None
+                self._resume_rejected = False
                 params = self._next_params(resume=True)
                 proceed = await self._wait_before_retry(
                     failure, resume_ready=params.get("resume", False)

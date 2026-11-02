@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     database_url: SecretStr | None = None
 
     log_level: str = "INFO"
+    # 不配置就只写 stdout。相对路径按进程工作目录解析（spec 0007）。
+    log_dir: Path | None = None
+
+    @field_validator("log_dir", mode="before")
+    @classmethod
+    def _empty_log_dir_is_unset(cls, value: object) -> object:
+        # `LOG_DIR=` 写空时 Path("") 会变成当前目录，不能把它当日志目录。
+        return None if value == "" else value
 
     @property
     def sqlalchemy_url(self) -> str:

@@ -9,7 +9,8 @@ from harvester.logging import configure_logging
 
 
 def main() -> None:
-    configure_logging(get_settings().log_level)
+    settings = get_settings()
+    configure_logging(settings.log_level, "collector", settings.log_dir)
     get_crypto_settings()  # 缺密钥或格式不对时直接报错退出。
     sys.exit(asyncio.run(run()))
 

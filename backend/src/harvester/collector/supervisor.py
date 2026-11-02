@@ -291,9 +291,30 @@ async def _on_logged_in(
     return state if proceed else replace(state, done=True)
 
 
+def _log_failure(failure: ConnectionFailure) -> None:
+    # 只记枚举值和数字，不放异常消息和响应内容（spec 0007）。
+    log.warning(
+        "collector.connection_failed",
+        kind=failure.kind,
+        close_code=failure.close_code,
+        http_status=failure.http_status,
+    )
+
+
+def _log_budget_exhausted(budget: LoginBudgetExhausted) -> None:
+    log.warning("collector.login_budget_exhausted", retry_at=budget.retry_at.isoformat())
+
+
+def _identify_reason(state: SessionState, event: IdentifyRequested) -> str:
+    if event.resume_rejected:
+        return "resume_rejected"
+    return "after_disconnect" if state.loop.disconnected_at is not None else "initial"
+
+
 async def _on_retry(
     deps: Deps, account: AccountRow, state: SessionState, event: RetryNeeded
 ) -> SessionState:
+    _log_failure(event.failure)
     written, stops = await _write_failure(deps, account, event.failure)
     if not written or stops:
         event.reply.set_result(None)
@@ -333,9 +354,13 @@ async def _on_identify(
                 reserved.retry_at,
             )
     # 事务提交之后才放行 IDENTIFY，崩溃也不会少计。
-    allowed = not isinstance(reserved, LoginBudgetExhausted)
-    event.reply.set_result(allowed)
-    return state if allowed else replace(state, done=True)
+    if isinstance(reserved, LoginBudgetExhausted):
+        _log_budget_exhausted(reserved)
+        event.reply.set_result(False)
+        return replace(state, done=True)
+    log.info("collector.identify_reserved", reason=_identify_reason(state, event))
+    event.reply.set_result(True)
+    return state
 
 
 async def _on_ended(
@@ -346,6 +371,7 @@ async def _on_ended(
     done = replace(state, done=True)
     if event.failure is None:
         return done
+    _log_failure(event.failure)
     written, stops = await _write_failure(deps, account, event.failure)
     if not written or stops:
         return done
@@ -525,6 +551,7 @@ async def _prepare_login(deps: Deps, account: AccountRow) -> str | None:
     async with deps.factory() as session:
         budget = await accounts.check_login_budget(session, account.id)
     if isinstance(budget, LoginBudgetExhausted):
+        _log_budget_exhausted(budget)
         await _write_status(
             deps, account.id, account.config_version, "login_paused", BUDGET_ERROR, budget.retry_at
         )

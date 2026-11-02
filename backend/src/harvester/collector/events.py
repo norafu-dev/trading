@@ -58,6 +58,8 @@ class RetryNeeded:
 class IdentifyRequested:
     generation: int
     reply: "asyncio.Future[bool]"  # False 表示额度用完或配置已变，不能发 IDENTIFY
+    # 上一次连接带 resume 发起但被服务端拒绝：只用来记录这次全新登录的原因。
+    resume_rejected: bool = False
 
 
 @dataclass(frozen=True)

@@ -8,7 +8,7 @@ from harvester.logging import configure_logging
 
 def main() -> None:
     settings = get_settings()
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, "api", settings.log_dir)
     # 缺配置或格式不对时，在起 uvicorn 之前就报错退出。
     get_api_settings()
     get_crypto_settings()

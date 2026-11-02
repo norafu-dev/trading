@@ -2,6 +2,8 @@ import logging
 import re
 import sys
 from collections.abc import MutableMapping
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -11,6 +13,9 @@ _SENSITIVE_KEY = re.compile(
     r"token|password|secret|authorization|cookie|api_key|dsn", re.IGNORECASE
 )
 _REDACTED = "***"
+
+LOG_MAX_BYTES = 10 * 1024 * 1024
+LOG_BACKUP_COUNT = 5
 
 
 def _redact(
@@ -22,8 +27,27 @@ def _redact(
     return event_dict
 
 
-def configure_logging(level: str = "INFO") -> None:
-    """JSON lines to stdout for every process; stdlib loggers go through the same pipeline."""
+def _file_handler(process: str, log_dir: Path) -> RotatingFileHandler:
+    """打不开就抛异常：配了 LOG_DIR 却写不了时要退出，不能悄悄退回只写 stdout（AC-10）。"""
+    log_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # mkdir 的 mode 受 umask 影响，也不会改已存在的目录，所以显式设一次。
+    log_dir.chmod(0o700)
+    return RotatingFileHandler(
+        log_dir / f"{process}.log",
+        maxBytes=LOG_MAX_BYTES,
+        backupCount=LOG_BACKUP_COUNT,
+        encoding="utf-8",
+        delay=False,
+    )
+
+
+def configure_logging(
+    level: str = "INFO", process: str | None = None, log_dir: Path | None = None
+) -> None:
+    """JSON lines to stdout for every process; stdlib loggers go through the same pipeline.
+
+    process 和 log_dir 都有值时，同样的内容再写一份到 <log_dir>/<process>.log。
+    """
     shared: list[structlog.types.Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
@@ -39,19 +63,24 @@ def configure_logging(level: str = "INFO") -> None:
         cache_logger_on_first_use=True,
     )
 
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(
-        structlog.stdlib.ProcessorFormatter(
-            foreign_pre_chain=shared,
-            processors=[
-                structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-                structlog.processors.format_exc_info,
-                structlog.processors.JSONRenderer(),
-            ],
-        )
+    formatter = structlog.stdlib.ProcessorFormatter(
+        foreign_pre_chain=shared,
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            structlog.processors.format_exc_info,
+            structlog.processors.JSONRenderer(),
+        ],
     )
+    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
+    if process is not None and log_dir is not None:
+        handlers.append(_file_handler(process, log_dir))
+    for handler in handlers:
+        handler.setFormatter(formatter)
     root = logging.getLogger()
-    root.handlers = [handler]
+    # 先关旧的，重复调用不会泄漏文件句柄。
+    for old in root.handlers:
+        old.close()
+    root.handlers = handlers
     root.setLevel(level.upper())
     # uvicorn installs its own handlers; route them through ours instead.
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):

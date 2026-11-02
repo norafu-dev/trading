@@ -193,6 +193,40 @@ async def test_rejected_resume_is_flagged_once_then_identifies() -> None:  # cov
     assert not retries[1].immediate_allowed
 
 
+async def test_identify_request_says_when_resume_was_rejected() -> None:  # covers: AC-11
+    queue: asyncio.Queue[SupervisorEvent] = asyncio.Queue()
+    seen: list[IdentifyRequested] = []
+
+    async def answer() -> None:
+        while True:
+            event = await queue.get()
+            if isinstance(event, RetryNeeded):
+                event.reply.set_result(None if len(seen) == 2 else 0)
+            elif isinstance(event, IdentifyRequested):
+                seen.append(event)
+                event.reply.set_result(True)
+
+    def identifies() -> Callable[[HarvesterClient], Awaitable[Any]]:
+        async def step(client: HarvesterClient) -> Any:
+            await client.before_identify_hook()
+            return FakeWs(ReconnectWebSocket(resume=False), None, None, close_code=1000)
+
+        return step
+
+    ws = FakeWs(ReconnectWebSocket(resume=True), close_code=1000)
+    rejecting = FakeWs(ReconnectWebSocket(resume=False), None, None, close_code=1000)
+    calls: list[dict[str, Any]] = []
+    script: Script = [returns(ws), returns(rejecting), identifies(), identifies()]
+    client = HarvesterClient(1, queue, now, scripted_factory(script, calls))
+    responder = asyncio.create_task(answer())
+
+    await asyncio.wait_for(client.connect(), timeout=2)
+    responder.cancel()
+
+    # 只有紧接在被拒之后的那一次算，再下一次 IDENTIFY 不算。
+    assert [e.resume_rejected for e in seen] == [True, False]
+
+
 async def test_resume_failed_by_network_is_not_a_rejection() -> None:  # covers: AC-5
     ws = FakeWs(ReconnectWebSocket(resume=True), close_code=1000)
     _, seen, _ = await run_connect([returns(ws), raises(OSError("down"))], 0, None)
