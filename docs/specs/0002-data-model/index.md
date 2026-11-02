@@ -104,7 +104,7 @@ Reasoning and options: see [rationale.md](rationale.md).
 - 可采集类型：`CHECK (NOT collect_enabled OR type IN (0, 5, 10, 11, 12))`，也就是文字频道 (0)、公告频道 (5)、公告线程 (10)、公开线程 (11)、私密线程 (12)。论坛 (15) 和媒体 (16) 频道本身没有消息，它们的帖子是类型 11 的线程。分类 (4) 和语音频道 (2、13) 也会存（dashboard 分组要用），但不能打开开关。同一份列表在 `harvester.db` 里有一个常量 `COLLECTABLE_CHANNEL_TYPES`，测试要确认两边一致。
 - 索引：`guild_id`、`parent_id`。
 
-**`account_channel_access`**（哪个账号能看到哪个频道，由第 6、7 项写入）
+**`account_channel_access`**（哪个账号能看到哪个频道，由第 7 项写入）
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
@@ -247,7 +247,7 @@ message         1 ─ N message_change       （AI 功能）
 | `close_realtime_coverage(session, channel_id, at)` | ID、时间 | `'closed' \| 'discarded_empty' \| 'not_open'` |
 | `close_stale_coverage(session, account_id)` | 账号 ID | 关掉的段数 `int` |
 
-`GuildSnapshot`、`ChannelSnapshot`、`UserSnapshot`、`MessageSnapshot`、`AttachmentSnapshot` 都是 `frozen` dataclass，定义在 `harvester.db.snapshots`。把 `discord.py-self` 的对象转换成它们，是 collector 边界的事（第 6、8 项），`harvester.db` 不导入 Discord 库。
+`GuildSnapshot`、`ChannelSnapshot`、`UserSnapshot`、`MessageSnapshot`、`AttachmentSnapshot` 都是 `frozen` dataclass，定义在 `harvester.db.snapshots`。把 `discord.py-self` 的对象转换成它们，是 collector 边界的事（第 6、7、8 项），`harvester.db` 不导入 Discord 库。
 
 ### 写入规则
 
@@ -298,8 +298,8 @@ message         1 ─ N message_change       （AI 功能）
 - 补采对账（第 10 项实现，规则在这里定）：**只有任务状态是 `done` 时才对账**；对比范围是这个任务 `[range_start, range_end)` 换算成的消息 ID 范围；库里有、这次补采没返回、还没删除的消息，用 `source='reconciled'`、发现时间来标记。暂停、取消、失败、被限速中断的任务一律不对账。
 
 **覆盖规则**：
-- 打开：collector 全新登录（IDENTIFY）后，对自己负责的每个已开启频道各打开一段；第 7 项打开开关时，也打开一段。时间都是那一刻。
-- 关闭：网关会话丢失（断线后不能 RESUME）时，在断线时间关闭；关掉开关、频道被删或没权限时，在那一刻关闭。RESUME 成功的断线不关闭。
+- 打开：由覆盖对齐决定（规则和时机见 spec 0006 的「覆盖对齐」一段）。会话 `online` 时，给应当采集但还没有开放段的频道各打开一段，时间是对齐那一刻。全新登录（IDENTIFY）后不直接打开，等紧接着的全量同步对齐；打开开关后也由对齐打开。
+- 关闭：网关会话丢失（断线后不能 RESUME）时，在断线时间关闭；关掉开关、频道被删或没权限时，由覆盖对齐关闭，时间是对齐那一刻。RESUME 成功的断线本身不关闭，之后的对齐可能按当前状态关闭，时间同样是对齐那一刻。
 - 关闭时上界取 `GREATEST(关闭时间, 起点)`；结果是空范围的段直接删除（返回 `'discarded_empty'`）。
 - `close_stale_coverage(account_id)`：collector 启动时调用。关掉这些开放的实时段：频道的 `collector_account_id` 是这个账号、或者为空、或者频道的 `collect_enabled = false`；上界取 `GREATEST(coalesce(last_heartbeat_at, 起点), 起点)`；空的段删除。
 - 历史覆盖由第 10 项在任务 `done` 时写入，范围是 `[range_start, range_end)`。
@@ -326,7 +326,7 @@ message         1 ─ N message_change       （AI 功能）
 | `close_stale_coverage` | `span` 上界 | `GREATEST(coalesce(last_heartbeat_at, 起点), 起点)` |
 | `first_seen_at`（各表） | 第一次入库时间 | 数据库 `now()`，不是 Discord 的创建时间 |
 | `discord_account.discord_user_id` | 小号自己的 Discord ID | 第 6 项：collector 第一次登录成功后写入 |
-| `account_channel_access` | 能否读取 | 第 6、7 项：collector 根据 Discord 的权限计算后写入 |
+| `account_channel_access` | 能否读取 | 第 7 项：collector 根据 Discord 的权限计算后写入 |
 | dashboard 显示「无权限」 | 频道能否读取 | 由 `account_channel_access` 算出，不存在频道上 |
 
 ### Key invariants
@@ -402,7 +402,7 @@ message         1 ─ N message_change       （AI 功能）
 - 不存原始 JSON：以后想用一个现在没拆出来的字段（比如表情回应、提及、贴纸），只有新消息才有，旧消息只能重新抓历史。
 - 只存类型 0 和 19：机器人用斜杠命令（类型 20）或右键菜单命令（类型 23）回复发出的内容不会被采集。如果以后发现某个信号机器人是这样发消息的，需要放宽 `CHECK`（只新增，不破坏数据），但之前的消息只能重新补采。
 - collector 掉线期间的编辑只能拿到最终版本，中间的旧版本永远丢失；掉线期间的删除只能在补采任务完整跑完后发现，删除时间不精确（用 `delete_source = reconciled` 标明）。
-- 线程各自一个开关、默认关闭：新开的线程和论坛帖子不会自动采集，容易漏，第 7 项的界面需要提示新线程。
+- 线程各自一个开关、默认关闭：新开的线程和论坛帖子不会自动采集，容易漏，界面需要提示新线程（推迟到第 8 项之后，见 spec 0006 Follow-up）。
 - 变更记录表要等 AI 功能才建：之前发生的编辑和删除没有按顺序的记录，到时只能从 `message` 和 `message_revision` 近似补出来。
 - `created_at` 和 `guild_id` 是从别的值复制来的（前者由 ID 算出，后者来自频道，有复合外键保证一致），两者都不会变，但多占一点空间。
 - 删除只打标记：每个面向用户的查询都要想清楚是否过滤 `deleted_at`。这是采集器「留痕」的核心需求，不是疏忽。
@@ -411,12 +411,13 @@ message         1 ─ N message_change       （AI 功能）
 
 **Neutral**:
 - `harvester.db` 新增 `models.py`、`snapshots.py`、`ingest.py` 三个文件；按 spec 0001 的发布规则，改动它们会让 collector 重启一次。
-- 第 6 项要把 `harvester.db.raw.COLLECTOR_LOCK_KEY` 改成按 `discord_account.id` 区分。
+- `harvester.db.raw.COLLECTOR_LOCK_KEY` 保持全局常量，做多账号时再按 `discord_account.id` 区分（spec 0005）。
 
 ## Follow-up
 
-- [ ] 第 6 项：定 token 加密算法；把 advisory lock 的 key 改成按账号区分；定账号状态的具体触发规则；判断断线后是 RESUME 还是重新登录，按覆盖规则开关覆盖段；写入 `discord_user_id` 和 `account_channel_access`。
-- [ ] 第 7 项：打开开关时设置 `collector_account_id` 并打开覆盖段；因为线程默认不采，界面上要明显标出新出现的、还没勾选的线程和论坛帖子，最好能一次勾选某个频道下的全部线程。
+- [x] 第 6 项：定 token 加密算法；定账号状态的具体触发规则；判断断线后是 RESUME 还是重新登录，按覆盖规则开关覆盖段；写入 `discord_user_id`。已由 spec 0005 落实。两处调整：advisory lock 改为做多账号时再按账号区分；`account_channel_access` 移到第 7 项写入，已由 spec 0006 落实。
+- [x] 第 7 项：打开开关时设置 `collector_account_id` 并打开覆盖段。已由 spec 0006 落实，覆盖段由覆盖对齐打开。
+- [ ] 因为线程默认不采，界面上要明显标出新出现的、还没勾选的线程和论坛帖子，最好能一次勾选某个频道下的全部线程。推迟到第 8 项之后，见 spec 0006 Follow-up。
 - [ ] 第 10 项：建 `history_job`；按本 spec 的对账规则和覆盖规则实现补采对账、历史覆盖写入和缺口计算。
 - [ ] 第 9 项：定心跳频率（不低于每 60 秒，只在 `online` 时写）；磁盘使用率加到心跳或告警里，超过 70% 时提醒。
 - [ ] AI 功能的 spec：建 `message_change`，并决定是否从现有数据补出历史变更。

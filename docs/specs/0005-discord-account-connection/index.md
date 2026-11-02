@@ -22,7 +22,7 @@
 - **AC-3**: 已有账号时再次添加返回 409 `account_exists`；数据库的唯一索引也挡得住并发添加。
 - **AC-4**: token 只以 `discord_token` 用途的 AES-256-GCM 密文存库；所有接口响应、OpenAPI 响应模型、前端状态和日志（包括 `discord` 库自己的日志）都不出现 token 原文或密文。
 - **AC-5**: 网络中断或 5xx 时，状态变成 `reconnecting`，按 5 秒起翻倍的节奏重试，每次带随机抖动，不放弃。纯网络失败且下一次是 RESUME 时封顶 30 秒，RESUME 被拒后的第一次等待也封顶 30 秒，其余情况（5xx、429、其他要重新 IDENTIFY 的重试、`login` 阶段）封顶 5 分钟。从 READY 或 RESUMED 算起稳定 5 分钟后，退避计数清零。恢复后变回 `online`，页面无需手动操作。
-- **AC-6**: 能 RESUME（恢复原会话）时，重连不消耗登录额度，也不关闭覆盖段；不能 RESUME 时，走额度检查后重新 IDENTIFY（全新登录），并按断线时间关闭覆盖段，登录成功后重新打开。断线期间不会被记成已覆盖，即使中途换 token、停用、额度用完或进程退出也一样。
+- **AC-6**: 能 RESUME（恢复原会话）时，重连不消耗登录额度，也不因断线关闭覆盖段（RESUMED 后的覆盖对齐仍可能按当前开关和权限开段或关段，见 spec 0006）；不能 RESUME 时，走额度检查后重新 IDENTIFY（全新登录），并按断线时间关闭覆盖段，新会话 READY 之后由紧接着的全量同步对齐重新打开。断线期间不会被记成已覆盖，即使中途换 token、停用、额度用完或进程退出也一样。
 - **AC-7**: 任何 24 小时滚动窗口内，最多真正发出 10 次 IDENTIFY（包括库内部的重新 IDENTIFY）。网络没连上、IDENTIFY 没发出的重试不计数。额度用完时不发任何登录请求，状态变成 `login_paused`，`retry_at` 是额度恢复时间，到点后自动继续。进程重启、换 token 和手动重连都不能绕过。
 - **AC-8**: 登录返回 401 或网关返回 close code 4004 时，状态变成 `token_invalid`，collector 不再登录；界面提示“token 失效或账号被封”，并引导你到 Discord 确认后换 token。这一版不写 `banned`。
 - **AC-9**: Discord 要求人机验证或账号验证时（`CaptchaRequired`、登录返回 403，或者 READY 和后续事件里的 `required_action` 非空），collector 断开，状态变成 `verification_required`，collector 不解验证码、不再登录；你在官方客户端处理后点“重新连接”才会再试。
@@ -152,7 +152,7 @@ Reasoning and options: see [rationale.md](rationale.md).
 
 **心跳**：`online` 时每 30 秒更新 `last_heartbeat_at`，写 `online` 时同步写一次。单次心跳写入失败只记日志；数据库真的断了时，由锁连接探测触发退出。
 
-**覆盖段**：严格按 spec 0002 的覆盖规则。`on_ready`（全新登录）时，给 `collect_enabled` 且 `collector_account_id` 是自己的频道各打开一段。RESUME 成功不动。第 6 项完成时这个频道集合还是空的，第 7 项开始才有内容。
+**覆盖段**：严格按 spec 0002 的覆盖规则。`on_ready`（全新登录）时只写 `online`，不打开覆盖段；由紧接着的全量同步对齐后打开（spec 0006）。RESUME 成功时不因断线关闭段，但 RESUMED 后会做一次覆盖对齐，按当时应当采集的频道开段或关段，时间取对齐那一刻。
 
 监督循环记录一个「未恢复的断线时间」：没有值时，收到第一次 `on_disconnect` 就记下；之后失败重连再派发的 `on_disconnect` 不覆盖；只在 RESUMED 或新会话 READY 时清除。
 
@@ -276,7 +276,7 @@ Reasoning and options: see [rationale.md](rationale.md).
 - 唯一账号：并发两个添加，一个 201 一个 409，verifies **AC-3**
 - 泄露检查：跑完整流程后，日志和响应中都搜不到测试 token，verifies **AC-4**
 - 退避：`next_delay` 的序列和上限；纯网络失败且能 RESUME 时封顶 30 秒，RESUME 被拒后的第一次等待也封顶 30 秒，之后的 IDENTIFY 重试、5xx 和 429 仍是 5 分钟；连接稳定后清零；429 时取 `retry_after`；首次连接失败（`self.ws` 为空）不崩溃并继续重试；断网很久也不写 `discord_login_attempt`，verifies **AC-5**、**AC-7**
-- RESUME：断线后 RESUME，额度行数和覆盖段不变；INVALID_SESSION 后调用 `before_identify_hook`，覆盖段按断线时间关闭后重开；断线中途停用，关闭时间仍是断线时间，verifies **AC-6**
+- RESUME：断线后 RESUME，额度行数不变；应当采集的频道没变时覆盖段也不变，变了才由 RESUMED 后的对齐开段或关段。INVALID_SESSION 后调用 `before_identify_hook`，覆盖段按断线时间关闭，`FullSync` 对齐后重开；断线中途停用，关闭时间仍是断线时间，verifies **AC-6**
 - 额度：第 11 次返回 `LoginBudgetExhausted`，`retry_at` 正确；25 小时前的不计；并发预留不超额；重启和换 token 后仍然暂停，verifies **AC-7**
 - 分类表：表中每一行都有 `classify_failure` 单元测试，包括错误码的取值顺序；停止类状态后不再调用登录；`required_action` 非空时断开，verifies **AC-8**、**AC-9**
 - 换 token：同身份恢复 `online`；异身份在 IDENTIFY 前进入 `account_mismatch`，额度行数和身份都没变；确认后身份和权限行清空，消息和频道开关不变；其他状态返回 409，verifies **AC-10**、**AC-11**
@@ -322,8 +322,9 @@ Reasoning and options: see [rationale.md](rationale.md).
 
 ## Follow-up
 
-- [ ] 第 7 项：写入 `guild`、`channel`、`account_channel_access`。这项工作从本项移过去，spec 0002 Follow-up 里写的“第 6 项写入 `account_channel_access`”由 `/sync` 标记。打开开关时设置 `collector_account_id`，并确认客户端选项能收到大服务器的事件（`guild_subscriptions` 的默认值）。
+- [x] 第 7 项：写入 `guild`、`channel`、`account_channel_access`，打开开关时设置 `collector_account_id`。已由 spec 0006 落实，spec 0002 Follow-up 已同步标记。
+- [ ] 确认客户端选项能收到大服务器的事件（`guild_subscriptions` 的默认值）。已并入 spec 0006 Follow-up，在它的 `/check verify` 里用真实小号验证。
 - [ ] 第 8 项：决定实际发送的 `guild_subscriptions` 设置，并用小号在大服务器上验证收消息。
 - [ ] 第 9 项：加进程级心跳，覆盖所有账号状态；部署手册写明发布 collector 会消耗登录额度。
-- [ ] spec 0001 和 0002 里“advisory lock 按账号区分”改为“多账号时再区分”（由 `/sync` 标记）。
+- [ ] spec 0001 里“advisory lock 按账号区分”改为“多账号时再区分”（spec 0002 已改）。
 - [ ] `/develop` 和 `/check verify` 时用真实响应确认 HTTP 403、验证码和 `required_action` 的实际形式，以及上线瞬间的隐身显示。如果和本 spec 不符，回到本 spec 修改；上线瞬间可见的话，到官方客户端预先把账号设成隐身。
