@@ -23,6 +23,21 @@ function renderRail(onSelectGuild = vi.fn()) {
 }
 
 describe("ServerRail", () => {
+  // covers: spec 0008 AC-22
+  it("有未读的服务器，读屏软件能读到", () => {
+    render(
+      <ServerRail
+        guilds={guilds}
+        selectedGuildId="g2"
+        unreadGuildIds={new Set(["g1"])}
+        onSelectGuild={vi.fn()}
+        collectorStatus="unknown"
+      />,
+    );
+    expect(screen.getByRole("button", { name: "🎧 音乐分享，有未读消息" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "独立游戏开发" })).toBeInTheDocument();
+  });
+
   // covers: AC-2
   it("当前服务器的按钮带 aria-current=true，其他不带", () => {
     renderRail();

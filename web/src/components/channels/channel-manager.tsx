@@ -16,9 +16,10 @@ import { toUiError } from "@/lib/api/errors";
 import { buildManageTree } from "./build-manage-tree";
 import { ChannelTree } from "./channel-tree";
 import { GuildList } from "./guild-list";
+import { ThreadLoader } from "./thread-loader";
 import { Toolbar } from "./toolbar";
 import { useGuildChannels } from "./use-guild-channels";
-import { useGuilds } from "./use-guilds";
+import { type GuildSummary, useGuilds } from "./use-guilds";
 
 const PAGE_PATH = "/settings/channels";
 
@@ -44,10 +45,11 @@ function ManagerSkeleton() {
 }
 
 function GuildChannels({
-  guildId,
+  guild,
   syncedAt,
-}: Readonly<{ guildId: string; syncedAt: string | null }>) {
-  const channels = useGuildChannels(guildId);
+  online,
+}: Readonly<{ guild: GuildSummary; syncedAt: string | null; online: boolean }>) {
+  const channels = useGuildChannels(guild.id);
   const [query, setQuery] = useState("");
   const [showNoAccess, setShowNoAccess] = useState(false);
   const synced = syncedAt !== null;
@@ -70,6 +72,11 @@ function GuildChannels({
         onShowNoAccessChange={setShowNoAccess}
         hiddenCount={tree.hiddenCount}
         syncedAt={syncedAt}
+        threadLoader={
+          guild.enabled_count === 0 && guild.status === "active" ? (
+            <ThreadLoader guild={guild} online={online} channels={data ?? []} />
+          ) : null
+        }
       />
       {!data ? (
         <RowsSkeleton />
@@ -139,6 +146,7 @@ function ManagerBody() {
   const fromUrl = list.some((guild) => guild.id === requested) ? requested : null;
   // 宽屏默认选第一个；窄屏没选中时只显示服务器列表（AC-16）。
   const selectedId = fromUrl ?? list[0]?.id ?? null;
+  const selected = list.find((guild) => guild.id === selectedId) ?? null;
   return (
     <>
       {notice}
@@ -162,9 +170,14 @@ function ManagerBody() {
             <ArrowLeftIcon data-icon="inline-start" aria-hidden />
             返回
           </Button>
-          {selectedId !== null ? (
+          {selected !== null ? (
             // 换服务器时搜索和显示设置都重新开始。
-            <GuildChannels key={selectedId} guildId={selectedId} syncedAt={syncedAt} />
+            <GuildChannels
+              key={selected.id}
+              guild={selected}
+              syncedAt={syncedAt}
+              online={!offline}
+            />
           ) : null}
         </div>
       </div>

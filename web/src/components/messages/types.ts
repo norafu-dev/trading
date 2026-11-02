@@ -13,7 +13,13 @@ export type MessageView = Readonly<{
   attachments: readonly AttachmentView[]; // 只含 removed_at 为空的
   editedAt: string | null; // version > 1 时有值
   deleted: boolean; // deleted_at 不为空
+  replyTo: ReplyView | null; // 不是回复时为 null
 }>;
+
+// 被回复的消息不在库里时 missing 为 true（spec 0008 AC-20）。
+export type ReplyView =
+  | Readonly<{ missing: true }>
+  | Readonly<{ missing: false; authorName: string; preview: string; deleted: boolean }>;
 
 export type MentionResolver = Readonly<{
   user: (id: string) => string | undefined;

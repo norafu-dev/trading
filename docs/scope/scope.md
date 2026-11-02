@@ -20,7 +20,7 @@ _这些都是让构建保持有序的建议，不是硬性要求。不合适的�
 | 5   | Dashboard 访问保护   | Slice 1    | done        |
 | 6   | Discord 账号连接     | Slice 1    | done |
 | 7   | 频道管理             | Slice 1    | in-progress |
-| 8   | 实时消息流           | Slice 1    | planned     |
+| 8   | 实时消息流           | Slice 1    | in-progress |
 | 9   | 部署与常驻运行       | Slice 1    | planned     |
 | 10  | 按时间段采集历史消息 | Slice 2    | planned     |
 | 11  | 编辑与删除留痕       | Slice 3    | planned     |
@@ -126,12 +126,20 @@ spec [0006](../specs/0006-channel-management/index.md) · code in `backend/src/h
   - [x] 测试和收口：鉴权、OpenAPI 同步、各项检查，AC-15, AC-17
 - [ ] Verify it: `/check verify 频道管理`
 
-### 8. 实时消息流
+### 8. 实时消息流 · in-progress
 
 已勾选频道里的新消息存进数据库，并实时推送到 dashboard 显示。
 **Done when:** 别人在已勾选频道发的消息几秒内出现在 dashboard 上，刷新后仍在；能按频道切换查看；未勾选频道的消息不被存。
+spec [0008](../specs/0008-realtime-message-stream/index.md) · code in `backend/src/harvester/collector/`, `backend/src/harvester/db/messages.py`, `backend/src/harvester/api/message_routes.py`, `web/src/components/channels/`, `web/src/components/messages/`
 
-- [ ] Build it: `/develop 实时消息流`
+- [x] Design it (spec): `/architect 实时消息流`
+- [x] Build it: `/develop 实时消息流`
+  - [x] 打通细线：消息入库、内存名单门槛、消息接口、频道页和增量取数，AC-1 到 AC-3, AC-13, AC-14, AC-16, AC-17
+  - [x] 编辑、删除和可靠性：`message_changed`、重连和轮询、翻页、写入失败处理、会话收尾，AC-4, AC-5, AC-7, AC-8, AC-15, AC-16, AC-18, AC-19
+  - [x] 服务器订阅：只订阅有开启频道的服务器、「加载线程」，AC-9 到 AC-12
+  - [x] 阅读体验：提及名字、回复引用、未读圆点、频道状态提示，AC-6, AC-20 到 AC-23
+  - [x] 测试和收口：鉴权、OpenAPI 同步、各项检查，AC-24
+- [ ] Verify it: `/check verify 实时消息流`
 
 ### 9. 部署与常驻运行 · needs a decision
 
@@ -217,6 +225,8 @@ spec [0007](../specs/0007-sleep-login-guard-log-files/index.md) · code in `back
 - **AI 分析采集的信息**：作为独立的 `analyzer` 进程，用 pgvector 做向量检索（架构已预留）· needs a decision · from spec 0001
 - **向交易所下单**：作为独立的 `trader` 进程；涉及真钱，要先设计密钥存放、最小权限、幂等和审计 · needs a decision · from spec 0001
 - **身份组名字**：采集服务器的身份组，让消息里的 @身份组 显示真名（新表 `role`）· from spec 0003
+- **查看已关闭频道的消息**：关掉开关的频道从侧栏消失后，在管理页提供入口查看已存的消息 · from spec 0008
+- **新线程提示**：醒目标出新出现的线程和论坛帖子，并能一键开启某频道下的全部线程 · from spec 0006
 
 ## Legend
 

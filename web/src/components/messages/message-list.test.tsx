@@ -31,6 +31,7 @@ const sample: MessageView = {
   forwarded: null,
   attachments: [],
   editedAt: null,
+  replyTo: null,
   deleted: false,
 };
 

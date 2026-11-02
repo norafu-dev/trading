@@ -1,7 +1,7 @@
 "use client";
 
 import { SearchIcon } from "lucide-react";
-import { useId, useMemo } from "react";
+import { type ReactNode, useId, useMemo } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,8 @@ type ToolbarProps = Readonly<{
   onShowNoAccessChange: (show: boolean) => void;
   hiddenCount: number;
   syncedAt: string | null;
+  /** 「加载线程」按钮，只有没开启任何频道的服务器才有（spec 0008 AC-12）。 */
+  threadLoader?: ReactNode;
 }>;
 
 export function Toolbar({
@@ -24,6 +26,7 @@ export function Toolbar({
   onShowNoAccessChange,
   hiddenCount,
   syncedAt,
+  threadLoader,
 }: ToolbarProps) {
   const switchId = useId();
   const format = useMemo(
@@ -64,6 +67,7 @@ export function Toolbar({
           {syncedAt === null ? "还没有同步过" : `上次同步于 ${format.fullTime(syncedAt)}`}
         </span>
       </div>
+      {threadLoader}
     </div>
   );
 }

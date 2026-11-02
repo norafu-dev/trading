@@ -6,6 +6,7 @@ import type {
   ForwardedView,
   MentionResolver,
   MessageView,
+  ReplyView,
 } from "@/components/messages/types";
 
 export const FAKE_DATA_MARKER = "__HARVESTER_FAKE_DATA__";
@@ -46,6 +47,17 @@ export const FAKE_RESOLVER: MentionResolver = {
   user: (id) => USER_NAMES.get(id),
   channel: (id) => CHANNEL_NAMES.get(id),
 };
+
+// 回复引用的三种样子：正常、原消息已删除、原消息未采集。
+function fakeReply(roll: number): ReplyView {
+  if (roll < 0.01) return { missing: true };
+  return {
+    missing: false,
+    authorName: "小鹿",
+    preview: "这条是被回复的原消息",
+    deleted: roll < 0.02,
+  };
+}
 
 const SHORT = [
   "早上好！",
@@ -225,6 +237,7 @@ export function generateMessages(count: number, endMs: number, seed: number): Me
       forwarded,
       attachments: attachmentsFor(random, id),
       editedAt: random() < 0.08 ? new Date(time + 90_000).toISOString() : null,
+      replyTo: random() < 0.06 ? fakeReply(random()) : null,
       deleted: random() < 0.03,
     });
   }
@@ -263,6 +276,7 @@ export function sampleMessages(endMs: number): MessageView[] {
       forwarded: null,
       attachments: [],
       editedAt: null,
+      replyTo: null,
       deleted: false,
     };
   };

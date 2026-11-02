@@ -33,6 +33,7 @@ export function buildRows(messages: readonly MessageView[], timeZone: string): r
       previous === null ||
       previous.message.authorId !== message.authorId ||
       previous.message.authorName !== message.authorName ||
+      message.replyTo !== null ||
       time - previous.time >= GROUP_GAP_MS;
 
     rows.push({ kind: "message", key: message.id, message, groupStart });

@@ -23,6 +23,7 @@ type AppShellProps = Readonly<{
   channels: readonly ChannelInput[];
   collectorStatus: CollectorStatus;
   accountLink?: ReactNode;
+  unreadChannelIds?: ReadonlySet<string>;
   /** 频道链接的地址，默认是 `channelHref`；预览页换成指向自己的地址。 */
   hrefFor?: (channelId: string) => string;
   className?: string;
@@ -40,6 +41,7 @@ type NavigationProps = Readonly<{
   drawerOpen: boolean;
   onDrawerOpenChange: (open: boolean) => void;
   selectedChannelId: string | null;
+  unreadChannelIds?: ReadonlySet<string>;
 }>;
 
 function useSelectedChannelId(): string | null {
@@ -48,12 +50,19 @@ function useSelectedChannelId(): string | null {
 
 // 两层侧栏：宽屏直接显示，窄屏放进从左边滑出的抽屉。
 function Navigation(props: NavigationProps) {
-  const { guilds, channels, choice, selectedChannelId } = props;
+  const { guilds, channels, choice, selectedChannelId, unreadChannelIds } = props;
   const sortedGuilds = useMemo(() => sortGuilds(guilds), [guilds]);
   const guildId = resolveGuildId(choice, selectedChannelId, channels, sortedGuilds);
   const groups = useMemo(
     () => buildChannelTree(channels.filter((channel) => channel.guildId === guildId)),
     [channels, guildId],
+  );
+  const unreadGuildIds = useMemo(
+    () =>
+      new Set(
+        channels.filter((channel) => unreadChannelIds?.has(channel.id)).map((c) => c.guildId),
+      ),
+    [channels, unreadChannelIds],
   );
   const guildName = sortedGuilds.find((guild) => guild.id === guildId)?.name ?? null;
 
@@ -62,6 +71,7 @@ function Navigation(props: NavigationProps) {
       <ServerRail
         guilds={sortedGuilds}
         selectedGuildId={guildId}
+        unreadGuildIds={unreadGuildIds}
         onSelectGuild={(id) => props.onChoose({ guildId: id, channelId: selectedChannelId })}
         collectorStatus={props.collectorStatus}
         accountLink={props.accountLink}
@@ -70,6 +80,7 @@ function Navigation(props: NavigationProps) {
         guildName={guildName}
         groups={groups}
         selectedChannelId={selectedChannelId}
+        unreadChannelIds={unreadChannelIds}
         hrefFor={props.hrefFor}
         onNavigate={onNavigate}
       />
@@ -156,6 +167,7 @@ export function AppShell({
   channels,
   collectorStatus,
   accountLink,
+  unreadChannelIds,
   hrefFor = channelHref,
   className,
   children,
@@ -169,6 +181,7 @@ export function AppShell({
     channels,
     collectorStatus,
     accountLink,
+    unreadChannelIds,
     hrefFor,
     choice,
     onChoose: setChoice,

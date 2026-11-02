@@ -35,6 +35,15 @@ function renderSidebar(overrides: Partial<Parameters<typeof ChannelSidebar>[0]> 
   );
 }
 
+describe("ChannelSidebar 未读", () => {
+  // covers: spec 0008 AC-22
+  it("未读频道和线程都有可读的文字说明", () => {
+    renderSidebar({ unreadChannelIds: new Set(["pixel"]) });
+    expect(screen.getByRole("link", { name: /像素风格求助.*有未读消息/ })).toBeInTheDocument();
+    expect(screen.getAllByText("有未读消息")).toHaveLength(1);
+  });
+});
+
 describe("ChannelSidebar", () => {
   // covers: AC-2
   it("选中的频道带 aria-current=page，其他频道不带", () => {

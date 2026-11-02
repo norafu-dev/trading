@@ -331,6 +331,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/discord/channels/{channel_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Channel */
+        get: operations["get_channel_api_discord_channels__channel_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/channels/{channel_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Messages */
+        get: operations["list_messages_api_discord_channels__channel_id__messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/guilds/{guild_id}/load-threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Load Threads */
+        post: operations["load_threads_api_discord_guilds__guild_id__load_threads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -357,7 +408,7 @@ export interface paths {
         };
         /**
          * Events
-         * @description A heartbeat every 20 s plus new_message, account_status, channels_changed.
+         * @description A heartbeat every 20 s plus message, account and channel change events.
          */
         get: operations["events_api_events_get"];
         put?: never;
@@ -386,6 +437,17 @@ export interface components {
         AccountEnvelope: {
             account: components["schemas"]["DiscordAccountOut"] | null;
         };
+        /** AttachmentOut */
+        AttachmentOut: {
+            /** Id */
+            id: string;
+            /** Filename */
+            filename: string;
+            /** Content Type */
+            content_type: string | null;
+            /** Size Bytes */
+            size_bytes: number;
+        };
         /** AuthState */
         AuthState: {
             /**
@@ -400,6 +462,21 @@ export interface components {
             changed: number;
             /** Skipped No Access */
             skipped_no_access: number;
+        };
+        /** ChannelDetailOut */
+        ChannelDetailOut: {
+            /** Id */
+            id: string;
+            /** Guild Id */
+            guild_id: string;
+            /** Guild Name */
+            guild_name: string;
+            /** Name */
+            name: string;
+            /** Type */
+            type: number;
+            /** Banner Reason */
+            banner_reason: ("channel_deleted" | "guild_left" | "collect_off" | "no_access" | "thread_archived" | "parent_unavailable" | "account_reconnecting" | "account_offline" | "starting") | null;
         };
         /** ChannelOut */
         ChannelOut: {
@@ -473,6 +550,64 @@ export interface components {
             /** Collector Stale */
             collector_stale: boolean;
         };
+        /** EmbedAuthor */
+        EmbedAuthor: {
+            /** Name */
+            name?: string;
+            /** Url */
+            url?: string;
+        };
+        /**
+         * EmbedData
+         * @description The embed fields we keep; keys whose value would be None are left out.
+         */
+        EmbedData: {
+            /** Type */
+            type?: string;
+            /** Title */
+            title?: string;
+            /** Description */
+            description?: string;
+            /** Url */
+            url?: string;
+            /** Color */
+            color?: number;
+            /** Timestamp */
+            timestamp?: string;
+            author?: components["schemas"]["EmbedAuthor"];
+            /** Fields */
+            fields?: components["schemas"]["EmbedField"][];
+            /** Footer Text */
+            footer_text?: string;
+            /** Image Url */
+            image_url?: string;
+            /** Thumbnail Url */
+            thumbnail_url?: string;
+        };
+        /** EmbedField */
+        EmbedField: {
+            /** Name */
+            name: string;
+            /** Value */
+            value: string;
+            /** Inline */
+            inline?: boolean;
+        };
+        /** ForwardedOut */
+        ForwardedOut: {
+            /** Message Id */
+            message_id: string;
+            /** Channel Id */
+            channel_id: string;
+            /** Guild Id */
+            guild_id: string | null;
+            /** Content */
+            content: string;
+            /** Embeds */
+            embeds: components["schemas"]["EmbedData"][];
+            /** Attachment Names */
+            attachment_names: string[];
+        };
         /** GuildBriefOut */
         GuildBriefOut: {
             /** Id */
@@ -497,6 +632,8 @@ export interface components {
             status: "active" | "left" | "deleted";
             /** Enabled Count */
             enabled_count: number;
+            /** Thread Load Pending */
+            thread_load_pending: boolean;
         };
         /** GuildsOut */
         GuildsOut: {
@@ -562,6 +699,64 @@ export interface components {
              */
             outcome: "success" | "bad_credentials" | "rate_limited" | "setup_bad_code" | "setup_completed" | "logout" | "reset";
         };
+        /** MessageOut */
+        MessageOut: {
+            /** Id */
+            id: string;
+            /** Channel Id */
+            channel_id: string;
+            /** Author Id */
+            author_id: string;
+            /** Author Name */
+            author_name: string;
+            /** Author Avatar Hash */
+            author_avatar_hash: string | null;
+            /** Created At */
+            created_at: string;
+            /** Content */
+            content: string;
+            /** Embeds */
+            embeds: components["schemas"]["EmbedData"][];
+            forwarded: components["schemas"]["ForwardedOut"] | null;
+            /** Attachments */
+            attachments: components["schemas"]["AttachmentOut"][];
+            /** Edited At */
+            edited_at: string | null;
+            /** Deleted At */
+            deleted_at: string | null;
+            reply: components["schemas"]["ReplyOut"] | null;
+        };
+        /** MessagesOut */
+        MessagesOut: {
+            /** Messages */
+            messages: components["schemas"]["MessageOut"][];
+            /** Has More */
+            has_more: boolean;
+            /** Users */
+            users: components["schemas"]["NamedRefOut"][];
+            /** Channels */
+            channels: components["schemas"]["NamedRefOut"][];
+        };
+        /** NamedRefOut */
+        NamedRefOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** ReplyOut */
+        ReplyOut: {
+            /** Id */
+            id: string;
+            /** Missing */
+            missing: boolean;
+            /** Author Name */
+            author_name?: string | null;
+            /** Preview */
+            preview?: string | null;
+            /** Deleted */
+            deleted?: boolean | null;
+        };
         /** SetupBeginBody */
         SetupBeginBody: {
             /** Setup Code */
@@ -582,6 +777,11 @@ export interface components {
             password: string;
             /** Totp Code */
             totp_code: string;
+        };
+        /** ThreadLoadOut */
+        ThreadLoadOut: {
+            /** Pending */
+            pending: boolean;
         };
         /** TokenUpdate */
         TokenUpdate: {
@@ -1133,6 +1333,104 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CollectedOut"];
+                };
+            };
+        };
+    };
+    get_channel_api_discord_channels__channel_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_messages_api_discord_channels__channel_id__messages_get: {
+        parameters: {
+            query?: {
+                before?: string | null;
+                after?: string | null;
+                ids?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                channel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessagesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    load_threads_api_discord_guilds__guild_id__load_threads_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                guild_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadLoadOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

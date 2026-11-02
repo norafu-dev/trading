@@ -23,6 +23,7 @@ function message(overrides: Partial<MessageView> = {}): MessageView {
     forwarded: null,
     attachments: [],
     editedAt: null,
+    replyTo: null,
     deleted: false,
     ...overrides,
   };
@@ -55,6 +56,20 @@ function renderRow(overrides: Partial<MessageView> = {}, groupStart = true) {
 }
 
 describe("MessageRow", () => {
+  // covers: spec 0008 AC-20
+  it("回复显示引用行，摘要是纯文字；原消息没采集和已删除各有说明", () => {
+    const { unmount } = renderRow({
+      replyTo: { missing: false, authorName: "小鹿", preview: "**不解析**", deleted: true },
+    });
+    expect(screen.getByText("小鹿")).toBeInTheDocument();
+    expect(screen.getByText("**不解析**")).toBeInTheDocument();
+    expect(screen.getByText("（已删除）")).toBeInTheDocument();
+    unmount();
+
+    renderRow({ replyTo: { missing: true } });
+    expect(screen.getByText("原消息未采集")).toBeInTheDocument();
+  });
+
   // covers: AC-5, AC-6
   it("组首显示名字和时间，可访问名称带作者和完整时间", () => {
     renderRow();

@@ -2,7 +2,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DISCORD_ACCOUNT_KEY, EventStreamProvider, useEventStream } from "./event-stream";
+import {
+  DISCORD_ACCOUNT_KEY,
+  EventStreamProvider,
+  type MessageStreamEvent,
+  useEventStream,
+  useMessageEvents,
+} from "./event-stream";
 
 type Listener = (event: MessageEvent) => void;
 
@@ -35,6 +41,13 @@ function Probe() {
   return <p>{`${connected ? "connected" : "closed"} ${lastHeartbeat ?? "none"}`}</p>;
 }
 
+const RECEIVED: MessageStreamEvent[] = [];
+
+function MessageProbe() {
+  useMessageEvents((event) => RECEIVED.push(event));
+  return null;
+}
+
 function setup() {
   const client = new QueryClient();
   const invalidate = vi.spyOn(client, "invalidateQueries");
@@ -42,6 +55,7 @@ function setup() {
     <QueryClientProvider client={client}>
       <EventStreamProvider>
         <Probe />
+        <MessageProbe />
       </EventStreamProvider>
     </QueryClientProvider>,
   );
@@ -55,7 +69,7 @@ describe("EventStreamProvider", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   // covers: spec 0006 AC-12
-  it("channels_changed 事件让三个频道查询失效", () => {
+  it("channels_changed 事件让频道查询失效", () => {
     const { invalidate, source } = setup();
 
     act(() => source.emit("channels_changed", "{}"));
@@ -64,6 +78,7 @@ describe("EventStreamProvider", () => {
       ["discord-guilds"],
       ["discord-guild-channels"],
       ["discord-collected"],
+      ["discord-channel-detail"],
     ]);
   });
 
@@ -84,6 +99,26 @@ describe("EventStreamProvider", () => {
 
     expect(invalidate).toHaveBeenCalledWith({ queryKey: DISCORD_ACCOUNT_KEY });
     expect(screen.getByText("connected none")).toBeInTheDocument();
+  });
+
+  // covers: spec 0008 AC-15, AC-19
+  it("转发消息事件，大 ID 不丢精度；只有重连才发 reconnected", () => {
+    RECEIVED.length = 0;
+    const { source } = setup();
+
+    act(() => source.onopen?.());
+    act(() =>
+      source.emit(
+        "new_message",
+        '{"type":"new_message","channel_id":"1","message_id":"9007199254740993"}',
+      ),
+    );
+    act(() => source.onopen?.());
+
+    expect(RECEIVED).toEqual([
+      { type: "new_message", channel_id: "1", message_id: "9007199254740993" },
+      { type: "reconnected" },
+    ]);
   });
 
   it("记录心跳，卸载时关闭连接", () => {

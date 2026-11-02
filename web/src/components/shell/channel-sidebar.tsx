@@ -22,6 +22,7 @@ type ChannelSidebarProps = Readonly<{
   guildName: string | null;
   groups: readonly ChannelGroup[];
   selectedChannelId: string | null;
+  unreadChannelIds?: ReadonlySet<string>;
   hrefFor: (channelId: string) => string;
   onNavigate?: () => void;
 }>;
@@ -37,13 +38,25 @@ export function iconFor(type: number): LucideIcon {
 type ChannelItemProps = Omit<ChannelSidebarProps, "guildName" | "groups"> &
   Readonly<{ node: ChannelNode }>;
 
-function ChannelItem({ node, selectedChannelId, hrefFor, onNavigate }: ChannelItemProps) {
+function ChannelItem({
+  node,
+  selectedChannelId,
+  unreadChannelIds,
+  hrefFor,
+  onNavigate,
+}: ChannelItemProps) {
   const Icon = iconFor(node.type);
   const selected = node.id === selectedChannelId;
+  const unread = unreadChannelIds?.has(node.id) ?? false;
   const content = (
     <>
       <Icon aria-hidden strokeWidth={1.75} className="size-4 shrink-0" />
-      <span className="truncate">{node.name}</span>
+      <span className={cn("truncate", unread && "font-semibold text-foreground")}>{node.name}</span>
+      {unread ? (
+        <span className="ml-auto size-2 shrink-0 rounded-full bg-foreground">
+          <span className="sr-only">有未读消息</span>
+        </span>
+      ) : null}
     </>
   );
   return (
@@ -77,6 +90,7 @@ function ChannelItem({ node, selectedChannelId, hrefFor, onNavigate }: ChannelIt
               key={thread.id}
               node={thread}
               selectedChannelId={selectedChannelId}
+              unreadChannelIds={unreadChannelIds}
               hrefFor={hrefFor}
               onNavigate={onNavigate}
             />
@@ -92,10 +106,11 @@ export function ChannelSidebar({
   guildName,
   groups,
   selectedChannelId,
+  unreadChannelIds,
   hrefFor,
   onNavigate,
 }: ChannelSidebarProps) {
-  const itemProps = { selectedChannelId, hrefFor, onNavigate };
+  const itemProps = { selectedChannelId, unreadChannelIds, hrefFor, onNavigate };
   return (
     <nav aria-label="频道" className="flex h-full w-60 shrink-0 flex-col bg-muted">
       <header className="flex h-12 shrink-0 items-center border-b border-border px-4">

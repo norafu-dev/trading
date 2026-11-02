@@ -17,6 +17,7 @@ import type { CollectorStatus, GuildInput } from "./types";
 type ServerRailProps = Readonly<{
   guilds: readonly GuildInput[];
   selectedGuildId: string | null;
+  unreadGuildIds?: ReadonlySet<string>;
   onSelectGuild: (guildId: string) => void;
   collectorStatus: CollectorStatus;
   /** 账号入口要取数，由真实页面传入；预览页不传，不发请求。 */
@@ -49,6 +50,7 @@ function GuildIcon({ guild, selected }: Readonly<{ guild: GuildInput; selected: 
 export function ServerRail({
   guilds,
   selectedGuildId,
+  unreadGuildIds,
   onSelectGuild,
   collectorStatus,
   accountLink,
@@ -69,6 +71,7 @@ export function ServerRail({
       <ul className="flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-y-auto py-1">
         {guilds.map((guild) => {
           const selected = guild.id === selectedGuildId;
+          const unread = unreadGuildIds?.has(guild.id) ?? false;
           return (
             <li key={guild.id} className="group/guild relative flex w-full justify-center">
               <span
@@ -78,12 +81,18 @@ export function ServerRail({
                   selected ? "h-10" : "h-0 group-hover/guild:h-5",
                 )}
               />
+              {unread ? (
+                <span
+                  aria-hidden
+                  className="absolute top-1/2 left-0 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-rail-foreground"
+                />
+              ) : null}
               <Tooltip>
                 <TooltipTrigger
                   render={
                     <button
                       type="button"
-                      aria-label={guild.name}
+                      aria-label={unread ? `${guild.name}，有未读消息` : guild.name}
                       aria-current={selected ? "true" : undefined}
                       onClick={() => onSelectGuild(guild.id)}
                       className="rounded-lg"

@@ -17,6 +17,7 @@ function message(id: string, createdAt: string, overrides: Partial<MessageView> 
     forwarded: null,
     attachments: [],
     editedAt: null,
+    replyTo: null,
     deleted: false,
     ...overrides,
   };
@@ -175,5 +176,24 @@ describe("maxMessageId", () => {
   it("返回最后一条消息的 ID，空列表返回 null", () => {
     expect(maxMessageId([message("1", BASE), message("2", BASE)])).toBe("2");
     expect(maxMessageId([])).toBeNull();
+  });
+});
+
+describe("buildRows 回复", () => {
+  // covers: spec 0008 AC-20
+  it("回复消息总是另起一组", () => {
+    const rows = buildRows(
+      [
+        message("1", BASE),
+        message("2", at(BASE, 1000), { replyTo: { missing: true } }),
+        message("3", at(BASE, 2000)),
+      ],
+      SHANGHAI,
+    );
+    expect(groupStarts(rows)).toEqual([
+      ["1", true],
+      ["2", true],
+      ["3", false],
+    ]);
   });
 });
