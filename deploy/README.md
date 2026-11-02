@@ -9,7 +9,7 @@ Harvester 跑在一台 Lightsail 服务器上（Ubuntu 24.04），所有东西�
 | `compose.prod.yml`、`deploy.sh`、`backup.sh`、`restore.sh` | 每次发布由 Release 复制 | |
 | `bootstrap.sh`、`systemd/` | 第一次用 `scp -r` 复制 | 以后改了要手动再复制并重跑 bootstrap |
 | `.env` | 你手动创建，`chmod 600` | 应用配置和密钥 |
-| `backup.env` | 你手动创建，`chmod 600` | R2 密钥和 age 公钥，容器读不到 |
+| `backup.env` | 复制 `backup.env.example` 后填值，`chmod 600` | R2 密钥和 age 公钥，容器读不到 |
 | `.image-tag` | `deploy.sh` 写入 | 当前运行的 sha |
 | `.ops.lock` | 自动创建 | 发布、备份、恢复互斥用 |
 | `backups/` | bootstrap 创建 | 本机只留最新 2 份加密备份 |
@@ -52,7 +52,7 @@ Harvester 跑在一台 Lightsail 服务器上（Ubuntu 24.04），所有东西�
    ```
 
    写完把整个 `.env` 存一份到密码管理器（和 age 私钥分开两条）。
-5. **写 `~/harvester/backup.env`**（`chmod 600`）：
+5. **写 `~/harvester/backup.env`**：先 `cp ~/harvester/backup.env.example ~/harvester/backup.env && chmod 600 ~/harvester/backup.env`，再把值填进去（模板随 `scp -r deploy/` 一起过去了）。填好后长这样：
 
    ```bash
    R2_ACCOUNT_ID=<Cloudflare 账号 ID>
