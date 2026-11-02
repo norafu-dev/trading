@@ -16,6 +16,7 @@ from harvester.db.models import (
     AccountChannelAccess,
     Channel,
     ChannelCoverage,
+    CollectorHeartbeat,
     DiscordAccount,
     DiscordLoginAttempt,
 )
@@ -48,6 +49,8 @@ class AccountRow:
     last_heartbeat_at: datetime | None
     retry_at: datetime | None
     config_version: int
+    # collector 进程心跳（spec 0009），和账号行在同一条查询里读，共用 db_now。
+    process_heartbeat_at: datetime | None
     # 读取时数据库的 now()：所有时间判断都以数据库时钟为准。
     db_now: datetime
 
@@ -76,14 +79,15 @@ async def _notify(session: AsyncSession, account_id: int) -> None:
 
 
 async def get_account(session: AsyncSession, *, for_update: bool = False) -> AccountRow | None:
-    stmt = select(DiscordAccount, func.now())
+    heartbeat = select(CollectorHeartbeat.last_seen_at).scalar_subquery()
+    stmt = select(DiscordAccount, heartbeat, func.now())
     # now() 是事务开始的时间；SSE 和轮询的读都是短事务，不影响判断。
     if for_update:
         stmt = stmt.with_for_update(of=DiscordAccount)
     result = (await session.execute(stmt.execution_options(populate_existing=True))).first()
     if result is None:
         return None
-    account, db_now = result
+    account, process_heartbeat_at, db_now = result
     return AccountRow(
         id=account.id,
         label=account.label,
@@ -96,6 +100,7 @@ async def get_account(session: AsyncSession, *, for_update: bool = False) -> Acc
         last_heartbeat_at=account.last_heartbeat_at,
         retry_at=account.retry_at,
         config_version=account.config_version,
+        process_heartbeat_at=process_heartbeat_at,
         db_now=db_now,
     )
 

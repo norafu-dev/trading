@@ -7,6 +7,7 @@ import { type FormEvent, useId, useMemo, useState } from "react";
 import { FormField } from "@/components/auth/auth-card";
 import { FormError } from "@/components/auth/form-error";
 import { ErrorBlock } from "@/components/states/error-block";
+import { useSystemStatus } from "@/components/system/use-system-status";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { toUiError } from "@/lib/api/errors";
 import { createTimeFormat } from "@/lib/format/time";
+import { useNow } from "@/lib/format/use-now";
 
 import { type AccountOperation, describeAccount, STALE_TEXT } from "./account-status";
 import {
@@ -167,6 +169,9 @@ function AccountCard({ account }: Readonly<{ account: DiscordAccount }>) {
   );
   const info = describeAccount(account, format.fullTime);
   const close = () => setEditing("none");
+  const system = useSystemStatus();
+  const now = useNow();
+  const processBeat = system.data?.collector.last_heartbeat_at;
 
   function run(operation: AccountOperation) {
     if (operation === "replace-token") {
@@ -201,6 +206,18 @@ function AccountCard({ account }: Readonly<{ account: DiscordAccount }>) {
         </Badge>
         {account.collector_stale ? <Badge variant="destructive">{STALE_TEXT}</Badge> : null}
       </p>
+      {system.data ? (
+        <p className="text-xs text-muted-foreground">
+          采集进程最近心跳：
+          {processBeat ? (
+            <time dateTime={processBeat} title={format.fullTime(processBeat)}>
+              {format.relativeTime(processBeat, now)}
+            </time>
+          ) : (
+            "还没有心跳"
+          )}
+        </p>
+      ) : null}
       {account.last_heartbeat_at ? (
         <p className="text-xs text-muted-foreground">
           最近心跳 {format.fullTime(account.last_heartbeat_at)}

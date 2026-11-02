@@ -21,6 +21,8 @@ export type TimeFormat = Readonly<{
   messageTime: (iso: string, now: Date) => string;
   hoverTime: (iso: string) => string;
   fullTime: (iso: string) => string;
+  /** 相对时间，如「2分钟前」；`now` 由调用方传入（页面用 useNow）。 */
+  relativeTime: (iso: string, now: Date) => string;
   dayDivider: (dayKey: string) => string;
   discordTimestamp: (seconds: string, style: string | undefined, now: Date) => string | null;
 }>;
@@ -143,6 +145,7 @@ export function createTimeFormat(timeZone: string): TimeFormat {
     messageTime,
     hoverTime,
     fullTime,
+    relativeTime: (iso: string, now: Date) => relative(new Date(iso), now),
     dayDivider: formatDayDivider,
     discordTimestamp,
   };

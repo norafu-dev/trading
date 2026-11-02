@@ -3,11 +3,26 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { jsonResponse, renderWithQuery } from "@/components/auth/test-utils";
 
+import { SYSTEM_STATUS, systemStatusResponse } from "@/components/system/test-fixtures";
+
 import { AccountPanel } from "./account-panel";
 import type { DiscordAccount } from "./use-discord-account";
 
-const { get, post, put } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn() }));
-vi.mock("@/lib/api/client", () => ({ api: { GET: get, POST: post, PUT: put } }));
+const { get, post, put, systemGet } = vi.hoisted(() => ({
+  get: vi.fn(),
+  post: vi.fn(),
+  put: vi.fn(),
+  systemGet: vi.fn(),
+}));
+// 系统状态单独分流，下面的用例只管账号接口。
+vi.mock("@/lib/api/client", () => ({
+  api: {
+    GET: (path: string, ...rest: unknown[]) =>
+      path === "/api/system/status" ? systemGet() : get(path, ...rest),
+    POST: post,
+    PUT: put,
+  },
+}));
 
 const ACCOUNT: DiscordAccount = {
   id: 1,
@@ -73,6 +88,8 @@ const CASES: ReadonlyArray<
 describe("AccountPanel", () => {
   beforeEach(() => {
     get.mockReset();
+    systemGet.mockReset();
+    systemGet.mockResolvedValue(systemStatusResponse());
     post.mockReset();
     put.mockReset();
   });
@@ -314,5 +331,32 @@ describe("AccountPanel", () => {
     await screen.findByText("alt_user");
 
     expect(screen.queryByLabelText(/token/i)).not.toBeInTheDocument();
+  });
+
+  // covers: spec 0009 AC-4
+  it("账号卡显示采集进程最近心跳，悬停看完整时间", async () => {
+    showAccount({});
+
+    await screen.findByText(/采集进程最近心跳/);
+    const beat = document.querySelector(
+      `time[datetime="${SYSTEM_STATUS.collector.last_heartbeat_at}"]`,
+    );
+    if (!(beat instanceof HTMLElement)) throw new Error("没有心跳时间");
+    expect(beat).toHaveAttribute("dateTime", SYSTEM_STATUS.collector.last_heartbeat_at);
+    expect(beat.getAttribute("title")).toMatch(/2026/);
+  });
+
+  // covers: spec 0009 AC-4
+  it("没有进程心跳时显示还没有心跳", async () => {
+    systemGet.mockResolvedValue(
+      systemStatusResponse({
+        ...SYSTEM_STATUS,
+        collector: { last_heartbeat_at: null, stale: true, has_account: true },
+      }),
+    );
+    showAccount({ collector_stale: true });
+
+    expect(await screen.findByText(/还没有心跳/)).toBeInTheDocument();
+    expect(screen.getByText("采集进程无响应")).toBeInTheDocument();
   });
 });

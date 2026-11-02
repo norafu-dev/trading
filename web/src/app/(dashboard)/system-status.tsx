@@ -7,12 +7,21 @@ import { useMemo } from "react";
 
 import { describeAccount, STALE_TEXT } from "@/components/discord/account-status";
 import { useDiscordAccount } from "@/components/discord/use-discord-account";
+import {
+  describeBackup,
+  describeCollector,
+  type StatusLine,
+  type TimeText,
+  type Tone,
+} from "@/components/system/describe-system";
+import { useSystemStatus } from "@/components/system/use-system-status";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { api } from "@/lib/api/client";
 import { ApiResponseError, toUiError } from "@/lib/api/errors";
 import { useEventStream } from "@/lib/events/event-stream";
 import { createTimeFormat } from "@/lib/format/time";
+import { useNow } from "@/lib/format/use-now";
 
 function useHealth() {
   return useQuery({
@@ -26,14 +35,13 @@ function useHealth() {
   });
 }
 
-type Tone = "ok" | "pending" | "error";
-
 function StatusRow({
   label,
   tone,
   value,
   detail,
-}: Readonly<{ label: string; tone: Tone; value: string; detail?: string }>) {
+  title,
+}: Readonly<{ label: string; tone: Tone; value: string; detail?: string; title?: string }>) {
   return (
     <div className="flex items-start justify-between gap-4 py-3">
       <dt className="text-muted-foreground">{label}</dt>
@@ -50,7 +58,11 @@ function StatusRow({
           />
           {value}
         </Badge>
-        {detail ? <span className="text-xs text-muted-foreground">{detail}</span> : null}
+        {detail ? (
+          <span className="text-xs text-muted-foreground" title={title}>
+            {detail}
+          </span>
+        ) : null}
       </dd>
     </div>
   );
@@ -60,10 +72,24 @@ export function SystemStatus() {
   const health = useHealth();
   const { connected, lastHeartbeat } = useEventStream();
   const account = useDiscordAccount();
+  const system = useSystemStatus();
+  const now = useNow();
   const format = useMemo(
     () => createTimeFormat(Intl.DateTimeFormat().resolvedOptions().timeZone),
     [],
   );
+  const time: TimeText = {
+    relative: (iso) => format.relativeTime(iso, now),
+    full: format.fullTime,
+  };
+  const systemLine = (describe: (data: NonNullable<typeof system.data>) => StatusLine) =>
+    system.isPending
+      ? ({ tone: "pending", value: "检查中" } as const)
+      : system.isError
+        ? ({ tone: "error", value: "读取失败", detail: toUiError(system.error).detail } as const)
+        : describe(system.data);
+  const collectorRow = systemLine((data) => describeCollector(data.collector, time));
+  const backupRow = systemLine((data) => describeBackup(data.backup, time));
 
   const apiRow = health.isPending
     ? ({ tone: "pending", value: "检查中" } as const)
@@ -105,6 +131,10 @@ export function SystemStatus() {
         <Link href="/settings/discord" className="rounded-md hover:bg-muted/50">
           <StatusRow label="Discord 账号" {...accountRow} />
         </Link>
+        <Separator />
+        <StatusRow label="采集进程" {...collectorRow} />
+        <Separator />
+        <StatusRow label="备份" {...backupRow} />
       </dl>
     </section>
   );

@@ -11,6 +11,7 @@ from harvester.api.errors import ApiError
 from harvester.crypto import PURPOSE_DISCORD_TOKEN, encrypt
 from harvester.db import SessionFactoryDep
 from harvester.db import account as accounts
+from harvester.db import system as system_db
 from harvester.db.account import AccountRow
 from harvester.db.snapshots import AccountStatus
 
@@ -113,7 +114,11 @@ def _to_out(row: AccountRow) -> DiscordAccountOut:
         last_error=row.last_error,
         last_heartbeat_at=row.last_heartbeat_at,
         retry_at=row.retry_at,
-        collector_stale=accounts.is_collector_stale(row),
+        # 进程心跳和账号规则取或（spec 0009 AC-4）。
+        collector_stale=system_db.is_process_stale(
+            row.process_heartbeat_at, row.db_now, has_account=True
+        )
+        or accounts.is_collector_stale(row),
     )
 
 

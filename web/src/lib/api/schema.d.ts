@@ -382,6 +382,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/system/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get System Status */
+        get: operations["get_system_status_api_system_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -456,6 +473,35 @@ export interface components {
              */
             state: "setup_required" | "unauthenticated" | "authenticated";
         };
+        /** BackupRunOut */
+        BackupRunOut: {
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Finished At */
+            finished_at: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "succeeded" | "failed";
+            /** Size Bytes */
+            size_bytes: number | null;
+            /** Object Key */
+            object_key: string | null;
+            /** Error */
+            error: ("dump" | "encrypt" | "upload" | "interrupted") | null;
+        };
+        /** BackupStatusOut */
+        BackupStatusOut: {
+            last_run: components["schemas"]["BackupRunOut"] | null;
+            /** Last Success At */
+            last_success_at: string | null;
+            /** Overdue */
+            overdue: boolean;
+        };
         /** CategoryCollectOut */
         CategoryCollectOut: {
             /** Changed */
@@ -520,6 +566,15 @@ export interface components {
             guilds: components["schemas"]["GuildBriefOut"][];
             /** Channels */
             channels: components["schemas"]["ChannelOut"][];
+        };
+        /** CollectorStatusOut */
+        CollectorStatusOut: {
+            /** Last Heartbeat At */
+            last_heartbeat_at: string | null;
+            /** Stale */
+            stale: boolean;
+            /** Has Account */
+            has_account: boolean;
         };
         /** DiscordAccountOut */
         DiscordAccountOut: {
@@ -777,6 +832,11 @@ export interface components {
             password: string;
             /** Totp Code */
             totp_code: string;
+        };
+        /** SystemStatusOut */
+        SystemStatusOut: {
+            collector: components["schemas"]["CollectorStatusOut"];
+            backup: components["schemas"]["BackupStatusOut"];
         };
         /** ThreadLoadOut */
         ThreadLoadOut: {
@@ -1431,6 +1491,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_system_status_api_system_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemStatusOut"];
                 };
             };
         };

@@ -36,6 +36,9 @@ LoginOutcome = Literal[
     "logout",
     "reset",
 ]
+# 备份记录（spec 0009）：状态和失败步骤，都由 deploy/backup.sh 写入。
+BackupStatus = Literal["running", "succeeded", "failed"]
+BackupError = Literal["dump", "encrypt", "upload", "interrupted"]
 
 # Text (0), announcement (5), announcement thread (10), public thread (11), private thread (12).
 # Must match the `ck_channel_collectable_type` constraint; a test keeps the two in sync.

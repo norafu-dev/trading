@@ -9,10 +9,9 @@ import { useCollected } from "./use-collected";
 
 const EMPTY: readonly never[] = [];
 
-function ConnectedShell({
-  accountLink,
-  children,
-}: Readonly<{ accountLink: ReactNode; children: ReactNode }>) {
+type ShellLinks = Readonly<{ accountLink: ReactNode; homeLink: ReactNode; children: ReactNode }>;
+
+function ConnectedShell({ accountLink, homeLink, children }: ShellLinks) {
   const { data } = useCollected();
   const unread = useUnreadChannels();
   return (
@@ -21,6 +20,7 @@ function ConnectedShell({
       channels={data?.channels ?? EMPTY}
       collectorStatus="unknown"
       accountLink={accountLink}
+      homeLink={homeLink}
       unreadChannelIds={unread}
     >
       {children}
@@ -29,13 +29,12 @@ function ConnectedShell({
 }
 
 // 把已开启的频道和未读状态接到外壳上。加载中或失败时侧栏是空状态，不挡住页面内容。
-export function CollectedShell({
-  accountLink,
-  children,
-}: Readonly<{ accountLink: ReactNode; children: ReactNode }>) {
+export function CollectedShell({ accountLink, homeLink, children }: ShellLinks) {
   return (
     <UnreadProvider>
-      <ConnectedShell accountLink={accountLink}>{children}</ConnectedShell>
+      <ConnectedShell accountLink={accountLink} homeLink={homeLink}>
+        {children}
+      </ConnectedShell>
     </UnreadProvider>
   );
 }

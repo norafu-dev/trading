@@ -22,7 +22,28 @@ type ServerRailProps = Readonly<{
   collectorStatus: CollectorStatus;
   /** 账号入口要取数，由真实页面传入；预览页不传，不发请求。 */
   accountLink?: ReactNode;
+  /** 首页入口，真实页面传入带备份红点的版本；不传时是不取数的普通入口。 */
+  homeLink?: ReactNode;
 }>;
+
+// 图标栏顶部的首页入口。`alert` 有值时右上角显示红点，文字并入无障碍名称（spec 0009 AC-7）。
+export function RailHomeLink({ alert }: Readonly<{ alert?: string }>) {
+  return (
+    <Link
+      href="/"
+      aria-label={alert ? `Harvester 首页，${alert}` : "Harvester 首页"}
+      className="relative flex size-12 items-center justify-center rounded-lg bg-primary text-xl font-bold text-primary-foreground"
+    >
+      H
+      {alert ? (
+        <span
+          aria-hidden
+          className="absolute -top-0.5 -right-0.5 size-3 rounded-full bg-destructive ring-2 ring-rail"
+        />
+      ) : null}
+    </Link>
+  );
+}
 
 function GuildIcon({ guild, selected }: Readonly<{ guild: GuildInput; selected: boolean }>) {
   const src = guildIconUrl(guild.id, guild.iconHash);
@@ -54,19 +75,14 @@ export function ServerRail({
   onSelectGuild,
   collectorStatus,
   accountLink,
+  homeLink,
 }: ServerRailProps) {
   return (
     <nav
       aria-label="服务器"
       className="flex h-full w-[72px] shrink-0 flex-col items-center gap-2 bg-rail py-3 text-rail-foreground"
     >
-      <Link
-        href="/"
-        aria-label="Harvester 首页"
-        className="flex size-12 items-center justify-center rounded-lg bg-primary text-xl font-bold text-primary-foreground"
-      >
-        H
-      </Link>
+      {homeLink ?? <RailHomeLink />}
       <Separator className="mx-auto bg-rail-foreground/20 data-horizontal:w-8" />
       <ul className="flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-y-auto py-1">
         {guilds.map((guild) => {

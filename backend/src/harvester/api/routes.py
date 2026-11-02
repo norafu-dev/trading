@@ -19,6 +19,7 @@ from harvester.api.deps import (
 from harvester.api.discord_routes import discord_router
 from harvester.api.message_routes import message_router
 from harvester.api.notifications import Broadcaster
+from harvester.api.system_routes import system_router
 from harvester.db import SessionDep, SessionFactoryDep
 
 # 不管有没有事件，都按这个间隔发心跳并重新检查会话（AC-14）。
@@ -31,6 +32,7 @@ router = protected_router
 router.include_router(discord_router)
 router.include_router(channel_router)
 router.include_router(message_router)
+router.include_router(system_router)
 
 
 def get_broadcaster(request: Request) -> Broadcaster:

@@ -5,6 +5,8 @@ import os
 import signal
 import time
 from collections.abc import Awaitable, Callable
+from datetime import datetime
+from typing import cast
 
 import pytest
 from sqlalchemy import func, insert, select, text, update
@@ -17,7 +19,13 @@ from harvester.crypto import PURPOSE_DISCORD_TOKEN, encrypt
 from harvester.db import account as accounts
 from harvester.db import raw
 from harvester.db.account import AccountRow
-from harvester.db.models import AccountChannelAccess, Channel, ChannelCoverage
+from harvester.db.models import (
+    AccountChannelAccess,
+    Channel,
+    ChannelCoverage,
+    CollectorHeartbeat,
+    DiscordAccount,
+)
 from harvester.db.snapshots import GuildState
 from tests.api.conftest import crypto_settings
 from tests.collector.test_supervisor import GUILD_STATE, USER_ID, FakeSession, Queue
@@ -233,3 +241,60 @@ async def test_unexpected_failure_exits_with_crash_code_and_releases_lock(
         assert await holder.fetchval("SELECT pg_try_advisory_lock($1)", raw.COLLECTOR_LOCK_KEY)
     finally:
         await holder.close()
+
+
+async def read_process_heartbeat(factory: Factory) -> datetime | None:
+    async with factory() as session:
+        return await session.scalar(select(CollectorHeartbeat.last_seen_at))
+
+
+async def test_process_heartbeat_starts_without_an_account(
+    factory: Factory, sessions: list[FakeSession]
+) -> None:  # covers: spec 0009 AC-3
+    task = asyncio.create_task(main.run())
+
+    async def beat_written() -> bool:
+        return await read_process_heartbeat(factory) is not None
+
+    await wait_until(beat_written)
+    assert sessions == []
+    assert await stop_with_sigterm(task) == main.EXIT_OK
+
+
+@pytest.mark.parametrize("status", ["token_invalid", "banned", "login_paused"])
+async def test_process_heartbeat_keeps_beating_in_any_account_state(
+    factory: Factory,
+    sessions: list[FakeSession],
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+) -> None:  # covers: spec 0009 AC-3
+    monkeypatch.setattr(main, "PROCESS_HEARTBEAT_INTERVAL", 0.05)
+    await add_account(factory)
+    async with factory() as session, session.begin():
+        retry_at = func.now() + text("interval '1 hour'") if status == "login_paused" else None
+        await session.execute(update(DiscordAccount).values(status=status, retry_at=retry_at))
+    task = asyncio.create_task(main.run())
+
+    async def beat_written() -> bool:
+        return await read_process_heartbeat(factory) is not None
+
+    await wait_until(beat_written)
+    first = await read_process_heartbeat(factory)
+
+    async def beat_advanced() -> bool:
+        latest = await read_process_heartbeat(factory)
+        return first is not None and latest is not None and latest > first
+
+    await wait_until(beat_advanced)
+    assert await stop_with_sigterm(task) == main.EXIT_OK
+
+
+async def test_failed_heartbeat_write_is_logged_not_raised(
+    capfd: pytest.CaptureFixture[str],
+) -> None:  # covers: spec 0009 AC-3
+    def broken() -> object:
+        raise OSError("connection refused")
+
+    await main._beat_once(cast("Factory", broken))  # pyright: ignore[reportPrivateUsage]
+
+    assert "collector.process_heartbeat_failed" in capfd.readouterr().out

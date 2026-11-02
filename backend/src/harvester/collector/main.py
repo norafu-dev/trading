@@ -8,12 +8,15 @@ from functools import partial
 import asyncpg
 import structlog
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from harvester.collector.discord_client import new_client
 from harvester.collector.supervisor import Deps, run_supervisor
 from harvester.collector.wake_guard import WakeGuard, watch_sleep
 from harvester.config import get_crypto_settings
 from harvester.db import get_engine, get_sessionmaker, raw
+from harvester.db.system import record_collector_heartbeat
 
 log = structlog.get_logger("harvester.collector")
 
@@ -21,6 +24,8 @@ log = structlog.get_logger("harvester.collector")
 LOCK_CHECK_INTERVAL = 10.0
 # NOTIFY 丢了也有兜底：这么久读一次账号。
 ACCOUNT_POLL_INTERVAL = 30.0
+# 进程心跳间隔（spec 0009 AC-3），和账号状态无关。
+PROCESS_HEARTBEAT_INTERVAL = 30.0
 # 收到 SIGTERM 后关闭会话的时限，短于 Compose 默认的 10 秒强杀（AC-17）。
 SHUTDOWN_TIMEOUT = 8.0
 # 锁丢了要尽快退出，不等数据库写入。
@@ -60,6 +65,22 @@ async def _poll_account(wake: asyncio.Event) -> None:
     while True:
         await asyncio.sleep(ACCOUNT_POLL_INTERVAL)
         wake.set()
+
+
+async def _beat_once(factory: async_sessionmaker[AsyncSession]) -> None:
+    try:
+        async with factory() as session, session.begin():
+            await record_collector_heartbeat(session)
+    except (SQLAlchemyError, OSError) as error:
+        # 只记类型，不退出：数据库真的断了时由锁探测负责退出。
+        log.warning("collector.process_heartbeat_failed", error_type=type(error).__name__)
+
+
+async def _beat_process(factory: async_sessionmaker[AsyncSession]) -> None:
+    """先写一次再循环；事件循环被阻塞时心跳自然停止，dashboard 就能看出进程卡住。"""
+    while True:
+        await _beat_once(factory)
+        await asyncio.sleep(PROCESS_HEARTBEAT_INTERVAL)
 
 
 async def _cancel_and_wait(task: "asyncio.Task[None]", limit: float) -> None:
@@ -102,10 +123,11 @@ async def run() -> int:
         log.info("collector.db_connected", server_version=version)
 
         guard = WakeGuard()
+        factory = get_sessionmaker()
         supervisor = asyncio.create_task(
             run_supervisor(
                 Deps(
-                    factory=get_sessionmaker(),
+                    factory=factory,
                     key_ring=get_crypto_settings().key_ring,
                     new_session=partial(new_client, guard=guard),
                     clock=_utc_now,
@@ -120,6 +142,7 @@ async def run() -> int:
             asyncio.create_task(_probe_lock(lock_conn, lost), name="lock-probe"),
             asyncio.create_task(_poll_account(wake), name="account-poll"),
             asyncio.create_task(watch_sleep(guard), name="sleep-watch"),
+            asyncio.create_task(_beat_process(factory), name="process-heartbeat"),
         )
         stop_wait = asyncio.create_task(stop.wait(), name="stop-wait")
         lost_wait = asyncio.create_task(lost.wait(), name="lost-wait")

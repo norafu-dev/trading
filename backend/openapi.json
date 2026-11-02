@@ -829,6 +829,27 @@
         }
       }
     },
+    "/api/system/status": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Get System Status",
+        "operationId": "get_system_status_api_system_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemStatusOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -983,6 +1004,122 @@
           "state"
         ],
         "title": "AuthState"
+      },
+      "BackupRunOut": {
+        "properties": {
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "object_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Key"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "dump",
+                  "encrypt",
+                  "upload",
+                  "interrupted"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "started_at",
+          "finished_at",
+          "status",
+          "size_bytes",
+          "object_key",
+          "error"
+        ],
+        "title": "BackupRunOut"
+      },
+      "BackupStatusOut": {
+        "properties": {
+          "last_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BackupRunOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success At"
+          },
+          "overdue": {
+            "type": "boolean",
+            "title": "Overdue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "last_run",
+          "last_success_at",
+          "overdue"
+        ],
+        "title": "BackupStatusOut"
       },
       "CategoryCollectOut": {
         "properties": {
@@ -1187,6 +1324,37 @@
           "channels"
         ],
         "title": "CollectedOut"
+      },
+      "CollectorStatusOut": {
+        "properties": {
+          "last_heartbeat_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Heartbeat At"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale"
+          },
+          "has_account": {
+            "type": "boolean",
+            "title": "Has Account"
+          }
+        },
+        "type": "object",
+        "required": [
+          "last_heartbeat_at",
+          "stale",
+          "has_account"
+        ],
+        "title": "CollectorStatusOut"
       },
       "DiscordAccountOut": {
         "properties": {
@@ -1969,6 +2137,22 @@
           "totp_code"
         ],
         "title": "SetupCompleteBody"
+      },
+      "SystemStatusOut": {
+        "properties": {
+          "collector": {
+            "$ref": "#/components/schemas/CollectorStatusOut"
+          },
+          "backup": {
+            "$ref": "#/components/schemas/BackupStatusOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "collector",
+          "backup"
+        ],
+        "title": "SystemStatusOut"
       },
       "ThreadLoadOut": {
         "properties": {

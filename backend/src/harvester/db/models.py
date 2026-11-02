@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import get_args
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     ForeignKey,
     ForeignKeyConstraint,
@@ -29,6 +30,8 @@ from harvester.db.snapshots import (
     COLLECTABLE_CHANNEL_TYPES,
     STORED_MESSAGE_TYPES,
     AccountStatus,
+    BackupError,
+    BackupStatus,
     ChannelStatus,
     CoverageSource,
     DeleteSource,
@@ -306,3 +309,46 @@ class DashboardSetupCode(Base):
     created_at: Mapped[datetime] = _now()
 
     __table_args__ = (CheckConstraint("id = 1", name="single_row"),)
+
+
+# Feature 9 tables (spec 0009).
+class CollectorHeartbeat(Base):
+    """collector 进程心跳，最多一行；和账号状态无关。"""
+
+    __tablename__ = "collector_heartbeat"
+
+    id: Mapped[bool] = mapped_column(
+        Boolean, primary_key=True, server_default=text("true"), autoincrement=False
+    )
+    last_seen_at: Mapped[datetime]
+
+    __table_args__ = (CheckConstraint("id", name="single"),)
+
+
+class BackupRun(Base):
+    """每次备份一条，由 deploy/backup.sh 写入，api 只读。"""
+
+    __tablename__ = "backup_run"
+
+    id: Mapped[int] = mapped_column(Identity(always=True), primary_key=True)
+    started_at: Mapped[datetime] = _now()
+    finished_at: Mapped[datetime | None]
+    status: Mapped[BackupStatus] = mapped_column(Text)
+    size_bytes: Mapped[int | None]
+    object_key: Mapped[str | None]
+    error: Mapped[BackupError | None] = mapped_column(Text)
+
+    __table_args__ = (
+        CheckConstraint(_in("status", get_args(BackupStatus)), name="status"),
+        CheckConstraint(_in("error", get_args(BackupError)), name="error"),
+        CheckConstraint(
+            "(status = 'running' AND finished_at IS NULL AND size_bytes IS NULL"
+            " AND object_key IS NULL AND error IS NULL)"
+            " OR (status = 'succeeded' AND finished_at IS NOT NULL AND size_bytes IS NOT NULL"
+            " AND object_key IS NOT NULL AND error IS NULL)"
+            " OR (status = 'failed' AND finished_at IS NOT NULL AND error IS NOT NULL"
+            " AND size_bytes IS NULL AND object_key IS NULL)",
+            name="shape",
+        ),
+        Index("ix_backup_run_started_at", text("started_at DESC")),
+    )

@@ -248,6 +248,7 @@ def _row(**overrides: object) -> AccountRow:
         "last_heartbeat_at": at(0),
         "retry_at": None,
         "config_version": 1,
+        "process_heartbeat_at": None,
         "db_now": at(0) + timedelta(seconds=121),
     }
     return AccountRow(**{**base, **overrides})  # pyright: ignore[reportArgumentType]

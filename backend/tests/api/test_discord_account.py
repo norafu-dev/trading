@@ -16,6 +16,7 @@ from harvester.api.notifications import Broadcaster
 from harvester.crypto import PURPOSE_DISCORD_TOKEN, PURPOSE_TOTP, DecryptError, decrypt
 from harvester.db import account as accounts
 from harvester.db.models import DiscordAccount
+from harvester.db.system import record_collector_heartbeat
 from harvester.logging import configure_logging
 from tests.api.conftest import (
     FakeClock,
@@ -37,6 +38,9 @@ async def logged_in(
     async with make_client(app) as client:
         secret = await complete_setup(client, factory, clock)
         assert (await do_login(client, secret, clock)).status_code == 204
+        # 进程心跳是新鲜的，下面的用例只测账号自己的规则（spec 0009 的取或另有用例）。
+        async with factory() as session, session.begin():
+            await record_collector_heartbeat(session)
         yield client
 
 
@@ -384,3 +388,28 @@ def test_discord_logger_stays_at_warning_even_in_debug(restore_logging: None) ->
 
     assert logging.getLogger("discord").getEffectiveLevel() == logging.WARNING
     assert logging.getLogger("discord.http").getEffectiveLevel() == logging.WARNING
+
+
+@pytest.mark.parametrize(
+    ("heartbeat", "stale"),
+    [
+        pytest.param("now() - interval '121 seconds'", True, id="old-heartbeat"),
+        pytest.param("now() - interval '30 seconds'", False, id="fresh-heartbeat"),
+        pytest.param(None, True, id="never-beat"),
+    ],
+)
+async def test_collector_stale_or_includes_process_heartbeat(
+    logged_in: httpx.AsyncClient, factory: Factory, heartbeat: str | None, stale: bool
+) -> None:  # covers: spec 0009 AC-4
+    await _add(logged_in)
+    async with factory() as session, session.begin():
+        if heartbeat is None:
+            await session.execute(text("DELETE FROM collector_heartbeat"))
+        else:
+            await session.execute(
+                text(f"UPDATE collector_heartbeat SET last_seen_at = {heartbeat}")
+            )
+        # 账号自己的规则不会判无响应：token_invalid 不看心跳。
+        await session.execute(text("UPDATE discord_account SET status = 'token_invalid'"))
+
+    assert (await logged_in.get(BASE)).json()["account"]["collector_stale"] is stale
