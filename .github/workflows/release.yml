@@ -3,6 +3,18 @@ name: Release
 on:
   push:
     branches: [main]
+  # 手动重新发布或回滚到一个已经发布过的版本：不跑检查、不重新构建镜像（spec 0009 AC-12）。
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "已经发布过的 40 位 git sha"
+        required: true
+        type: string
+      services:
+        description: "要更新的服务，空格分隔，只能是 migrate caddy api collector"
+        required: true
+        default: "caddy api"
+        type: string
 
 concurrency:
   group: release
@@ -10,10 +22,12 @@ concurrency:
 
 jobs:
   checks:
+    if: github.event_name == 'push'
     uses: ./.github/workflows/ci.yml
 
   plan:
     # Decide which services this push updates (see "发布规则" in spec 0001).
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
       services: ${{ steps.plan.outputs.services }}
@@ -43,6 +57,7 @@ jobs:
 
   publish:
     needs: [checks, plan]
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -73,9 +88,53 @@ jobs:
 
   deploy:
     needs: [plan, publish]
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.publish.result == 'success') }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    env:
+      PREFIX: ghcr.io/${{ github.repository_owner }}/harvester
     steps:
+      # 手动运行：先校验输入和镜像，任何一项不通过都不登录服务器。输入只经 env 传入，不拼进脚本文本。
+      - name: Validate manual inputs
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          INPUT_SHA: ${{ inputs.sha }}
+          INPUT_SERVICES: ${{ inputs.services }}
+        run: |
+          if ! [[ "$INPUT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::sha must be a 40 character lowercase hex git sha"
+            exit 1
+          fi
+          read -r -a requested <<<"$INPUT_SERVICES"
+          if [ ${#requested[@]} -eq 0 ]; then
+            echo "::error::services is empty"
+            exit 1
+          fi
+          for s in "${requested[@]}"; do
+            case "$s" in
+              migrate|caddy|api|collector) ;;
+              *) echo "::error::service not allowed: $s"; exit 1 ;;
+            esac
+          done
+      - uses: docker/login-action@v3
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check images exist
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          INPUT_SHA: ${{ inputs.sha }}
+        run: |
+          docker manifest inspect "$PREFIX-backend:$INPUT_SHA" > /dev/null
+          docker manifest inspect "$PREFIX-caddy:$INPUT_SHA" > /dev/null
+      # 复制到服务器的 compose 文件和脚本与镜像来自同一个 sha。
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.sha }}
       - name: Configure SSH
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -89,10 +148,13 @@ jobs:
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          SERVICES: ${{ needs.plan.outputs.services }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.sha }}
+          SERVICES: ${{ github.event_name == 'workflow_dispatch' && inputs.services || needs.plan.outputs.services }}
         run: |
           target="$DEPLOY_USER@$DEPLOY_HOST"
           ssh -i ~/.ssh/id_deploy "$target" 'mkdir -p ~/harvester'
-          scp -i ~/.ssh/id_deploy deploy/compose.prod.yml deploy/deploy.sh "$target":~/harvester/
+          scp -i ~/.ssh/id_deploy \
+            deploy/compose.prod.yml deploy/deploy.sh deploy/backup.sh deploy/restore.sh \
+            "$target":~/harvester/
           ssh -i ~/.ssh/id_deploy "$target" \
-            "chmod +x ~/harvester/deploy.sh && IMAGE_TAG=$GITHUB_SHA ~/harvester/deploy.sh $SERVICES"
+            "cd ~/harvester && chmod +x deploy.sh backup.sh restore.sh && IMAGE_TAG=$TAG ./deploy.sh $SERVICES"

@@ -13,6 +13,13 @@ cd "$(dirname "$0")"
 : "${IMAGE_TAG:?IMAGE_TAG is required (git sha)}"
 export IMAGE_TAG
 
+# 发布和备份互斥（spec 0009）：备份进行中就等它结束，最多等 30 分钟。
+exec 9>.ops.lock
+if ! flock -w 1800 9; then
+  echo "deploy: timed out waiting for .ops.lock (a backup is still running)" >&2
+  exit 1
+fi
+
 services=("$@")
 if [ ${#services[@]} -eq 0 ]; then
   services=(caddy api)
