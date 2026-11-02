@@ -637,6 +637,198 @@
         }
       }
     },
+    "/api/discord/channels/{channel_id}": {
+      "get": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Get Channel",
+        "operationId": "get_channel_api_discord_channels__channel_id__get",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Channel Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelDetailOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/channels/{channel_id}/messages": {
+      "get": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "List Messages",
+        "operationId": "list_messages_api_discord_channels__channel_id__messages_get",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Channel Id"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]{1,19}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]{1,19}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After"
+            }
+          },
+          {
+            "name": "ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 8000
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ids"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagesOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/guilds/{guild_id}/load-threads": {
+      "post": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Load Threads",
+        "operationId": "load_threads_api_discord_guilds__guild_id__load_threads_post",
+        "parameters": [
+          {
+            "name": "guild_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Guild Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadLoadOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -664,7 +856,7 @@
           "system"
         ],
         "summary": "Events",
-        "description": "A heartbeat every 20 s plus new_message, account_status, channels_changed.",
+        "description": "A heartbeat every 20 s plus message, account and channel change events.",
         "operationId": "events_api_events_get",
         "responses": {
           "200": {
@@ -739,6 +931,41 @@
         ],
         "title": "AccountEnvelope"
       },
+      "AttachmentOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "filename",
+          "content_type",
+          "size_bytes"
+        ],
+        "title": "AttachmentOut"
+      },
       "AuthState": {
         "properties": {
           "state": {
@@ -774,6 +1001,62 @@
           "skipped_no_access"
         ],
         "title": "CategoryCollectOut"
+      },
+      "ChannelDetailOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "guild_id": {
+            "type": "string",
+            "title": "Guild Id"
+          },
+          "guild_name": {
+            "type": "string",
+            "title": "Guild Name"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "type": {
+            "type": "integer",
+            "title": "Type"
+          },
+          "banner_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "channel_deleted",
+                  "guild_left",
+                  "collect_off",
+                  "no_access",
+                  "thread_archived",
+                  "parent_unavailable",
+                  "account_reconnecting",
+                  "account_offline",
+                  "starting"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Banner Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "guild_id",
+          "guild_name",
+          "name",
+          "type",
+          "banner_reason"
+        ],
+        "title": "ChannelDetailOut"
       },
       "ChannelOut": {
         "properties": {
@@ -1012,6 +1295,146 @@
         ],
         "title": "DiscordAccountOut"
       },
+      "EmbedAuthor": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "title": "EmbedAuthor"
+      },
+      "EmbedData": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "color": {
+            "type": "integer",
+            "title": "Color"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp"
+          },
+          "author": {
+            "$ref": "#/components/schemas/EmbedAuthor"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/EmbedField"
+            },
+            "type": "array",
+            "title": "Fields"
+          },
+          "footer_text": {
+            "type": "string",
+            "title": "Footer Text"
+          },
+          "image_url": {
+            "type": "string",
+            "title": "Image Url"
+          },
+          "thumbnail_url": {
+            "type": "string",
+            "title": "Thumbnail Url"
+          }
+        },
+        "type": "object",
+        "title": "EmbedData",
+        "description": "The embed fields we keep; keys whose value would be None are left out."
+      },
+      "EmbedField": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "inline": {
+            "type": "boolean",
+            "title": "Inline"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "value"
+        ],
+        "title": "EmbedField"
+      },
+      "ForwardedOut": {
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "title": "Message Id"
+          },
+          "channel_id": {
+            "type": "string",
+            "title": "Channel Id"
+          },
+          "guild_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guild Id"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "embeds": {
+            "items": {
+              "$ref": "#/components/schemas/EmbedData"
+            },
+            "type": "array",
+            "title": "Embeds"
+          },
+          "attachment_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Attachment Names"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message_id",
+          "channel_id",
+          "guild_id",
+          "content",
+          "embeds",
+          "attachment_names"
+        ],
+        "title": "ForwardedOut"
+      },
       "GuildBriefOut": {
         "properties": {
           "id": {
@@ -1075,6 +1498,10 @@
           "enabled_count": {
             "type": "integer",
             "title": "Enabled Count"
+          },
+          "thread_load_pending": {
+            "type": "boolean",
+            "title": "Thread Load Pending"
           }
         },
         "type": "object",
@@ -1083,7 +1510,8 @@
           "name",
           "icon_hash",
           "status",
-          "enabled_count"
+          "enabled_count",
+          "thread_load_pending"
         ],
         "title": "GuildOut"
       },
@@ -1267,6 +1695,224 @@
         ],
         "title": "LoginEventOut"
       },
+      "MessageOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "channel_id": {
+            "type": "string",
+            "title": "Channel Id"
+          },
+          "author_id": {
+            "type": "string",
+            "title": "Author Id"
+          },
+          "author_name": {
+            "type": "string",
+            "title": "Author Name"
+          },
+          "author_avatar_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Avatar Hash"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "embeds": {
+            "items": {
+              "$ref": "#/components/schemas/EmbedData"
+            },
+            "type": "array",
+            "title": "Embeds"
+          },
+          "forwarded": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ForwardedOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/AttachmentOut"
+            },
+            "type": "array",
+            "title": "Attachments"
+          },
+          "edited_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edited At"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
+          },
+          "reply": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReplyOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "channel_id",
+          "author_id",
+          "author_name",
+          "author_avatar_hash",
+          "created_at",
+          "content",
+          "embeds",
+          "forwarded",
+          "attachments",
+          "edited_at",
+          "deleted_at",
+          "reply"
+        ],
+        "title": "MessageOut"
+      },
+      "MessagesOut": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/MessageOut"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/NamedRefOut"
+            },
+            "type": "array",
+            "title": "Users"
+          },
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/NamedRefOut"
+            },
+            "type": "array",
+            "title": "Channels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "messages",
+          "has_more",
+          "users",
+          "channels"
+        ],
+        "title": "MessagesOut"
+      },
+      "NamedRefOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "NamedRefOut"
+      },
+      "ReplyOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "missing": {
+            "type": "boolean",
+            "title": "Missing"
+          },
+          "author_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Name"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview"
+          },
+          "deleted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "missing"
+        ],
+        "title": "ReplyOut"
+      },
       "SetupBeginBody": {
         "properties": {
           "setup_code": {
@@ -1323,6 +1969,19 @@
           "totp_code"
         ],
         "title": "SetupCompleteBody"
+      },
+      "ThreadLoadOut": {
+        "properties": {
+          "pending": {
+            "type": "boolean",
+            "title": "Pending"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pending"
+        ],
+        "title": "ThreadLoadOut"
       },
       "TokenUpdate": {
         "properties": {

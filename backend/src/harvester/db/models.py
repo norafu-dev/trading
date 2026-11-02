@@ -103,6 +103,8 @@ class Guild(Base):
     icon_hash: Mapped[str | None]
     status: Mapped[GuildStatus] = mapped_column(Text, server_default="active")
     status_changed_at: Mapped[datetime] = _now()
+    # api 点「加载线程」时写入，collector 发出订阅后清空（spec 0008）。
+    thread_load_requested_at: Mapped[datetime | None]
     first_seen_at: Mapped[datetime] = _now()
     updated_at: Mapped[datetime] = _now()
 

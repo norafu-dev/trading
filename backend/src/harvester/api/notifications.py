@@ -1,7 +1,7 @@
 """LISTEN on PostgreSQL and fan notifications out to SSE subscribers in this process.
 
-The api runs a single worker, so an in memory fan out is enough. Notifications lost
-while the LISTEN connection is down are recovered by clients via Last-Event-ID.
+The api runs a single worker, so an in memory fan out is enough. Events are only hints:
+clients refetch on reconnect and every 30 s, which recovers anything lost here (spec 0008).
 """
 
 import asyncio
@@ -20,6 +20,7 @@ log = structlog.get_logger("harvester.api.notifications")
 # 每个通道对应的 SSE 事件名，放进载荷的 type 字段。
 _EVENT_TYPES = {
     raw.NEW_MESSAGE_CHANNEL: "new_message",
+    raw.MESSAGE_CHANGED_CHANNEL: "message_changed",
     raw.ACCOUNT_CHANGED_CHANNEL: "account_status",
     raw.CHANNELS_CHANGED_CHANNEL: "channels_changed",
 }

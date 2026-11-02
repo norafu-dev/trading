@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import func, insert, select, text, update
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import DataError, OperationalError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from structlog.testing import CapturingLogger
 
@@ -23,6 +23,9 @@ from harvester.collector.events import (
     GuildRemoved,
     IdentifyRequested,
     LoggedIn,
+    MessageEdited,
+    MessageReceived,
+    MessagesDeleted,
     Ready,
     Resumed,
     RetryNeeded,
@@ -52,10 +55,12 @@ from harvester.db.models import (
     DiscordAccount,
     DiscordLoginAttempt,
     Guild,
+    Message,
 )
+from harvester.db.raw import MESSAGE_CHANGED_CHANNEL, NEW_MESSAGE_CHANNEL
 from harvester.db.snapshots import AccessSnapshot, ChannelSnapshot, GuildState
 from tests.api.conftest import crypto_settings
-from tests.db.builders import CATEGORY, CHANNEL, GUILD, at, seed_channel
+from tests.db.builders import CATEGORY, CHANNEL, GUILD, MESSAGE_ID, at, message, seed_channel
 
 Factory = async_sessionmaker[AsyncSession]
 TOKEN = "fake-discord-token.abc123.XYZ"
@@ -88,6 +93,9 @@ class FakeSession:
     states: list[GuildState]
     closed: bool = False
     finished: asyncio.Event = field(default_factory=asyncio.Event)
+    subscribe_calls: list[frozenset[int]] = field(default_factory=list[frozenset[int]])
+    # 不在缓存里的服务器：订阅不算发出去。
+    unavailable: frozenset[int] = frozenset()
 
     async def run_session(self, token: str) -> None:
         self.tokens.append(token)
@@ -126,6 +134,10 @@ class FakeSession:
             )
         )
         return await reply
+
+    async def subscribe_guilds(self, guild_ids: frozenset[int]) -> frozenset[int]:
+        self.subscribe_calls.append(guild_ids)
+        return guild_ids - self.unavailable
 
     async def close(self) -> None:
         self.closed = True
@@ -218,6 +230,10 @@ class Harness:
                 )
 
 
+async def _no_sleep(_seconds: float) -> None:
+    return None
+
+
 @pytest.fixture
 async def harness(engine: AsyncEngine) -> AsyncIterator[Harness]:
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -242,6 +258,7 @@ async def harness(engine: AsyncEngine) -> AsyncIterator[Harness]:
         channels_wake=asyncio.Event(),
         heartbeat_interval=3600,
         crash_guard_seconds=0,
+        sleep=_no_sleep,
     )
     h = Harness(factory, clock, deps, sessions, tokens, user_id, states)
     yield h
@@ -1255,3 +1272,347 @@ async def test_waiting_client_writes_nothing_and_stops_on_config_change(  # cove
     await asyncio.wait_for(closed.wait(), timeout=2)
     assert await harness.attempts() == 0
     assert opened == []
+
+
+# spec 0008：消息事件。
+
+
+class NotifyCounter:
+    """在一个专用连接上 LISTEN 消息通道，记下收到的通知。"""
+
+    def __init__(self) -> None:
+        self.received: list[tuple[str, str]] = []
+
+    def __call__(self, _conn: object, _pid: int, channel: str, payload: object) -> None:
+        self.received.append((channel, str(payload)))
+
+
+@pytest.fixture
+async def notifications(engine: AsyncEngine) -> AsyncIterator[NotifyCounter]:
+    counter = NotifyCounter()
+    async with engine.connect() as conn:
+        raw_conn = (await conn.get_raw_connection()).driver_connection
+        assert raw_conn is not None
+        await raw_conn.add_listener(NEW_MESSAGE_CHANNEL, counter)
+        await raw_conn.add_listener(MESSAGE_CHANGED_CHANNEL, counter)
+        yield counter
+        await raw_conn.remove_listener(NEW_MESSAGE_CHANNEL, counter)
+        await raw_conn.remove_listener(MESSAGE_CHANGED_CHANNEL, counter)
+
+
+async def collecting_state(h: Harness) -> tuple[AccountRow, SessionState]:
+    row = await add_account(h)
+    await h.seed_collecting()
+    async with h.factory() as session, session.begin():
+        await accounts.record_status(session, row.id, 1, "online", None)
+    row = await h.read()
+    state = SessionState(LoopState(generation=1), "online")
+    state = await supervisor._align(h.deps, row, state)  # pyright: ignore[reportPrivateUsage]
+    return row, state
+
+
+async def stored_count(h: Harness) -> int:
+    async with h.factory() as session:
+        return int(await session.scalar(select(func.count()).select_from(Message)) or 0)
+
+
+def received(snapshot_id: int = MESSAGE_ID, **changes: object) -> MessageReceived:
+    return MessageReceived(1, message(id=snapshot_id, **changes), at(0))
+
+
+async def test_open_channels_match_the_database(harness: Harness) -> None:  # covers: AC-3
+    row, state = await collecting_state(harness)
+
+    assert state.open_channels == {CHANNEL.id}
+
+    async with harness.factory() as session, session.begin():
+        await session.execute(update(Channel).values(collect_enabled=False))
+    state = await handle_event(harness.deps, row, state, supervisor.ChannelsWake())
+
+    assert state.open_channels == frozenset()
+
+
+async def test_failed_alignment_keeps_the_list(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:  # covers: AC-3
+    row, state = await collecting_state(harness)
+
+    async def boom(*_args: object) -> None:
+        raise SQLAlchemyError
+
+    monkeypatch.setattr(supervisor, "align_coverage", boom)
+    with pytest.raises(SQLAlchemyError):
+        await handle_event(harness.deps, row, state, supervisor.ChannelsWake())
+
+    assert state.open_channels == {CHANNEL.id}
+
+
+async def test_received_message_is_stored_and_notified(
+    harness: Harness, notifications: NotifyCounter
+) -> None:  # covers: AC-1, AC-15
+    row, state = await collecting_state(harness)
+
+    await handle_event(harness.deps, row, state, received())
+
+    assert await stored_count(harness) == 1
+    await asyncio.sleep(0.05)
+    assert notifications.received == [
+        (
+            NEW_MESSAGE_CHANNEL,
+            f'{{"channel_id": "{CHANNEL.id}", "message_id": "{MESSAGE_ID}"}}',
+        )
+    ]
+
+
+async def test_closed_channel_never_touches_the_database(harness: Harness) -> None:
+    # covers: AC-2
+    row = await add_account(harness)
+
+    def no_database() -> None:
+        raise AssertionError("不应该连数据库")
+
+    deps = replace(harness.deps, factory=no_database)  # pyright: ignore[reportArgumentType]
+    state = SessionState(LoopState(generation=1), "online")
+
+    for event in (
+        received(),
+        MessageEdited(1, message(), at(0)),
+        MessagesDeleted(1, CHANNEL.id, (MESSAGE_ID,), at(0)),
+    ):
+        assert await handle_event(deps, row, state, event) == state
+
+
+async def test_replay_is_stored_once_with_one_notification(
+    harness: Harness, notifications: NotifyCounter
+) -> None:  # covers: AC-5, AC-15
+    row, state = await collecting_state(harness)
+
+    await handle_event(harness.deps, row, state, received())
+    await handle_event(harness.deps, row, state, received())
+
+    assert await stored_count(harness) == 1
+    await asyncio.sleep(0.05)
+    assert [channel for channel, _ in notifications.received] == [NEW_MESSAGE_CHANNEL]
+
+
+async def test_edit_notifications(harness: Harness, notifications: NotifyCounter) -> None:
+    # covers: AC-4, AC-15
+    row, state = await collecting_state(harness)
+
+    # 编辑事件第一次入库：发 message_changed，不发 new_message。
+    await handle_event(harness.deps, row, state, MessageEdited(1, message(), at(0)))
+    # 内容没变也发。
+    await handle_event(harness.deps, row, state, MessageEdited(1, message(), at(1)))
+    await handle_event(
+        harness.deps, row, state, MessageEdited(1, message(content="new", edited_at=at(2)), at(2))
+    )
+
+    await asyncio.sleep(0.05)
+    assert [channel for channel, _ in notifications.received] == [MESSAGE_CHANGED_CHANNEL] * 3
+
+
+async def test_delete_notifies_only_marked_ids(
+    harness: Harness, notifications: NotifyCounter
+) -> None:  # covers: AC-4, AC-15
+    row, state = await collecting_state(harness)
+    await handle_event(harness.deps, row, state, received())
+
+    await handle_event(
+        harness.deps, row, state, MessagesDeleted(1, CHANNEL.id, (MESSAGE_ID, 99), at(1))
+    )
+    await handle_event(harness.deps, row, state, MessagesDeleted(1, CHANNEL.id, (99,), at(1)))
+
+    await asyncio.sleep(0.05)
+    assert notifications.received[1:] == [
+        (
+            MESSAGE_CHANGED_CHANNEL,
+            f'{{"channel_id": "{CHANNEL.id}", "message_ids": ["{MESSAGE_ID}"]}}',
+        )
+    ]
+
+
+async def test_identify_after_disconnect_empties_the_list(harness: Harness) -> None:
+    # covers: AC-5
+    row, state = await collecting_state(harness)
+    state = replace(state, loop=replace(state.loop, disconnected_at=harness.clock()))
+    reply: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+
+    next_state = await handle_event(harness.deps, row, state, IdentifyRequested(1, reply))
+
+    assert next_state.open_channels == frozenset()
+    assert reply.result() is True
+
+
+async def test_transient_error_retries_then_succeeds(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:  # covers: AC-8
+    row, state = await collecting_state(harness)
+    waits: list[float] = []
+
+    async def record(seconds: float) -> None:
+        waits.append(seconds)
+
+    original = supervisor.ingest_message
+    failures = [OperationalError("x", {}, Exception()), OSError()]
+
+    async def flaky(*args: object) -> object:
+        if failures:
+            raise failures.pop()
+        return await original(*args)  # pyright: ignore[reportArgumentType]
+
+    monkeypatch.setattr(supervisor, "ingest_message", flaky)
+    deps = replace(harness.deps, sleep=record)
+
+    await handle_event(deps, row, state, received())
+
+    assert waits == [0.5, 1.0]
+    assert await stored_count(harness) == 1
+
+
+async def test_retries_exhausted_raises(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:  # covers: AC-8
+    row, state = await collecting_state(harness)
+
+    async def always(*_args: object) -> object:
+        raise OSError
+
+    monkeypatch.setattr(supervisor, "ingest_message", always)
+
+    with pytest.raises(OSError):
+        await handle_event(harness.deps, row, state, received())
+
+
+async def test_bad_message_is_skipped_without_leaking_content(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:  # covers: AC-8, AC-24
+    row, state = await collecting_state(harness)
+    logger = CapturingLogger()
+    monkeypatch.setattr(supervisor, "log", logger)
+
+    # 正文里的 NUL 字符让 PostgreSQL 拒绝这条，后面的消息不受影响。
+    await handle_event(harness.deps, row, state, received(content="secret\x00text"))
+    await handle_event(harness.deps, row, state, received(MESSAGE_ID + 1))
+
+    assert await stored_count(harness) == 1
+    entry = next(c for c in logger.calls if c.args == ("collector.message_write_skipped",))
+    assert entry.kwargs["message_id"] == MESSAGE_ID
+    assert "secret" not in str(logger.calls)
+
+
+def test_transient_classification() -> None:  # covers: AC-8
+    assert supervisor.is_transient_db_error(OSError())
+    assert supervisor.is_transient_db_error(OperationalError("x", {}, Exception()))
+    assert not supervisor.is_transient_db_error(DataError("x", {}, Exception()))
+    assert not supervisor.is_transient_db_error(ValueError())
+
+
+async def test_session_end_writes_queued_messages_before_closing(harness: Harness) -> None:
+    # covers: AC-7
+    await add_account(harness)
+    await harness.seed_collecting()
+    harness.start()
+    await harness.wait_spans(1)
+    session = harness.current
+    generation = session.generation
+    stale = Disconnected(generation - 1, harness.clock())
+    # 结束事件排在前面：循环退出时，后面两个还在队列里。
+    session.queue.put_nowait(SessionEnded(generation))
+    session.queue.put_nowait(stale)
+    session.queue.put_nowait(MessageReceived(generation, message(), at(0)))
+
+    async def stored() -> bool:
+        return await stored_count(harness) == 1
+
+    await harness.wait_until(stored)
+
+
+async def test_drain_gives_up_when_database_hangs(harness: Harness) -> None:
+    # covers: AC-7
+    row, state = await collecting_state(harness)
+    assert row is not None
+    queue: Queue = asyncio.Queue()
+    queue.put_nowait(received())
+    other = supervisor.HeartbeatDue()
+    queue.put_nowait(other)
+    logger = CapturingLogger()
+
+    @contextlib.asynccontextmanager
+    async def hang() -> AsyncIterator[None]:
+        await asyncio.sleep(10)
+        yield
+
+    deps = replace(harness.deps, factory=hang, drain_seconds=0.01)  # pyright: ignore[reportArgumentType]
+    original = supervisor.log
+    supervisor.log = logger  # pyright: ignore[reportAttributeAccessIssue]
+    try:
+        await supervisor._drain_messages(deps, state, queue)  # pyright: ignore[reportPrivateUsage]
+    finally:
+        supervisor.log = original
+
+    assert queue.get_nowait() is other
+    entry = next(c for c in logger.calls if c.args == ("collector.drain_failed",))
+    assert entry.kwargs["dropped"] == 1
+
+
+async def test_subscribes_only_wanted_guilds_once(harness: Harness) -> None:  # covers: AC-9, AC-11
+    await add_account(harness)
+    await harness.seed_collecting()
+    harness.start()
+    await harness.wait_spans(1)
+    session = harness.current
+
+    async def subscribed() -> bool:
+        return session.subscribe_calls == [frozenset({GUILD.id})]
+
+    await harness.wait_until(subscribed)
+    harness.deps.channels_wake.set()
+    await asyncio.sleep(0.05)
+    assert session.subscribe_calls == [frozenset({GUILD.id})]
+
+
+async def test_unsent_guild_is_retried_and_keeps_its_request(harness: Harness) -> None:
+    # covers: AC-9, AC-12
+    row, state = await collecting_state(harness)
+    fake = FakeSession(1, asyncio.Queue(), USER_ID, [], [], unavailable=frozenset({GUILD.id}))
+    state = replace(state, gateway=fake)
+    async with harness.factory() as session, session.begin():
+        await session.execute(update(Guild).values(thread_load_requested_at=at(0)))
+
+    state = await handle_event(harness.deps, row, state, supervisor.ChannelsWake())
+    assert state.subscribed == frozenset()
+    async with harness.factory() as session:
+        assert await session.scalar(select(Guild.thread_load_requested_at)) is not None
+
+    fake.unavailable = frozenset()
+    state = await handle_event(harness.deps, row, state, supervisor.ChannelsWake())
+    assert state.subscribed == {GUILD.id}
+    async with harness.factory() as session:
+        assert await session.scalar(select(Guild.thread_load_requested_at)) is None
+
+
+async def test_already_subscribed_guild_clears_request_without_a_command(
+    harness: Harness,
+) -> None:  # covers: AC-12
+    row, state = await collecting_state(harness)
+    fake = FakeSession(1, asyncio.Queue(), USER_ID, [], [])
+    state = replace(state, gateway=fake, subscribed=frozenset({GUILD.id}))
+    async with harness.factory() as session, session.begin():
+        await session.execute(update(Guild).values(thread_load_requested_at=at(0)))
+
+    await handle_event(harness.deps, row, state, supervisor.ChannelsWake())
+
+    assert fake.subscribe_calls == []
+    async with harness.factory() as session:
+        assert await session.scalar(select(Guild.thread_load_requested_at)) is None
+
+
+async def test_guild_sync_does_not_clear_the_request(harness: Harness) -> None:  # covers: AC-12
+    row, state = await collecting_state(harness)
+    async with harness.factory() as session, session.begin():
+        await session.execute(update(Guild).values(thread_load_requested_at=at(0)))
+
+    await handle_event(harness.deps, row, state, GuildChanged(1, GUILD_STATE))
+
+    async with harness.factory() as session:
+        assert await session.scalar(select(Guild.thread_load_requested_at)) is not None

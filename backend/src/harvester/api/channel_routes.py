@@ -65,6 +65,7 @@ class GuildOut(BaseModel):
     icon_hash: str | None
     status: GuildStatus
     enabled_count: int
+    thread_load_pending: bool
 
 
 class GuildsOut(BaseModel):
@@ -116,6 +117,7 @@ def _guild_out(row: GuildRow) -> GuildOut:
         icon_hash=row.icon_hash,
         status=row.status,
         enabled_count=row.enabled_count,
+        thread_load_pending=row.thread_load_pending,
     )
 
 

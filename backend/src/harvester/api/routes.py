@@ -17,6 +17,7 @@ from harvester.api.deps import (
     session_still_valid,
 )
 from harvester.api.discord_routes import discord_router
+from harvester.api.message_routes import message_router
 from harvester.api.notifications import Broadcaster
 from harvester.db import SessionDep, SessionFactoryDep
 
@@ -29,6 +30,7 @@ _REFETCH_EVENTS = frozenset({"account_status", "channels_changed"})
 router = protected_router
 router.include_router(discord_router)
 router.include_router(channel_router)
+router.include_router(message_router)
 
 
 def get_broadcaster(request: Request) -> Broadcaster:
@@ -65,7 +67,7 @@ async def events(
     factory: SessionFactoryDep,
     clock: ClockDep,
 ) -> AsyncIterable[ServerSentEvent]:
-    """A heartbeat every 20 s plus new_message, account_status, channels_changed."""
+    """A heartbeat every 20 s plus message, account and channel change events."""
     loop = asyncio.get_running_loop()
     async with broadcaster.subscribe() as queue:
         yield ServerSentEvent(data=Heartbeat(server_time=clock()), event="heartbeat")
@@ -91,9 +93,5 @@ async def events(
                 # 浏览器不会派发。
                 yield ServerSentEvent(data={}, event=payload["type"])
                 continue
-            message_id = payload.get("message_id")
-            yield ServerSentEvent(
-                data=payload,
-                event="new_message",
-                id=str(message_id) if message_id is not None else None,
-            )
+            # 消息事件只带 ID，页面收到后从消息接口取数。不设 SSE 的 id：断线靠前端重新取数补上。
+            yield ServerSentEvent(data=payload, event=payload["type"])

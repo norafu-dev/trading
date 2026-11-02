@@ -20,6 +20,7 @@ from harvester.collector.discord_client import (
     new_client,
     reconnect_failure,
     snapshot_guild,
+    snapshot_message,
     to_failure,
 )
 from harvester.collector.events import (
@@ -28,6 +29,9 @@ from harvester.collector.events import (
     GuildChanged,
     GuildRemoved,
     IdentifyRequested,
+    MessageEdited,
+    MessageReceived,
+    MessagesDeleted,
     Ready,
     RequiredAction,
     Resumed,
@@ -761,3 +765,165 @@ def test_new_client_passes_the_guard_on() -> None:
     guard = WakeGuard()
     client = new_client(1, asyncio.Queue(), now, guard=guard)
     assert client._guard is guard
+
+
+# spec 0008：消息边界。
+
+
+def fake_user(user_id: int = 5, bot: bool = False) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=user_id,
+        name="kol",
+        global_name="KOL",
+        display_name="昵称",
+        bot=bot,
+        avatar=SimpleNamespace(key="hash"),
+    )
+
+
+def fake_message(**changes: Any) -> Any:
+    fields: dict[str, Any] = {
+        "id": 10,
+        "guild": SimpleNamespace(id=1),
+        "channel": SimpleNamespace(id=2),
+        "author": fake_user(),
+        "webhook_id": None,
+        "reference": None,
+        "message_snapshots": [],
+        "type": SimpleNamespace(value=0),
+        "content": "hello",
+        "embeds": [],
+        "edited_at": None,
+        "attachments": [],
+        "mentions": [],
+    }
+    return SimpleNamespace(**{**fields, **changes})
+
+
+def make_client(queue: "asyncio.Queue[SupervisorEvent]") -> HarvesterClient:
+    return HarvesterClient(1, queue, lambda: datetime(2026, 1, 1, tzinfo=UTC))
+
+
+def test_snapshot_converts_author_reply_and_mentions() -> None:  # covers: AC-1, AC-6
+    snap = snapshot_message(
+        fake_message(
+            type=SimpleNamespace(value=19),
+            reference=SimpleNamespace(type=discord.MessageReferenceType.reply, message_id=9),
+            mentions=[fake_user(7, bot=True)],
+        )
+    )
+
+    assert snap is not None
+    assert (snap.channel_id, snap.guild_id, snap.reply_to_id) == (2, 1, 9)
+    assert snap.author_display_name == "昵称"
+    assert (snap.author.kind, snap.author.avatar_hash) == ("user", "hash")
+    assert [(u.id, u.kind) for u in snap.mentions] == [(7, "bot")]
+    assert snap.attachments_known
+
+
+def test_snapshot_marks_webhook_authors() -> None:  # covers: AC-1
+    snap = snapshot_message(fake_message(webhook_id=99))
+
+    assert snap is not None and snap.author.kind == "webhook"
+
+
+def test_snapshot_skips_direct_messages() -> None:  # covers: AC-2
+    assert snapshot_message(fake_message(guild=None)) is None
+
+
+def test_snapshot_reads_forwarded_message() -> None:  # covers: AC-1
+    embed = discord.Embed(title="t")
+    snap = snapshot_message(
+        fake_message(
+            reference=SimpleNamespace(
+                type=discord.MessageReferenceType.forward,
+                message_id=3,
+                channel_id=4,
+                guild_id=None,
+            ),
+            message_snapshots=[
+                SimpleNamespace(
+                    content="fwd", embeds=[embed], attachments=[SimpleNamespace(filename="a.png")]
+                )
+            ],
+        )
+    )
+
+    assert snap is not None and snap.forwarded is not None
+    assert snap.forwarded["message_id"] == 3
+    assert snap.forwarded["attachment_names"] == ["a.png"]
+    assert snap.forwarded["embeds"][0].get("title") == "t"
+    assert snap.reply_to_id is None
+
+
+async def test_client_turns_off_default_subscriptions() -> None:  # covers: AC-9
+    client = make_client(asyncio.Queue())
+
+    assert client._connection._subscribe_guilds is False  # pyright: ignore[reportPrivateUsage]
+    await client.close()
+
+
+async def test_message_events_are_queued_in_order() -> None:  # covers: AC-1, AC-4
+    queue: asyncio.Queue[SupervisorEvent] = asyncio.Queue()
+    client = make_client(queue)
+
+    client.dispatch("message", fake_message())
+    client.dispatch("raw_message_edit", SimpleNamespace(message=fake_message(), data={"id": "10"}))
+    client.dispatch("raw_message_delete", SimpleNamespace(channel_id=2, message_id=10))
+    client.dispatch("raw_bulk_message_delete", SimpleNamespace(channel_id=2, message_ids={12, 11}))
+
+    first = queue.get_nowait()
+    edited = queue.get_nowait()
+    deleted = queue.get_nowait()
+    bulk = queue.get_nowait()
+    assert isinstance(first, MessageReceived) and first.snapshot.attachments_known
+    assert isinstance(edited, MessageEdited) and not edited.snapshot.attachments_known
+    assert isinstance(deleted, MessagesDeleted) and deleted.message_ids == (10,)
+    assert isinstance(bulk, MessagesDeleted) and bulk.message_ids == (11, 12)
+    await client.close()
+
+
+async def test_broken_message_is_skipped_without_raising() -> None:  # covers: AC-8
+    queue: asyncio.Queue[SupervisorEvent] = asyncio.Queue()
+    client = make_client(queue)
+
+    client.dispatch("message", SimpleNamespace(guild=SimpleNamespace(id=1)))
+
+    assert queue.empty()
+    await client.close()
+
+
+async def test_subscribe_skips_unknown_and_failing_guilds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # covers: AC-9
+    client = make_client(asyncio.Queue())
+    calls: list[dict[str, bool]] = []
+
+    async def subscribe(**kwargs: bool) -> None:
+        calls.append(kwargs)
+
+    async def failing(**_kwargs: bool) -> None:
+        raise OSError
+
+    guilds = {
+        1: SimpleNamespace(unavailable=False, subscribe=subscribe),
+        2: SimpleNamespace(unavailable=True, subscribe=subscribe),
+        3: SimpleNamespace(unavailable=False, subscribe=failing),
+    }
+    monkeypatch.setattr(client, "get_guild", guilds.get)
+
+    assert await client.subscribe_guilds(frozenset({1, 2, 3, 4})) == {1}
+    assert calls == [{"typing": True, "threads": True}]
+    await client.close()
+
+
+async def test_thread_list_sync_schedules_a_snapshot() -> None:  # covers: AC-12
+    client = make_client(asyncio.Queue())
+    guild_id = 321
+
+    client._connection.parsers["THREAD_LIST_SYNC"](
+        {"guild_id": str(guild_id), "threads": [], "members": []}
+    )  # pyright: ignore[reportPrivateUsage]
+
+    assert guild_id in client._pending_guilds  # pyright: ignore[reportPrivateUsage]
+    await client.close()

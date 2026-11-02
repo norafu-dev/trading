@@ -7,7 +7,7 @@
 import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import aiohttp
 import discord
@@ -23,6 +23,9 @@ from harvester.collector.events import (
     GuildRemoved,
     IdentifyRequested,
     LoggedIn,
+    MessageEdited,
+    MessageReceived,
+    MessagesDeleted,
     Ready,
     RequiredAction,
     Resumed,
@@ -37,9 +40,18 @@ from harvester.collector.wake_guard import WakeGuard
 from harvester.db.snapshots import (
     ACCESS_CHANNEL_TYPES,
     AccessSnapshot,
+    AttachmentSnapshot,
     ChannelSnapshot,
+    EmbedAuthor,
+    EmbedData,
+    EmbedField,
+    ForwardedData,
     GuildSnapshot,
     GuildState,
+    MessageSnapshot,
+    UserKind,
+    UserSnapshot,
+    normalize_embeds,
 )
 
 log = structlog.get_logger("harvester.collector.discord_client")
@@ -161,6 +173,106 @@ def snapshot_guild(guild: discord.Guild, lost_threads: frozenset[int] = frozense
     return GuildState(snapshot, channels, access)
 
 
+def _user_snapshot(user: discord.User | discord.Member, kind: UserKind) -> UserSnapshot:
+    return UserSnapshot(
+        id=user.id,
+        kind=kind,
+        username=user.name,
+        global_name=user.global_name,
+        avatar_hash=user.avatar.key if user.avatar else None,
+    )
+
+
+def _embed_data(embed: discord.Embed) -> EmbedData:
+    """按 spec 0002 只留需要的字段；值为空的键由 normalize_embeds 去掉。"""
+    data: dict[str, object] = {
+        "type": embed.type,
+        "title": embed.title,
+        "description": embed.description,
+        "url": embed.url,
+        "color": embed.colour.value if embed.colour is not None else None,
+        "timestamp": embed.timestamp.isoformat() if embed.timestamp else None,
+        "footer_text": embed.footer.text,
+        "image_url": embed.image.url,
+        "thumbnail_url": embed.thumbnail.url,
+    }
+    if embed.author.name:
+        author = EmbedAuthor(name=embed.author.name)
+        data["author"] = {**author, "url": embed.author.url} if embed.author.url else author
+    if embed.fields:
+        data["fields"] = [
+            EmbedField(name=f.name or "", value=f.value or "", inline=bool(f.inline))
+            for f in embed.fields
+        ]
+    return cast(EmbedData, data)
+
+
+def _attachment_snapshot(attachment: discord.Attachment) -> AttachmentSnapshot:
+    return AttachmentSnapshot(
+        id=attachment.id,
+        filename=attachment.filename,
+        content_type=attachment.content_type,
+        size_bytes=attachment.size,
+        url=attachment.url,
+        width=attachment.width,
+        height=attachment.height,
+    )
+
+
+def _forwarded(message: discord.Message) -> ForwardedData | None:
+    reference = message.reference
+    if (
+        reference is None
+        or reference.type is not discord.MessageReferenceType.forward
+        or not message.message_snapshots
+        or reference.message_id is None
+    ):
+        return None
+    forwarded = message.message_snapshots[0]
+    return ForwardedData(
+        message_id=reference.message_id,
+        channel_id=reference.channel_id,
+        guild_id=reference.guild_id,
+        content=forwarded.content,
+        embeds=normalize_embeds([_embed_data(e) for e in forwarded.embeds]) or [],
+        attachment_names=[a.filename for a in forwarded.attachments],
+    )
+
+
+def snapshot_message(
+    message: discord.Message, *, attachments_known: bool = True
+) -> MessageSnapshot | None:
+    """转成不可变快照。私信、群聊和未知服务器的消息没有 guild，返回 None（AC-2）。"""
+    guild = message.guild
+    if guild is None:
+        return None
+    author = message.author
+    kind: UserKind = (
+        "webhook" if message.webhook_id is not None else "bot" if author.bot else "user"
+    )
+    reference = message.reference
+    is_reply = message.type.value == 19 and reference is not None
+    return MessageSnapshot(
+        id=message.id,
+        channel_id=message.channel.id,
+        guild_id=guild.id,
+        author=_user_snapshot(author, kind),
+        # Member 依次取昵称、global_name、username；webhook 就是这条消息上的作者名。
+        author_display_name=author.display_name,
+        type=message.type.value,
+        content=message.content,
+        embeds=tuple(_embed_data(e) for e in message.embeds),
+        forwarded=_forwarded(message),
+        reply_to_id=reference.message_id if is_reply and reference is not None else None,
+        edited_at=message.edited_at,
+        attachments=tuple(_attachment_snapshot(a) for a in message.attachments),
+        mentions=tuple(
+            _user_snapshot(user, "bot" if user.bot else "user") for user in message.mentions
+        ),
+        attachments_known=attachments_known,
+    )
+
+
 FullSyncData = tuple[tuple[GuildState, ...], frozenset[int]]
 
 
@@ -173,6 +285,9 @@ def snapshot_guilds(client: discord.Client, lost_threads: frozenset[int]) -> Ful
 # 最后一个参数就是服务器（guild_update 是 old, new）。
 _GUILD_EVENTS = frozenset({"guild_join", "guild_available", "guild_update"})
 # 最后一个参数带 .guild 的事件：频道、角色、新线程。
+_MESSAGE_EVENTS = frozenset(
+    {"message", "raw_message_edit", "raw_message_delete", "raw_bulk_message_delete"}
+)
 _GUILD_OWNED_EVENTS = frozenset(
     {
         "guild_channel_create",
@@ -201,6 +316,7 @@ class HarvesterClient(discord.Client):
             status=discord.Status.invisible,
             sync_presence=False,  # 不改账号设置。
             chunk_guilds_at_startup=False,
+            guild_subscriptions=False,  # READY 之后由监督循环按需订阅（spec 0008 AC-9）。
             max_ratelimit_timeout=MAX_RATELIMIT_TIMEOUT,
         )
         self._generation = generation
@@ -215,6 +331,7 @@ class HarvesterClient(discord.Client):
         self._guard = guard
         self._track_sockets()
         self._watch_thread_updates()
+        self._watch_thread_list_sync()
 
     def _watch_thread_updates(self) -> None:
         """归档的线程不在缓存里，取消归档时库走兜底分支、不派发事件，只能在解析器这里接住。"""
@@ -232,6 +349,62 @@ class HarvesterClient(discord.Client):
                 self._schedule_guild(guild.id)
 
         state.parsers["THREAD_UPDATE"] = parse
+
+    def _watch_thread_list_sync(self) -> None:
+        """订阅后的线程列表不派发通用事件，不接住的话，这些线程进不了快照（spec 0008）。"""
+        state = self._connection
+        original = state.parsers["THREAD_LIST_SYNC"]
+
+        def parse(data: Any) -> None:
+            original(data)
+            self._schedule_guild(int(data["guild_id"]))
+
+        state.parsers["THREAD_LIST_SYNC"] = parse
+
+    async def subscribe_guilds(self, guild_ids: frozenset[int]) -> frozenset[int]:
+        """返回实际发出的服务器；库会把多个服务器合并成一条网关指令发送。"""
+        sent: set[int] = set()
+        for guild_id in sorted(guild_ids):
+            guild = self.get_guild(guild_id)
+            if guild is None or guild.unavailable:
+                continue
+            try:
+                await guild.subscribe(typing=True, threads=True)
+            except Exception as exc:
+                log.warning(
+                    "discord_client.subscribe_failed",
+                    guild_id=guild_id,
+                    error_type=type(exc).__name__,
+                )
+                continue
+            sent.add(guild_id)
+        return frozenset(sent)
+
+    def _route_message_event(self, event: str, args: tuple[Any, ...]) -> None:
+        """转快照出错只跳过这一条，不能影响网关连接（AC-8）。"""
+        generation = self._generation
+        if event == "message":
+            message = args[0]
+            snapshot = snapshot_message(message)
+            if snapshot is not None:
+                self._events.put_nowait(MessageReceived(generation, snapshot, self._clock()))
+        elif event == "raw_message_edit":
+            raw = args[0]
+            snapshot = snapshot_message(raw.message, attachments_known="attachments" in raw.data)
+            if snapshot is not None:
+                self._events.put_nowait(MessageEdited(generation, snapshot, self._clock()))
+        elif event == "raw_message_delete":
+            raw = args[0]
+            self._events.put_nowait(
+                MessagesDeleted(generation, raw.channel_id, (raw.message_id,), self._clock())
+            )
+        elif event == "raw_bulk_message_delete":
+            raw = args[0]
+            self._events.put_nowait(
+                MessagesDeleted(
+                    generation, raw.channel_id, tuple(sorted(raw.message_ids)), self._clock()
+                )
+            )
 
     def _schedule_guild(self, guild_id: int) -> None:
         if guild_id not in self._pending_guilds:
@@ -308,6 +481,11 @@ class HarvesterClient(discord.Client):
             self._events.put_nowait(Disconnected(generation, self._clock()))
         elif event == "required_action_update" and args and args[0] is not None:
             self._events.put_nowait(RequiredAction(generation))
+        elif event in _MESSAGE_EVENTS:
+            try:
+                self._route_message_event(event, args)
+            except Exception as exc:
+                log.warning("discord_client.message_snapshot_failed", error_type=type(exc).__name__)
         else:
             self._route_channel_event(event, args)
         super().dispatch(event, *args, **kwargs)

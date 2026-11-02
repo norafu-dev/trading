@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Protocol
 
 import structlog
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from harvester.collector.events import (
@@ -21,6 +21,10 @@ from harvester.collector.events import (
     HeartbeatDue,
     IdentifyRequested,
     LoggedIn,
+    MessageEdited,
+    MessageEvent,
+    MessageReceived,
+    MessagesDeleted,
     Ready,
     RequiredAction,
     Resumed,
@@ -42,8 +46,9 @@ from harvester.crypto import PURPOSE_DISCORD_TOKEN, DecryptError, KeyRing, decry
 from harvester.db import account as accounts
 from harvester.db import channel_sync
 from harvester.db.account import AccountRow, LoginBudgetExhausted
-from harvester.db.coverage_plan import align_coverage
-from harvester.db.ingest import close_stale_coverage
+from harvester.db.coverage_plan import align_coverage, subscription_guild_ids
+from harvester.db.ingest import close_stale_coverage, ingest_message, mark_messages_deleted
+from harvester.db.messages import notify_message_changed, notify_new_message
 from harvester.db.snapshots import AccountStatus
 
 log = structlog.get_logger("harvester.collector.supervisor")
@@ -58,6 +63,10 @@ STABLE_RESET = timedelta(seconds=300)
 # 上一次连接稳定这么久，服务端让重连时可以立即重连。
 STABLE_IMMEDIATE = timedelta(seconds=60)
 BUDGET_ERROR = "login_budget_exhausted"
+# 消息写入遇到连接类错误时的退避（AC-8）；用完还失败就退出进程。
+MESSAGE_RETRY_DELAYS = (0.5, 1.0, 2.0)
+# 会话结束时把队列里的消息写完，最多等这么久（AC-7）。
+DRAIN_SECONDS = 5.0
 
 _NO_LOGIN: frozenset[AccountStatus] = frozenset(
     {"disabled", "token_invalid", "banned", "verification_required", "account_mismatch"}
@@ -66,6 +75,8 @@ _NO_LOGIN: frozenset[AccountStatus] = frozenset(
 
 class GatewaySession(Protocol):
     async def run_session(self, token: str) -> None: ...
+
+    async def subscribe_guilds(self, guild_ids: frozenset[int]) -> frozenset[int]: ...
 
     async def close(self) -> None: ...
 
@@ -89,6 +100,8 @@ class Deps:
     channels_wake: asyncio.Event
     heartbeat_interval: float = HEARTBEAT_INTERVAL
     crash_guard_seconds: float = CRASH_GUARD_SECONDS
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
+    drain_seconds: float = DRAIN_SECONDS
 
 
 @dataclass(frozen=True)
@@ -111,6 +124,11 @@ class SessionState:
     stable_since: datetime | None = None
     last_stable: timedelta = timedelta(0)
     done: bool = False
+    # 开着实时段的频道，只在写覆盖段的事务提交后更新；消息存不存只看它（AC-3）。
+    open_channels: frozenset[int] = frozenset()
+    # 这个会话已经发过订阅的服务器；新会话从空开始（AC-11）。
+    subscribed: frozenset[int] = frozenset()
+    gateway: GatewaySession | None = None
 
 
 async def _write_status(
@@ -185,18 +203,41 @@ async def _on_resumed(deps: Deps, account: AccountRow, state: SessionState) -> S
         stable_since=deps.clock(),
         loop=replace(state.loop, disconnected_at=None),
     )
-    await _align(deps, account, resumed)
-    return resumed
+    return await _align(deps, account, resumed)
 
 
-async def _align(deps: Deps, account: AccountRow, state: SessionState) -> None:
+async def _sync_subscriptions(deps: Deps, account: AccountRow, state: SessionState) -> SessionState:
+    """覆盖对齐之后补发订阅，再清掉已订阅服务器上的「加载线程」请求（AC-9、AC-12）。
+
+    先发订阅再清空：崩溃时最多多订阅一次，不会丢请求。
+    """
+    if state.gateway is None or state.status != "online":
+        return state
+    async with deps.factory() as session:
+        wanted = await subscription_guild_ids(session, account.id)
+    missing = wanted - state.subscribed
+    sent = await state.gateway.subscribe_guilds(missing) if missing else frozenset[int]()
+    subscribed = state.subscribed | sent
+    async with deps.factory() as session, session.begin():
+        if await channel_sync.clear_thread_load_requests(session, subscribed):
+            await channel_sync.notify_channels_changed(session)
+    if sent:
+        log.info("collector.guilds_subscribed", count=len(sent))
+    return replace(state, subscribed=subscribed)
+
+
+async def _align(deps: Deps, account: AccountRow, state: SessionState) -> SessionState:
     """只在会话 online 时对齐；reconnecting 期间既不开也不关（AC-7）。"""
     if state.status != "online":
-        return
+        return state
     async with deps.factory() as session, session.begin():
-        plan = await align_coverage(session, account.id, deps.clock())
+        alignment = await align_coverage(session, account.id, deps.clock())
+    plan = alignment.plan
     if plan.to_open or plan.to_close:
         log.info("collector.coverage_aligned", opened=len(plan.to_open), closed=len(plan.to_close))
+    return await _sync_subscriptions(
+        deps, account, replace(state, open_channels=alignment.open_after)
+    )
 
 
 ChannelWrite = Callable[[AsyncSession, datetime], Awaitable[object]]
@@ -212,10 +253,15 @@ async def _write_channels(
         if not await channel_sync.record_synced(session, account.id, account.config_version, now):
             return replace(state, done=True)
         await write(session, now)
-        if state.status == "online":
-            await align_coverage(session, account.id, now)
+        alignment = (
+            await align_coverage(session, account.id, now) if state.status == "online" else None
+        )
         await channel_sync.notify_channels_changed(session)
-    return state
+    if alignment is None:
+        return state
+    return await _sync_subscriptions(
+        deps, account, replace(state, open_channels=alignment.open_after)
+    )
 
 
 async def _on_full_sync(
@@ -338,6 +384,7 @@ async def _on_identify(
     disconnected_at = state.loop.disconnected_at
     if disconnected_at is not None:
         await _close_coverage(deps, account.id, disconnected_at)
+        state = replace(state, open_channels=frozenset())
     async with deps.factory() as session, session.begin():
         current = await accounts.get_account(session, for_update=True)
         if current is None or current.config_version != account.config_version:
@@ -394,7 +441,7 @@ async def _on_heartbeat(deps: Deps, account: AccountRow, state: SessionState) ->
         async with deps.factory() as session, session.begin():
             await accounts.record_heartbeat(session, account.id, account.config_version)
         # 顺带一次覆盖对齐，通知丢了也能在 30 秒内补上。
-        await _align(deps, account, state)
+        return await _align(deps, account, state)
     except (SQLAlchemyError, OSError) as exc:
         # 单次失败只记日志；数据库真的断了时，由锁连接探测触发退出。
         log.warning("collector.heartbeat_failed", error_type=type(exc).__name__)
@@ -402,8 +449,111 @@ async def _on_heartbeat(deps: Deps, account: AccountRow, state: SessionState) ->
 
 
 async def _on_channels_wake(deps: Deps, account: AccountRow, state: SessionState) -> SessionState:
-    await _align(deps, account, state)
+    return await _align(deps, account, state)
+
+
+def is_transient_db_error(exc: Exception) -> bool:
+    """连接类错误值得重试；其余错误重试也不会好，跳过这一条（AC-8）。"""
+    if isinstance(exc, DBAPIError) and exc.connection_invalidated:
+        return True
+    return isinstance(exc, OperationalError | InterfaceError | OSError)
+
+
+def _event_channel_id(event: MessageEvent) -> int:
+    return event.channel_id if isinstance(event, MessagesDeleted) else event.snapshot.channel_id
+
+
+async def _commit_message_event(deps: Deps, event: MessageEvent) -> None:
+    """一个事件一个事务，写入和通知在同一个事务里。"""
+    async with deps.factory() as session, session.begin():
+        match event:
+            case MessagesDeleted():
+                result = await mark_messages_deleted(
+                    session, event.message_ids, event.at, "realtime"
+                )
+                if result.marked:
+                    await notify_message_changed(session, event.channel_id, result.marked)
+            case MessageReceived(snapshot=snap):
+                outcome = await ingest_message(session, snap, "realtime", event.at)
+                if outcome == "inserted":
+                    await notify_new_message(session, snap.channel_id, snap.id)
+                elif outcome in ("edited", "embeds_refreshed"):
+                    await notify_message_changed(session, snap.channel_id, (snap.id,))
+            case MessageEdited(snapshot=snap):
+                outcome = await ingest_message(session, snap, "realtime", event.at)
+                # unchanged 也发：内容没变，但可能只是拿掉了附件。
+                if outcome in ("inserted", "edited", "embeds_refreshed", "unchanged"):
+                    await notify_message_changed(session, snap.channel_id, (snap.id,))
+
+
+def _log_message_skipped(event: MessageEvent, exc: Exception) -> None:
+    # 只记 ID 和错误类型：异常内容可能带消息正文。
+    log.error(
+        "collector.message_write_skipped",
+        message_id=None if isinstance(event, MessagesDeleted) else event.snapshot.id,
+        channel_id=_event_channel_id(event),
+        error_type=type(exc).__name__,
+    )
+
+
+async def _on_message_event(deps: Deps, state: SessionState, event: MessageEvent) -> SessionState:
+    """退避期间不处理别的事件，所以顺序不变；重试用完就把异常传出去，由进程退出兜底。"""
+    if _event_channel_id(event) not in state.open_channels:
+        return state
+    for delay in (*MESSAGE_RETRY_DELAYS, None):
+        try:
+            await _commit_message_event(deps, event)
+            return state
+        except Exception as exc:
+            if not is_transient_db_error(exc):
+                _log_message_skipped(event, exc)
+                return state
+            if delay is None:
+                raise
+            log.warning("collector.message_write_retry", error_type=type(exc).__name__)
+            await deps.sleep(delay)
     return state
+
+
+async def _drain_messages(
+    deps: Deps, state: SessionState, queue: "asyncio.Queue[SupervisorEvent]"
+) -> None:
+    """先写完队列里当前代号的消息再关覆盖段，覆盖段才不会声称采集了没写入的消息（AC-7）。
+
+    不重试；其他事件按原来的顺序放回队列，旧代号由下一个会话过滤。
+    """
+    pending: list[MessageEvent] = []
+    others: list[SupervisorEvent] = []
+    while not queue.empty():
+        event = queue.get_nowait()
+        if (
+            isinstance(event, MessageReceived | MessageEdited | MessagesDeleted)
+            and event.generation == state.loop.generation
+        ):
+            pending.append(event)
+        else:
+            others.append(event)
+    for event in others:
+        queue.put_nowait(event)
+
+    finished = 0
+    try:
+        async with asyncio.timeout(deps.drain_seconds):
+            for event in pending:
+                if _event_channel_id(event) in state.open_channels:
+                    try:
+                        await _commit_message_event(deps, event)
+                    except Exception as exc:
+                        if is_transient_db_error(exc):
+                            raise
+                        _log_message_skipped(event, exc)
+                finished += 1
+    except Exception as exc:
+        log.error(
+            "collector.drain_failed",
+            dropped=len(pending) - finished,
+            error_type=type(exc).__name__,
+        )
 
 
 def _cancel_reply(event: SupervisorEvent) -> None:
@@ -444,7 +594,12 @@ async def handle_event(
             | ThreadArchived()
             | ThreadAccessLost()
         ):
+            if isinstance(event, GuildRemoved):
+                # 退出后再加入是新的服务器对象，要重新订阅。
+                state = replace(state, subscribed=state.subscribed - {event.guild_id})
             return await _write_channels(deps, account, state, _channel_write(account, event))
+        case MessageReceived() | MessageEdited() | MessagesDeleted():
+            return await _on_message_event(deps, state, event)
         case Wake():
             return await _on_wake(deps, account, state)
         case ChannelsWake():
@@ -480,12 +635,14 @@ async def run_session(
     loop_state: LoopState,
     queue: "asyncio.Queue[SupervisorEvent]",
 ) -> LoopState:
-    """跑一个会话直到结束。不管怎么结束都关 client、关开放的覆盖段。"""
+    """跑一个会话直到结束。不管怎么结束都关 client、写完队列里的消息、关开放的覆盖段。"""
     generation = loop_state.generation + 1
-    state = SessionState(
-        loop=replace(loop_state, generation=generation, pending_delay=0.0), status=account.status
-    )
     client = deps.new_session(generation, queue, deps.clock)
+    state = SessionState(
+        loop=replace(loop_state, generation=generation, pending_delay=0.0),
+        status=account.status,
+        gateway=client,
+    )
     tasks = (
         asyncio.create_task(client.run_session(token), name="discord-session"),
         asyncio.create_task(_forward_wake(deps, queue), name="session-wake"),
@@ -502,6 +659,7 @@ async def run_session(
         with contextlib.suppress(asyncio.CancelledError):
             await asyncio.gather(*tasks, return_exceptions=True)
         await client.close()
+        await _drain_messages(deps, state, queue)
         await _close_coverage(deps, account.id, state.loop.disconnected_at or deps.clock())
         log.info("collector.session_closed", generation=generation)
 

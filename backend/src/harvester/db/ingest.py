@@ -276,12 +276,16 @@ async def ingest_message(
     if not await _row_exists(session, _CHANNEL, snap.channel_id):
         return "missing_channel"
     await upsert_user(session, snap.author)
+    for mentioned in sorted(snap.mentions, key=lambda user: user.id):
+        if mentioned.id != snap.author.id:
+            await upsert_user(session, mentioned)
 
     embeds = normalize_embeds(snap.embeds)
     stored = await _lock_message(session, snap.id)
     if stored is None:
         if await _insert_message(session, snap, embeds, source):
-            await _sync_attachments(session, snap.id, snap.attachments, removed_at=None)
+            if snap.attachments_known:
+                await _sync_attachments(session, snap.id, snap.attachments, removed_at=None)
             return "inserted"
         stored = await _lock_message(session, snap.id)
         if stored is None:  # The conflicting insert committed, so the row must be there now.
@@ -325,9 +329,10 @@ async def ingest_message(
             )
             outcome = "unchanged"
 
-    await _sync_attachments(
-        session, snap.id, snap.attachments, removed_at=snap.edited_at or received_at
-    )
+    if snap.attachments_known:
+        await _sync_attachments(
+            session, snap.id, snap.attachments, removed_at=snap.edited_at or received_at
+        )
     await session.flush()
     return outcome
 

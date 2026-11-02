@@ -1,12 +1,23 @@
 """AC-7、AC-8：覆盖段对齐（真实 PostgreSQL）。"""
 
+from dataclasses import replace
+
+import pytest
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from harvester.db import channel_sync
-from harvester.db.coverage_plan import align_coverage, desired_channel_ids, plan_coverage
+from harvester.db.coverage_plan import (
+    BannerFacts,
+    BannerReason,
+    align_coverage,
+    banner_reason,
+    desired_channel_ids,
+    plan_coverage,
+    subscription_guild_ids,
+)
 from harvester.db.models import AccountChannelAccess, Channel, ChannelCoverage, Guild
-from harvester.db.snapshots import AccessSnapshot, GuildState
+from harvester.db.snapshots import AccessSnapshot, ChannelStatus, GuildState
 from tests.db.builders import CHANNEL, GUILD, at, make_account
 from tests.db.test_channel_sync import FORUM, POST, STATE, THREAD
 
@@ -118,13 +129,14 @@ async def test_align_opens_closes_and_survives_permission_round_trip(
     account_id = await seeded(session)
     await enable(session, account_id, CHANNEL.id)
 
-    plan = await align_coverage(session, account_id, at(1))
-    assert plan.to_open == {CHANNEL.id}
+    alignment = await align_coverage(session, account_id, at(1))
+    assert alignment.plan.to_open == {CHANNEL.id}
+    assert alignment.open_after == {CHANNEL.id}
     assert await open_ids(session) == {CHANNEL.id}
 
     # 重复对齐没有变化。
     again = await align_coverage(session, account_id, at(2))
-    assert not again.to_open and not again.to_close
+    assert not again.plan.to_open and not again.plan.to_close
 
     # 失去权限：覆盖段关闭，开关不变。
     await session.execute(update(AccountChannelAccess).values(can_read=False))
@@ -145,7 +157,78 @@ async def test_align_closes_segment_when_switch_is_turned_off(session: AsyncSess
     await align_coverage(session, account_id, at(1))
 
     await session.execute(update(Channel).values(collect_enabled=False))
-    plan = await align_coverage(session, account_id, at(2))
+    alignment = await align_coverage(session, account_id, at(2))
 
-    assert plan.to_close == {CHANNEL.id}
+    assert alignment.plan.to_close == {CHANNEL.id}
+    assert alignment.open_after == frozenset()
     assert await open_ids(session) == set()
+
+
+HEALTHY = BannerFacts(
+    channel_status="active",
+    guild_status="active",
+    collecting=True,
+    can_read=True,
+    is_thread=False,
+    parent_active=False,
+    parent_can_read=False,
+    account_status="online",
+    segment_open=True,
+)
+THREAD_OK = replace(HEALTHY, is_thread=True, parent_active=True, parent_can_read=True)
+
+
+@pytest.mark.parametrize(
+    ("facts", "expected"),
+    [
+        (HEALTHY, None),
+        (THREAD_OK, None),
+        (replace(HEALTHY, segment_open=False), "starting"),
+        (replace(HEALTHY, account_status="connecting"), "account_offline"),
+        (replace(HEALTHY, account_status=None), "account_offline"),
+        # 重连时覆盖段可能还开着，也要提示。
+        (replace(HEALTHY, account_status="reconnecting"), "account_reconnecting"),
+        (replace(THREAD_OK, parent_can_read=False, segment_open=False), "parent_unavailable"),
+        (replace(THREAD_OK, parent_active=False, segment_open=False), "parent_unavailable"),
+        (replace(THREAD_OK, channel_status="archived"), "thread_archived"),
+        (replace(HEALTHY, can_read=False), "no_access"),
+        (replace(HEALTHY, collecting=False), "collect_off"),
+        (replace(HEALTHY, guild_status="left"), "guild_left"),
+        (replace(HEALTHY, guild_status="deleted"), "guild_left"),
+        (replace(HEALTHY, channel_status="deleted"), "channel_deleted"),
+        # 顺序：取第一个符合的。
+        (replace(HEALTHY, channel_status="deleted", guild_status="left"), "channel_deleted"),
+        (replace(HEALTHY, guild_status="left", collecting=False), "guild_left"),
+        (replace(HEALTHY, collecting=False, can_read=False), "collect_off"),
+        (replace(HEALTHY, can_read=False, channel_status="archived"), "no_access"),
+        (replace(THREAD_OK, channel_status="archived", parent_active=False), "thread_archived"),
+        (
+            replace(THREAD_OK, parent_active=False, account_status="connecting"),
+            "parent_unavailable",
+        ),
+    ],
+)
+def test_banner_reason_order(facts: BannerFacts, expected: BannerReason | None) -> None:  # AC-23
+    assert banner_reason(facts) == expected
+
+
+async def test_subscription_covers_enabled_and_requested_guilds(
+    session: AsyncSession,
+) -> None:  # AC-9
+    account_id = await seeded(session)
+    assert await subscription_guild_ids(session, account_id) == frozenset()
+
+    await enable(session, account_id, CHANNEL.id)
+    assert await subscription_guild_ids(session, account_id) == {GUILD.id}
+
+    # 已归档的线程没有覆盖段，服务器仍要订阅。
+    status: ChannelStatus = "archived"
+    await session.execute(update(Channel).where(Channel.id == CHANNEL.id).values(status=status))
+    assert await subscription_guild_ids(session, account_id) == {GUILD.id}
+    assert await desired_channel_ids(session, account_id) == frozenset()
+
+    await session.execute(update(Channel).values(status="deleted"))
+    assert await subscription_guild_ids(session, account_id) == frozenset()
+
+    await session.execute(update(Guild).values(thread_load_requested_at=at(1)))
+    assert await subscription_guild_ids(session, account_id) == {GUILD.id}

@@ -34,6 +34,7 @@ CollectError = Literal[
 
 
 CategoryCollectError = Literal["category_not_found", "not_a_category", "account_not_found"]
+ThreadLoadError = Literal["guild_not_found", "account_not_found", "guild_unavailable"]
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,7 @@ class GuildRow:
     icon_hash: str | None
     status: GuildStatus
     enabled_count: int
+    thread_load_pending: bool
 
 
 @dataclass(frozen=True)
@@ -127,12 +129,26 @@ async def list_guilds(session: AsyncSession) -> tuple[GuildRow, ...]:
         .scalar_subquery()
     )
     rows = await session.execute(
-        select(Guild.id, Guild.name, Guild.icon_hash, Guild.status, enabled.label("enabled_count"))
+        select(
+            Guild.id,
+            Guild.name,
+            Guild.icon_hash,
+            Guild.status,
+            enabled.label("enabled_count"),
+            Guild.thread_load_requested_at,
+        )
         .where(Guild.status.in_(("active", "left")))
         .order_by(case((Guild.status == "left", 1), else_=0), func.lower(Guild.name), Guild.id)
     )
     return tuple(
-        GuildRow(r.id, r.name, r.icon_hash, r.status, r.enabled_count)  # pyright: ignore[reportArgumentType]
+        GuildRow(
+            r.id,
+            r.name,
+            r.icon_hash,
+            r.status,
+            r.enabled_count,  # pyright: ignore[reportArgumentType]
+            r.thread_load_requested_at is not None,
+        )
         for r in rows
     )
 
@@ -279,6 +295,31 @@ async def _readable_ids(
     access = {channel_id: can_read for channel_id, can_read in rows}
     never_synced = await get_synced_at(session) is None
     return frozenset(c for c in channel_ids if access.get(c, never_synced))
+
+
+async def request_thread_load(
+    session: AsyncSession, guild_id: int, at: datetime
+) -> ThreadLoadError | None:
+    """记下「加载线程」的请求并叫醒 collector。幂等：重复点不改时间也不再通知。"""
+    guild_status = await session.scalar(
+        select(Guild.status).where(Guild.id == guild_id).with_for_update()
+    )
+    if guild_status is None:
+        return "guild_not_found"
+    if await accounts.get_account(session) is None:
+        return "account_not_found"
+    if guild_status != "active":
+        return "guild_unavailable"
+    requested = await session.scalar(
+        update(Guild)
+        .where(Guild.id == guild_id, Guild.thread_load_requested_at.is_(None))
+        .values(thread_load_requested_at=at)
+        .returning(Guild.id)
+    )
+    if requested is not None:
+        await notify_collect_changed(session)
+        await notify_channels_changed(session)
+    return None
 
 
 async def list_collected(

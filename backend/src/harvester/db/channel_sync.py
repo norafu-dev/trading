@@ -247,6 +247,19 @@ async def record_synced(
     return written is not None
 
 
+async def clear_thread_load_requests(session: AsyncSession, guild_ids: frozenset[int]) -> bool:
+    """清掉这些服务器上没处理的「加载线程」请求；有清掉的才返回真（spec 0008 AC-12）。"""
+    if not guild_ids:
+        return False
+    cleared = await session.scalars(
+        update(Guild)
+        .where(Guild.id.in_(guild_ids), Guild.thread_load_requested_at.is_not(None))
+        .values(thread_load_requested_at=None)
+        .returning(Guild.id)
+    )
+    return bool(cleared.all())
+
+
 async def notify_channels_changed(session: AsyncSession) -> None:
     await session.execute(
         text("SELECT pg_notify(:channel, '{}')"), {"channel": CHANNELS_CHANGED_CHANNEL}

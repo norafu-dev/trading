@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from harvester.collector.failures import ConnectionFailure
-from harvester.db.snapshots import GuildState
+from harvester.db.snapshots import GuildState, MessageSnapshot
 
 
 @dataclass(frozen=True)
@@ -115,6 +115,28 @@ class ThreadAccessLost:
 
 
 @dataclass(frozen=True)
+class MessageReceived:
+    generation: int
+    snapshot: MessageSnapshot
+    at: datetime
+
+
+@dataclass(frozen=True)
+class MessageEdited:
+    generation: int
+    snapshot: MessageSnapshot
+    at: datetime
+
+
+@dataclass(frozen=True)
+class MessagesDeleted:
+    generation: int
+    channel_id: int
+    message_ids: tuple[int, ...]
+    at: datetime
+
+
+@dataclass(frozen=True)
 class Wake:
     """账号可能变了（NOTIFY 或轮询）。"""
 
@@ -128,6 +150,8 @@ class ChannelsWake:
 class HeartbeatDue:
     pass
 
+
+MessageEvent = MessageReceived | MessageEdited | MessagesDeleted
 
 SessionEvent = (
     Ready
@@ -144,5 +168,6 @@ SessionEvent = (
     | ChannelRemoved
     | ThreadArchived
     | ThreadAccessLost
+    | MessageEvent
 )
 SupervisorEvent = SessionEvent | Wake | ChannelsWake | HeartbeatDue

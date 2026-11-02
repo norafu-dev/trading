@@ -158,6 +158,10 @@ class MessageSnapshot:
     reply_to_id: int | None
     edited_at: datetime | None
     attachments: tuple[AttachmentSnapshot, ...]
+    # 被提及的用户：和作者在同一个事务里写入 discord_user（spec 0008）。
+    mentions: tuple[UserSnapshot, ...] = ()
+    # 编辑事件的原始载荷没有 attachments 键时为假：不同步附件，已有附件不会被标成已移除。
+    attachments_known: bool = True
 
 
 @dataclass(frozen=True)

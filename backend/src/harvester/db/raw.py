@@ -8,8 +8,11 @@ import asyncpg
 
 from harvester.config import get_settings
 
-# Channel the collector notifies on after inserting a message (payload: ids only).
+# 新消息入库时通知，载荷是 {"channel_id": "1", "message_id": "2"}，ID 都是字符串（spec 0008）。
 NEW_MESSAGE_CHANNEL = "new_message"
+
+# 消息被编辑、embed 刷新、删除时通知，载荷是 {"channel_id": "1", "message_ids": ["2"]}。
+MESSAGE_CHANGED_CHANNEL = "message_changed"
 
 # 账号的配置或状态变化时通知，载荷是 {"account_id": <id>}（spec 0005）。
 ACCOUNT_CHANGED_CHANNEL = "discord_account_changed"

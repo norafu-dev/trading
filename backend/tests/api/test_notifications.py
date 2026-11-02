@@ -13,6 +13,7 @@ from harvester.api.notifications import Broadcaster, listen_forever
 from harvester.db import account as accounts
 from harvester.db import raw
 from harvester.db.account import AccountRow
+from harvester.db.messages import notify_message_changed, notify_new_message
 
 Factory = async_sessionmaker[AsyncSession]
 Events = asyncio.Queue[dict[str, Any]]
@@ -85,12 +86,26 @@ async def test_committed_account_write_reaches_subscribers(
     assert event == {"type": "account_status", "account_id": row.id}
 
 
-async def test_new_message_channel_keeps_its_own_event_type(
-    factory: Factory, events: Events
-) -> None:
-    await send_raw(factory, raw.NEW_MESSAGE_CHANNEL, '{"message_id": "9"}')
+async def test_new_message_payload_keeps_string_ids(factory: Factory, events: Events) -> None:
+    async with factory() as session, session.begin():
+        await notify_new_message(session, 1, 2**63 - 1)
 
-    assert await next_event(events) == {"type": "new_message", "message_id": "9"}
+    assert await next_event(events) == {
+        "type": "new_message",
+        "channel_id": "1",
+        "message_id": str(2**63 - 1),
+    }
+
+
+async def test_message_changed_has_its_own_event_type(factory: Factory, events: Events) -> None:
+    async with factory() as session, session.begin():
+        await notify_message_changed(session, 1, (2, 3))
+
+    assert await next_event(events) == {
+        "type": "message_changed",
+        "channel_id": "1",
+        "message_ids": ["2", "3"],
+    }
 
 
 async def test_rolled_back_write_sends_nothing(factory: Factory, events: Events) -> None:
