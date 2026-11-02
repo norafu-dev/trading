@@ -78,6 +78,7 @@ cd web && pnpm exec playwright install chromium-headless-shell   # 每台机器�
 - [vitest](.claude/skills/vitest/)：`antfu/skills`，Vitest 的写法、mock 和覆盖率
 - [python-testing-patterns](.claude/skills/python-testing-patterns/)：`wshobson/agents`，pytest 的 fixture、mock 和测试模式
 - [security-review](.claude/skills/security-review/)：`getsentry/skills`，安全审查，适合认证、加密和 token 相关的代码
+- [cloudflare](.claude/skills/cloudflare/)：`cloudflare/skills`，Cloudflare 产品选择和用法（备份用到 R2）
 
 Declined: `tanstack-skills/tanstack-skills@tanstack-virtual`
 
@@ -85,6 +86,7 @@ Declined: Lightsail 部署 skill (`aws/agent-toolkit-for-aws`)，其他未核实
 
 ## Context files
 
+- [deploy/README.md](deploy/README.md)：部署手册，服务器引导、每日 R2 备份、恢复演练和手动发布；`deploy.sh`、`backup.sh`、`restore.sh` 共用 `.ops.lock` 互斥
 - [web/AGENTS.md](web/AGENTS.md)（Next.js 自动维护的提示：这个版本的 Next.js 有破坏性改动，写代码前先读 `node_modules/next/dist/docs/`）
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._
