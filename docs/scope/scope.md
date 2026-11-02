@@ -144,12 +144,12 @@ spec [0006](../specs/0006-channel-management/index.md) · code in `backend/src/h
 
 本地 Mac 合盖和后台唤醒时不再为全新登录消耗额度，collector 和 api 的日志可以存到文件，事后能查到断线和登录的原因。(from spec 0007)
 **Done when:** 合盖过夜后，后台唤醒期间没有发出全新登录；打开电脑后能自动恢复；配置 `LOG_DIR` 后能在轮转的日志文件里查到每次全新登录的原因；线上行为不变。
-spec [0007](../specs/0007-sleep-login-guard-log-files.md)
+spec [0007](../specs/0007-sleep-login-guard-log-files/index.md) · code in `backend/src/harvester/collector/wake_guard.py`, `backend/src/harvester/logging.py`
 
 - [x] Design it (spec): `/architect 睡眠登录保护和日志文件`
-- [ ] Build it: `/develop 睡眠登录保护和日志文件`
+- [x] Build it: `/develop 睡眠登录保护和日志文件`
   - [x] 日志文件和诊断日志：`LOG_DIR`、轮转、权限、启动失败和登录原因，AC-7 到 AC-11
-  - [ ] 睡眠保护：`wake_guard.py`、IDENTIFY 前等待，RESUME 不受影响，AC-1 到 AC-6
+  - [x] 睡眠保护：`wake_guard.py`、IDENTIFY 前等待，RESUME 不受影响，AC-1 到 AC-6
 - [ ] Verify it: `/check verify 睡眠登录保护和日志文件`
 - [ ] Test it: `/test 睡眠登录保护和日志文件`
 

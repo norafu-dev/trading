@@ -3,19 +3,11 @@
 **Date**: 2026-11-02
 **Status**: In Progress
 
+Reasoning and options: see [rationale.md](rationale.md).
+
 ## Summary
 
 在本地开发时，Mac 合盖后还会在后台短暂唤醒，collector 可能趁这几十秒发一次全新登录，白白消耗每天 10 次的额度。这份 spec 让 collector 在发现电脑睡过之后，等电脑连续醒满 90 秒才发全新登录，恢复原会话（RESUME，不消耗额度）不受影响。同时加一个可选的 `LOG_DIR`，把 collector 和 api 的日志各存一份文件，方便事后查原因。服务器不会睡眠，也不配置 `LOG_DIR`，所以线上行为不变。
-
-## Context
-
-2026-11-01 到 11-02，账号在 5 小时内用完 10 次额度，暂停了约 18 小时。第 7 到第 10 次登录发生在同一个 collector 进程里（01:02 启动后没有重启），第 8 到第 10 次和被拦下的第 11 次，时间都和 `pmset` 记录的合盖或后台唤醒对得上。每次带网络的后台唤醒约 45 秒，只有 2 秒的唤醒没有产生登录。
-
-推测的过程是：电脑睡着，连接断开，后台唤醒时 RESUME 被拒（会话已过期），于是立刻 IDENTIFY，电脑又睡着，这次登录白费。这个推测还没有直接证据，因为 stdout 日志没有保存，第 9、10 次只隔 47 秒的原因也查不到。
-
-会话真的过期后，全新登录无法避免，能决定的只有时机：要花额度，就等电脑真正醒着的时候再花。
-
-Spec 0005 的额度关卡 `before_identify_hook` 在 `from_client` 内部运行，已经打开了 socket，并且处在 `GATEWAY_CONNECT_TIMEOUT` 60 秒超时之内，所以等待不能放进这个 hook。
 
 ## Requirements
 
@@ -36,50 +28,6 @@ Spec 0005 的额度关卡 `before_identify_hook` 在 `from_client` 内部运行�
 - **AC-10**: `LOG_DIR` 创建不了或写不了时，进程启动时抛异常，以非零状态退出，不静默退回只写 stdout。
 - **AC-11**: 日志能回答“为什么发了这次全新登录”：断线记录失败类型和 close code，每次预留额度记录原因，额度用完记录 `retry_at`。这些字段不含 token 和响应内容。
 
-## Options considered
-
-### Option 1: 连续醒满才发全新登录
-
-对比 `time.time()` 和 `time.monotonic()` 发现睡眠，在打开 IDENTIFY 连接前等待。
-
-**Pros**:
-- 合盖时也有效，不依赖操作系统命令。
-- 服务器不睡眠，不会触发。
-
-**Cons**:
-- 打开电脑后如果会话已过期，要多等 90 秒。
-- 比这更长的后台唤醒仍会消耗额度。
-
-### Option 2: 用 `caffeinate` 阻止睡眠
-
-不改 collector，开发时阻止系统睡眠。
-
-**Pros**:
-- 不用写代码。
-
-**Cons**:
-- 合盖通常挡不住，也更费电，还要记得启动。
-
-### Option 3: 读 `pmset` 判断后台唤醒
-
-直接询问 macOS 当前的电源状态。
-
-**Pros**:
-- 判断更直接。
-
-**Cons**:
-- 只能用于 macOS，还要解析不稳定的命令输出，给服务器代码加了平台分支。
-
-### Option 4: 只靠手动停 collector
-
-合盖前自己停掉。
-
-**Pros**:
-- 没有新代码。
-
-**Cons**:
-- 忘一次就可能损失大半天，这次就是这样发生的。
-
 ## Decision
 
 **Chosen option**: Option 1: 连续醒满才发全新登录
@@ -87,14 +35,6 @@ Spec 0005 的额度关卡 `before_identify_hook` 在 `from_client` 内部运行�
 发现睡眠后，collector 要等电脑连续醒满 90 秒才打开 IDENTIFY 连接；日志通过可选的 `LOG_DIR` 存到按大小轮转的文件。
 
 **Implementation skills**: `python-testing-patterns` (`wshobson/agents`, `.claude/skills/python-testing-patterns/`) · `security-review` (`getsentry/skills`, `.claude/skills/security-review/`)
-
-## Rationale
-
-这个问题的根源是额度花在了电脑马上又要睡着的时候，所以判断条件定在“电脑是否持续醒着”，而不是“网络通不通”。后台唤醒时网络往往是通的，只看网络挡不住。两个时钟的差值是最简单的信号：`time.monotonic()` 在 macOS 上用 `mach_absolute_time()`，已确认睡眠时不走；`time.time()` 继续走。
-
-等待放在打开 socket 之前，因为 hook 里等 90 秒会先撞上 60 秒连接超时，还会让连接一直空闲。这样打开连接到 IDENTIFY 之间仍有很小的空隙，但这里有意不做二次检查：刚连续醒满 90 秒就又睡着的情况很少见，最多损失 1 次额度，而检查要额外处理 socket 清理、状态写入、退避计数、覆盖段时间和 RESUME 参数，代价不值得。
-
-`LOG_DIR` 配目录而不是文件，因为两个进程共用 `.env`，共用一个 `RotatingFileHandler` 文件会在轮转时互相破坏。这里不用更重的日志工具：线上已经有 Docker 的 stdout 日志，这个功能只是补本地的缺口。
 
 ## Feature design
 

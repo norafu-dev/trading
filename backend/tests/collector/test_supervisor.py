@@ -5,6 +5,7 @@ import contextlib
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import func, insert, select, text, update
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from structlog.testing import CapturingLogger
 
 from harvester.collector import supervisor
+from harvester.collector.discord_client import HarvesterClient
 from harvester.collector.events import (
     ChannelRemoved,
     Disconnected,
@@ -39,6 +41,7 @@ from harvester.collector.supervisor import (
     handle_event,
     run_supervisor,
 )
+from harvester.collector.wake_guard import WakeGuard
 from harvester.crypto import PURPOSE_DISCORD_TOKEN, encrypt
 from harvester.db import account as accounts
 from harvester.db.account import AccountRow
@@ -1196,3 +1199,59 @@ async def test_failures_log_only_kind_and_codes(  # covers: AC-11
         {"kind": "http", "close_code": None, "http_status": 503},
     ]
     assert TOKEN not in str(captured.calls)
+
+
+@pytest.mark.parametrize("change", ["token", "disable"])
+async def test_waiting_client_writes_nothing_and_stops_on_config_change(  # covers: AC-2, AC-5
+    harness: Harness, change: str
+) -> None:
+    """真的 HarvesterClient 在等待：状态不变、不写额度、不开 socket，改配置能立刻打断。"""
+    wall = [1000.0]
+    parked = asyncio.Event()
+
+    async def park(_seconds: float) -> None:
+        parked.set()
+        await asyncio.Event().wait()
+
+    guard = WakeGuard(lambda: wall[0], lambda: 50.0, park)
+    guard.sample()
+    wall[0] += 3600
+    opened: list[object] = []
+    closed = asyncio.Event()
+
+    async def ws_factory(_client: object, **params: object) -> None:
+        opened.append(params)
+
+    class Client(HarvesterClient):
+        async def close(self) -> None:
+            await super().close()
+            closed.set()
+
+    def new_session(generation: int, queue: Queue, clock: Callable[[], datetime]) -> Client:
+        client = Client(generation, queue, clock, ws_factory, guard=guard)
+
+        async def login(_token: str) -> None:
+            client._connection.user = SimpleNamespace(id=USER_ID, name="name")  # pyright: ignore
+
+        client.login = login  # pyright: ignore[reportAttributeAccessIssue]
+        return client
+
+    harness.deps = replace(harness.deps, new_session=new_session)
+    await add_account(harness)
+    harness.start()
+    await asyncio.wait_for(parked.wait(), timeout=5)
+
+    row = await harness.read()
+    assert row.status == "connecting"
+    assert await harness.attempts() == 0
+    assert opened == []
+
+    if change == "token":
+        cipher = encrypt(KEYS, PURPOSE_DISCORD_TOKEN, b"other")
+        await harness.api(lambda s: accounts.replace_token(s, cipher, 1))
+    else:
+        await harness.api(lambda s: accounts.set_enabled(s, False))
+
+    await asyncio.wait_for(closed.wait(), timeout=2)
+    assert await harness.attempts() == 0
+    assert opened == []

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from harvester.collector import main
 from harvester.collector.events import SessionEnded
+from harvester.collector.wake_guard import WakeGuard
 from harvester.crypto import PURPOSE_DISCORD_TOKEN, encrypt
 from harvester.db import account as accounts
 from harvester.db import raw
@@ -46,7 +47,10 @@ def sessions(monkeypatch: pytest.MonkeyPatch, states: list[GuildState]) -> list[
     created: list[FakeSession] = []
     tokens: list[str] = []
 
-    def new_client(generation: int, queue: Queue, _clock: object) -> FakeSession:
+    def new_client(
+        generation: int, queue: Queue, _clock: object, guard: object = None
+    ) -> FakeSession:
+        assert isinstance(guard, WakeGuard)
         session = FakeSession(generation, queue, USER_ID, tokens, states)
         created.append(session)
         return session

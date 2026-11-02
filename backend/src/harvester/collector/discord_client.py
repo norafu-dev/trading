@@ -33,6 +33,7 @@ from harvester.collector.events import (
     ThreadArchived,
 )
 from harvester.collector.failures import ConnectionFailure
+from harvester.collector.wake_guard import WakeGuard
 from harvester.db.snapshots import (
     ACCESS_CHANNEL_TYPES,
     AccessSnapshot,
@@ -194,6 +195,7 @@ class HarvesterClient(discord.Client):
         clock: Callable[[], datetime],
         ws_factory: WebSocketFactory = DiscordWebSocket.from_client,
         coalesce_seconds: float = GUILD_COALESCE_SECONDS,
+        guard: WakeGuard | None = None,
     ) -> None:
         super().__init__(
             status=discord.Status.invisible,
@@ -210,6 +212,7 @@ class HarvesterClient(discord.Client):
         self._pending_guilds: dict[int, asyncio.TimerHandle] = {}
         self._lost_threads: frozenset[int] = frozenset()
         self._resume_rejected = False
+        self._guard = guard
         self._track_sockets()
         self._watch_thread_updates()
 
@@ -346,6 +349,9 @@ class HarvesterClient(discord.Client):
         while not self.is_closed():
             # 连上之后 params 会被改写，所以先记下这次是不是带 resume 发起的。
             resuming = params.get("resume", False)
+            # 在打开 socket 之前等：hook 里等会撞上连接超时（spec 0007）。RESUME 不花额度，不用等。
+            if self._guard is not None and not resuming:
+                await self._guard.wait_until_settled()
             try:
                 coro = self._ws_factory(self, **params)
                 self.ws = await asyncio.wait_for(coro, timeout=GATEWAY_CONNECT_TIMEOUT)
@@ -460,5 +466,6 @@ def new_client(
     generation: int,
     events: "asyncio.Queue[SupervisorEvent]",
     clock: Callable[[], datetime],
+    guard: WakeGuard | None = None,
 ) -> HarvesterClient:
-    return HarvesterClient(generation, events, clock)
+    return HarvesterClient(generation, events, clock, guard=guard)

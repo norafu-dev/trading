@@ -3,6 +3,7 @@ import contextlib
 import random
 import signal
 from datetime import UTC, datetime
+from functools import partial
 
 import asyncpg
 import structlog
@@ -10,6 +11,7 @@ from sqlalchemy import text
 
 from harvester.collector.discord_client import new_client
 from harvester.collector.supervisor import Deps, run_supervisor
+from harvester.collector.wake_guard import WakeGuard, watch_sleep
 from harvester.config import get_crypto_settings
 from harvester.db import get_engine, get_sessionmaker, raw
 
@@ -99,12 +101,13 @@ async def run() -> int:
             version = await conn.scalar(text("SHOW server_version"))
         log.info("collector.db_connected", server_version=version)
 
+        guard = WakeGuard()
         supervisor = asyncio.create_task(
             run_supervisor(
                 Deps(
                     factory=get_sessionmaker(),
                     key_ring=get_crypto_settings().key_ring,
-                    new_session=new_client,
+                    new_session=partial(new_client, guard=guard),
                     clock=_utc_now,
                     uniform=random.uniform,
                     wake=wake,
@@ -116,6 +119,7 @@ async def run() -> int:
         background = (
             asyncio.create_task(_probe_lock(lock_conn, lost), name="lock-probe"),
             asyncio.create_task(_poll_account(wake), name="account-poll"),
+            asyncio.create_task(watch_sleep(guard), name="sleep-watch"),
         )
         stop_wait = asyncio.create_task(stop.wait(), name="stop-wait")
         lost_wait = asyncio.create_task(lost.wait(), name="lost-wait")

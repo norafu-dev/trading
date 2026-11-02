@@ -38,6 +38,7 @@ from harvester.collector.events import (
     ThreadArchived,
 )
 from harvester.collector.failures import ConnectionFailure
+from harvester.collector.wake_guard import SETTLE_SECONDS, WakeGuard
 from harvester.db.snapshots import AccessSnapshot
 
 
@@ -639,3 +640,124 @@ async def test_unarchive_of_uncached_thread_is_detected(monkeypatch: pytest.Monk
     parse(active)
     assert queue.empty()
     await client.close()
+
+
+class GatedClock:
+    """假时钟：sleep 不前进，等测试显式放行，这样能观察等待期间发生了什么。"""
+
+    def __init__(self) -> None:
+        self.wall = 1000.0
+        self.mono = 50.0
+        self.sleeps: list[float] = []
+        self.parked = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.parked.set()
+        await self.release.wait()
+        self.release.clear()
+        self.parked.clear()
+
+    def guard(self) -> WakeGuard:
+        guard = WakeGuard(lambda: self.wall, lambda: self.mono, self.sleep)
+        guard.sample()
+        return guard
+
+    def suspend(self, seconds: float) -> None:
+        self.wall += seconds
+
+    def finish_settling(self) -> None:
+        self.mono += SETTLE_SECONDS
+        self.wall += SETTLE_SECONDS
+        self.release.set()
+
+
+def _closing_ws() -> FakeWs:
+    return FakeWs(discord.ConnectionClosed(4004))  # pyright: ignore[reportArgumentType]
+
+
+def _guarded_client(
+    script: Script, clock: GatedClock
+) -> tuple[HarvesterClient, list[dict[str, Any]], "asyncio.Queue[SupervisorEvent]"]:
+    queue: asyncio.Queue[SupervisorEvent] = asyncio.Queue()
+    calls: list[dict[str, Any]] = []
+    client = HarvesterClient(1, queue, now, scripted_factory(script, calls), guard=clock.guard())
+    return client, calls, queue
+
+
+async def test_identify_waits_before_opening_a_socket() -> None:  # covers: AC-2
+    clock = GatedClock()
+    client, calls, queue = _guarded_client([returns(_closing_ws())], clock)
+    clock.suspend(3600)
+
+    task = asyncio.create_task(client.connect())
+    await asyncio.wait_for(clock.parked.wait(), timeout=2)
+
+    assert calls == []
+    assert queue.empty()  # 没有 IdentifyRequested，也就不会写 discord_login_attempt。
+
+    clock.finish_settling()
+    with pytest.raises(discord.ConnectionClosed):
+        await asyncio.wait_for(task, timeout=2)
+    assert calls == [{"initial": True}]
+
+
+async def test_resume_does_not_wait_but_rejected_resume_does() -> None:  # covers: AC-2, AC-3
+    clock = GatedClock()
+    first = FakeWs(ReconnectWebSocket(resume=True), close_code=1000)
+    rejecting = FakeWs(ReconnectWebSocket(resume=False), None, None, close_code=1000)
+    client, calls, queue = _guarded_client([returns(first), returns(rejecting)], clock)
+    responder = asyncio.create_task(answer_retries(queue, [], 0, 0))
+
+    # 第一次连接时还没睡过；断线之后才发现睡眠。
+    def suspend_on_first_call(original: Any) -> Any:
+        async def wrapped(c: HarvesterClient, **params: Any) -> Any:
+            ws = await original(c, **params)
+            clock.suspend(3600)
+            return ws
+
+        return wrapped
+
+    client._ws_factory = suspend_on_first_call(client._ws_factory)
+    task = asyncio.create_task(client.connect())
+    await asyncio.wait_for(clock.parked.wait(), timeout=2)
+
+    assert [c.get("resume", False) for c in calls] == [False, True]
+    assert clock.sleeps  # RESUME 被拒之后的 IDENTIFY 才开始等。
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    responder.cancel()
+
+
+async def test_no_sleep_means_no_wait() -> None:  # covers: AC-4
+    clock = GatedClock()
+    client, calls, _ = _guarded_client([returns(_closing_ws())], clock)
+
+    with pytest.raises(discord.ConnectionClosed):
+        await asyncio.wait_for(client.connect(), timeout=2)
+
+    assert clock.sleeps == []
+    assert calls == [{"initial": True}]
+
+
+async def test_cancel_ends_the_wait_at_once() -> None:  # covers: AC-5
+    clock = GatedClock()
+    client, calls, _ = _guarded_client([], clock)
+    clock.suspend(3600)
+
+    task = asyncio.create_task(client.connect())
+    await asyncio.wait_for(clock.parked.wait(), timeout=2)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=1)
+    assert calls == []
+
+
+def test_new_client_passes_the_guard_on() -> None:
+    guard = WakeGuard()
+    client = new_client(1, asyncio.Queue(), now, guard=guard)
+    assert client._guard is guard
