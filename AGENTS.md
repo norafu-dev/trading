@@ -30,6 +30,7 @@ uv run python -m harvester.crypto genkey               # 生成 TOKEN_ENCRYPTION
 uv run python -m harvester.api.setup_code              # 第一次打开 dashboard 前生成设置码
 uv run python -m harvester.api.auth_reset              # 重置 dashboard 登录凭据和所有会话
 uv run python -m harvester.api.export_openapi && cd ../web && pnpm gen:api   # 改接口后同步前端类型
+cd web && pnpm exec playwright install chromium-headless-shell   # 每台机器一次：下载 /check verify 用的无头浏览器
 ```
 
 ## Specs
@@ -57,6 +58,7 @@ uv run python -m harvester.api.export_openapi && cd ../web && pnpm gen:api   # �
 - **前端**：Biome 做 lint 和格式化（不用 ESLint 和 Prettier）。
 - **提交前**：`pre-commit` 框架，对改动的文件跑 ruff 和 Biome，再跑 pyright 和 `tsc --noEmit`。
 - **测试**：单元加集成测试。后端 pytest，集成测试连真实 PostgreSQL；前端 Vitest。新功能带测试。
+- **页面实测**：`web` 的开发依赖里有 `playwright`（只用库，不用 `@playwright/test`，也不用 MCP），`/check verify` 用它驱动真实页面、点击和截图，脚本和截图放临时目录，不进仓库。CI 不下载浏览器。
 - **CI**：跑 ruff、pyright、pytest、OpenAPI 类型同步检查、`pnpm lint`（Biome）、`pnpm typecheck`、Vitest、`pnpm build` 和 Docker 镜像构建。
 
 ## Git
