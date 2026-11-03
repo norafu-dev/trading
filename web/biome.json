@@ -1,0 +1,84 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.6.4/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "ignoreUnknown": true,
+    "includes": ["**", "!next-env.d.ts", "!src/lib/api/schema.d.ts"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "linter": {
+    "enabled": true,
+    "domains": {
+      "next": "recommended",
+      "react": "recommended"
+    },
+    "rules": {
+      "preset": "recommended",
+      "style": {
+        "noDefaultExport": "error"
+      },
+      "security": {
+        "noDangerouslySetInnerHtml": "error"
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double"
+    }
+  },
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": [
+        "next.config.ts",
+        "vitest.config.mts",
+        "postcss.config.mjs",
+        "src/app/**/page.tsx",
+        "src/app/**/page.dev.tsx",
+        "src/app/**/layout.tsx",
+        "src/app/**/loading.tsx",
+        "src/app/**/error.tsx",
+        "src/app/**/not-found.tsx"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noDefaultExport": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/app/globals.css"],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noImportantStyles": "off"
+          }
+        }
+      }
+    }
+  ],
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  }
+}

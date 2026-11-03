@@ -1,12 +1,12 @@
 """LISTEN on PostgreSQL and fan notifications out to SSE subscribers in this process.
 
-The api runs a single worker, so an in memory fan out is enough. Notifications lost
-while the LISTEN connection is down are recovered by clients via Last-Event-ID.
+The api runs a single worker, so an in memory fan out is enough. Events are only hints:
+clients refetch on reconnect and every 30 s, which recovers anything lost here (spec 0008).
 """
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -16,6 +16,14 @@ import structlog
 from harvester.db import raw
 
 log = structlog.get_logger("harvester.api.notifications")
+
+# 每个通道对应的 SSE 事件名，放进载荷的 type 字段。
+_EVENT_TYPES = {
+    raw.NEW_MESSAGE_CHANNEL: "new_message",
+    raw.MESSAGE_CHANGED_CHANNEL: "message_changed",
+    raw.ACCOUNT_CHANGED_CHANNEL: "account_status",
+    raw.CHANNELS_CHANGED_CHANNEL: "channels_changed",
+}
 
 RECONNECT_MIN = 1.0
 RECONNECT_MAX = 30.0
@@ -35,7 +43,7 @@ class Broadcaster:
                 log.warning("notifications.subscriber_full")
 
     @asynccontextmanager
-    async def subscribe(self) -> AsyncIterator[asyncio.Queue[dict[str, Any]]]:
+    async def subscribe(self) -> AsyncGenerator[asyncio.Queue[dict[str, Any]]]:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(SUBSCRIBER_QUEUE_SIZE)
         self._subscribers.add(queue)
         try:
@@ -47,9 +55,12 @@ class Broadcaster:
 async def _listen_until_closed(broadcaster: Broadcaster) -> None:
     """Open one LISTEN connection and return once PostgreSQL closes it."""
 
-    def on_notify(_conn: Any, _pid: int, _channel: str, payload: str) -> None:
+    def on_notify(_conn: object, _pid: int, channel: str, payload: object) -> None:
+        if not isinstance(payload, str):
+            log.warning("notifications.bad_payload")
+            return
         try:
-            broadcaster.publish(json.loads(payload))
+            broadcaster.publish({"type": _EVENT_TYPES[channel], **json.loads(payload)})
         except json.JSONDecodeError:
             log.warning("notifications.bad_payload")
 
@@ -57,8 +68,9 @@ async def _listen_until_closed(broadcaster: Broadcaster) -> None:
     try:
         closed = asyncio.Event()
         conn.add_termination_listener(lambda _c: closed.set())
-        await conn.add_listener(raw.NEW_MESSAGE_CHANNEL, on_notify)
-        log.info("notifications.listening", channel=raw.NEW_MESSAGE_CHANNEL)
+        for channel in _EVENT_TYPES:
+            await conn.add_listener(channel, on_notify)
+        log.info("notifications.listening", channels=list(_EVENT_TYPES))
         await closed.wait()
     finally:
         if not conn.is_closed():

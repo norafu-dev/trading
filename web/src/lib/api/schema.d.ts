@@ -4,6 +4,401 @@
  */
 
 export interface paths {
+    "/api/livez": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Livez
+         * @description 只回答 ok，不查库，给外部监控用。
+         */
+        get: operations["livez_api_livez_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Auth State */
+        get: operations["auth_state_api_auth_state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Login */
+        post: operations["login_api_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/setup/begin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Setup Begin */
+        post: operations["setup_begin_api_auth_setup_begin_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/setup/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Setup Complete */
+        post: operations["setup_complete_api_auth_setup_complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Logout */
+        post: operations["logout_api_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/login-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Login Events */
+        get: operations["login_events_api_auth_login_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Discord Account */
+        get: operations["get_discord_account_api_discord_account_get"];
+        put?: never;
+        /** Add Discord Account */
+        post: operations["add_discord_account_api_discord_account_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/account/label": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Discord Label */
+        put: operations["update_discord_label_api_discord_account_label_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/account/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace Discord Token */
+        put: operations["replace_discord_token_api_discord_account_token_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/account/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disable Discord Account */
+        post: operations["disable_discord_account_api_discord_account_disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/account/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enable Discord Account */
+        post: operations["enable_discord_account_api_discord_account_enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/account/reconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reconnect Discord Account */
+        post: operations["reconnect_discord_account_api_discord_account_reconnect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/account/switch-identity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Switch Discord Identity */
+        post: operations["switch_discord_identity_api_discord_account_switch_identity_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/guilds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Guilds */
+        get: operations["list_guilds_api_discord_guilds_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/guilds/{guild_id}/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Guild Channels */
+        get: operations["list_guild_channels_api_discord_guilds__guild_id__channels_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/channels/{channel_id}/collect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Channel Collect */
+        put: operations["set_channel_collect_api_discord_channels__channel_id__collect_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/categories/{category_id}/collect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Category Collect */
+        put: operations["set_category_collect_api_discord_categories__category_id__collect_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/collected": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Collected */
+        get: operations["list_collected_api_discord_collected_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/channels/{channel_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Channel */
+        get: operations["get_channel_api_discord_channels__channel_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/channels/{channel_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Messages */
+        get: operations["list_messages_api_discord_channels__channel_id__messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/guilds/{guild_id}/load-threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Load Threads */
+        post: operations["load_threads_api_discord_guilds__guild_id__load_threads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get System Status */
+        get: operations["get_system_status_api_system_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -30,7 +425,7 @@ export interface paths {
         };
         /**
          * Events
-         * @description Demo stream: a heartbeat every 20 s plus any new_message notifications.
+         * @description A heartbeat every 20 s plus message, account and channel change events.
          */
         get: operations["events_api_events_get"];
         put?: never;
@@ -45,6 +440,268 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccountCreate */
+        AccountCreate: {
+            /** Label */
+            label: string;
+            /**
+             * Token
+             * Format: password
+             */
+            token: string;
+        };
+        /** AccountEnvelope */
+        AccountEnvelope: {
+            account: components["schemas"]["DiscordAccountOut"] | null;
+        };
+        /** AttachmentOut */
+        AttachmentOut: {
+            /** Id */
+            id: string;
+            /** Filename */
+            filename: string;
+            /** Content Type */
+            content_type: string | null;
+            /** Size Bytes */
+            size_bytes: number;
+        };
+        /** AuthState */
+        AuthState: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "setup_required" | "unauthenticated" | "authenticated";
+        };
+        /** BackupRunOut */
+        BackupRunOut: {
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Finished At */
+            finished_at: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "succeeded" | "failed";
+            /** Size Bytes */
+            size_bytes: number | null;
+            /** Object Key */
+            object_key: string | null;
+            /** Error */
+            error: ("dump" | "encrypt" | "upload" | "interrupted") | null;
+        };
+        /** BackupStatusOut */
+        BackupStatusOut: {
+            last_run: components["schemas"]["BackupRunOut"] | null;
+            /** Last Success At */
+            last_success_at: string | null;
+            /** Overdue */
+            overdue: boolean;
+        };
+        /** CategoryCollectOut */
+        CategoryCollectOut: {
+            /** Changed */
+            changed: number;
+            /** Skipped No Access */
+            skipped_no_access: number;
+        };
+        /** ChannelDetailOut */
+        ChannelDetailOut: {
+            /** Id */
+            id: string;
+            /** Guild Id */
+            guild_id: string;
+            /** Guild Name */
+            guild_name: string;
+            /** Name */
+            name: string;
+            /** Type */
+            type: number;
+            /** Banner Reason */
+            banner_reason: ("channel_deleted" | "guild_left" | "collect_off" | "no_access" | "thread_archived" | "parent_unavailable" | "account_reconnecting" | "account_offline" | "starting") | null;
+        };
+        /** ChannelOut */
+        ChannelOut: {
+            /** Id */
+            id: string;
+            /** Guild Id */
+            guild_id: string;
+            /** Parent Id */
+            parent_id: string | null;
+            /** Type */
+            type: number;
+            /** Name */
+            name: string;
+            /** Position */
+            position: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "archived" | "deleted";
+            /** Collect Enabled */
+            collect_enabled: boolean;
+            /** Collectable */
+            collectable: boolean;
+            /** Can Read */
+            can_read: boolean;
+        };
+        /** ChannelsOut */
+        ChannelsOut: {
+            /** Channels */
+            channels: components["schemas"]["ChannelOut"][];
+        };
+        /** CollectBody */
+        CollectBody: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** CollectedOut */
+        CollectedOut: {
+            /** Guilds */
+            guilds: components["schemas"]["GuildBriefOut"][];
+            /** Channels */
+            channels: components["schemas"]["ChannelOut"][];
+        };
+        /** CollectorStatusOut */
+        CollectorStatusOut: {
+            /** Last Heartbeat At */
+            last_heartbeat_at: string | null;
+            /** Stale */
+            stale: boolean;
+            /** Has Account */
+            has_account: boolean;
+        };
+        /** DiscordAccountOut */
+        DiscordAccountOut: {
+            /** Id */
+            id: number;
+            /** Label */
+            label: string;
+            /** Discord User Id */
+            discord_user_id: string | null;
+            /** Discord Username */
+            discord_username: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "connecting" | "online" | "reconnecting" | "token_invalid" | "banned" | "disabled" | "verification_required" | "login_paused" | "account_mismatch";
+            /**
+             * Status Changed At
+             * Format: date-time
+             */
+            status_changed_at: string;
+            /** Last Error */
+            last_error: string | null;
+            /** Last Heartbeat At */
+            last_heartbeat_at: string | null;
+            /** Retry At */
+            retry_at: string | null;
+            /** Collector Stale */
+            collector_stale: boolean;
+        };
+        /** EmbedAuthor */
+        EmbedAuthor: {
+            /** Name */
+            name?: string;
+            /** Url */
+            url?: string;
+        };
+        /**
+         * EmbedData
+         * @description The embed fields we keep; keys whose value would be None are left out.
+         */
+        EmbedData: {
+            /** Type */
+            type?: string;
+            /** Title */
+            title?: string;
+            /** Description */
+            description?: string;
+            /** Url */
+            url?: string;
+            /** Color */
+            color?: number;
+            /** Timestamp */
+            timestamp?: string;
+            author?: components["schemas"]["EmbedAuthor"];
+            /** Fields */
+            fields?: components["schemas"]["EmbedField"][];
+            /** Footer Text */
+            footer_text?: string;
+            /** Image Url */
+            image_url?: string;
+            /** Thumbnail Url */
+            thumbnail_url?: string;
+        };
+        /** EmbedField */
+        EmbedField: {
+            /** Name */
+            name: string;
+            /** Value */
+            value: string;
+            /** Inline */
+            inline?: boolean;
+        };
+        /** ForwardedOut */
+        ForwardedOut: {
+            /** Message Id */
+            message_id: string;
+            /** Channel Id */
+            channel_id: string;
+            /** Guild Id */
+            guild_id: string | null;
+            /** Content */
+            content: string;
+            /** Embeds */
+            embeds: components["schemas"]["EmbedData"][];
+            /** Attachment Names */
+            attachment_names: string[];
+        };
+        /** GuildBriefOut */
+        GuildBriefOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Icon Hash */
+            icon_hash: string | null;
+        };
+        /** GuildOut */
+        GuildOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Icon Hash */
+            icon_hash: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "left" | "deleted";
+            /** Enabled Count */
+            enabled_count: number;
+            /** Thread Load Pending */
+            thread_load_pending: boolean;
+        };
+        /** GuildsOut */
+        GuildsOut: {
+            /** Synced At */
+            synced_at: string | null;
+            /** Guilds */
+            guilds: components["schemas"]["GuildOut"][];
+        };
+        /** HTTPValidationError */
+        HTTPValidationError: {
+            /** Detail */
+            detail?: components["schemas"]["ValidationError"][];
+        };
         /** Health */
         Health: {
             /**
@@ -60,6 +717,153 @@ export interface components {
             /** Database Time */
             database_time?: string | null;
         };
+        /** LabelUpdate */
+        LabelUpdate: {
+            /** Label */
+            label: string;
+        };
+        /** Liveness */
+        Liveness: {
+            /**
+             * Status
+             * @constant
+             */
+            status: "ok";
+        };
+        /** LoginBody */
+        LoginBody: {
+            /** Password */
+            password: string;
+            /** Totp Code */
+            totp_code: string;
+        };
+        /** LoginEventOut */
+        LoginEventOut: {
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Ip */
+            ip: string | null;
+            /** User Agent */
+            user_agent: string | null;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "success" | "bad_credentials" | "rate_limited" | "setup_bad_code" | "setup_completed" | "logout" | "reset";
+        };
+        /** MessageOut */
+        MessageOut: {
+            /** Id */
+            id: string;
+            /** Channel Id */
+            channel_id: string;
+            /** Author Id */
+            author_id: string;
+            /** Author Name */
+            author_name: string;
+            /** Author Avatar Hash */
+            author_avatar_hash: string | null;
+            /** Created At */
+            created_at: string;
+            /** Content */
+            content: string;
+            /** Embeds */
+            embeds: components["schemas"]["EmbedData"][];
+            forwarded: components["schemas"]["ForwardedOut"] | null;
+            /** Attachments */
+            attachments: components["schemas"]["AttachmentOut"][];
+            /** Edited At */
+            edited_at: string | null;
+            /** Deleted At */
+            deleted_at: string | null;
+            reply: components["schemas"]["ReplyOut"] | null;
+        };
+        /** MessagesOut */
+        MessagesOut: {
+            /** Messages */
+            messages: components["schemas"]["MessageOut"][];
+            /** Has More */
+            has_more: boolean;
+            /** Users */
+            users: components["schemas"]["NamedRefOut"][];
+            /** Channels */
+            channels: components["schemas"]["NamedRefOut"][];
+        };
+        /** NamedRefOut */
+        NamedRefOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** ReplyOut */
+        ReplyOut: {
+            /** Id */
+            id: string;
+            /** Missing */
+            missing: boolean;
+            /** Author Name */
+            author_name?: string | null;
+            /** Preview */
+            preview?: string | null;
+            /** Deleted */
+            deleted?: boolean | null;
+        };
+        /** SetupBeginBody */
+        SetupBeginBody: {
+            /** Setup Code */
+            setup_code: string;
+        };
+        /** SetupBeginResult */
+        SetupBeginResult: {
+            /** Otpauth Uri */
+            otpauth_uri: string;
+            /** Secret */
+            secret: string;
+        };
+        /** SetupCompleteBody */
+        SetupCompleteBody: {
+            /** Setup Code */
+            setup_code: string;
+            /** Password */
+            password: string;
+            /** Totp Code */
+            totp_code: string;
+        };
+        /** SystemStatusOut */
+        SystemStatusOut: {
+            collector: components["schemas"]["CollectorStatusOut"];
+            backup: components["schemas"]["BackupStatusOut"];
+        };
+        /** ThreadLoadOut */
+        ThreadLoadOut: {
+            /** Pending */
+            pending: boolean;
+        };
+        /** TokenUpdate */
+        TokenUpdate: {
+            /**
+             * Token
+             * Format: password
+             */
+            token: string;
+        };
+        /** ValidationError */
+        ValidationError: {
+            /** Location */
+            loc: (string | number)[];
+            /** Message */
+            msg: string;
+            /** Error Type */
+            type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
+        };
     };
     responses: never;
     parameters: never;
@@ -69,6 +873,648 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    livez_api_livez_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Liveness"];
+                };
+            };
+        };
+    };
+    auth_state_api_auth_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthState"];
+                };
+            };
+        };
+    };
+    login_api_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    setup_begin_api_auth_setup_begin_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupBeginBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupBeginResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    setup_complete_api_auth_setup_complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupCompleteBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    logout_api_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    login_events_api_auth_login_events_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginEventOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_discord_account_api_discord_account_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountEnvelope"];
+                };
+            };
+        };
+    };
+    add_discord_account_api_discord_account_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordAccountOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_discord_label_api_discord_account_label_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LabelUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordAccountOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    replace_discord_token_api_discord_account_token_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TokenUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordAccountOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disable_discord_account_api_discord_account_disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordAccountOut"];
+                };
+            };
+        };
+    };
+    enable_discord_account_api_discord_account_enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordAccountOut"];
+                };
+            };
+        };
+    };
+    reconnect_discord_account_api_discord_account_reconnect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordAccountOut"];
+                };
+            };
+        };
+    };
+    switch_discord_identity_api_discord_account_switch_identity_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordAccountOut"];
+                };
+            };
+        };
+    };
+    list_guilds_api_discord_guilds_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuildsOut"];
+                };
+            };
+        };
+    };
+    list_guild_channels_api_discord_guilds__guild_id__channels_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                guild_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_channel_collect_api_discord_channels__channel_id__collect_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CollectBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_category_collect_api_discord_categories__category_id__collect_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                category_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CollectBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryCollectOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_collected_api_discord_collected_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CollectedOut"];
+                };
+            };
+        };
+    };
+    get_channel_api_discord_channels__channel_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_messages_api_discord_channels__channel_id__messages_get: {
+        parameters: {
+            query?: {
+                before?: string | null;
+                after?: string | null;
+                ids?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                channel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessagesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    load_threads_api_discord_guilds__guild_id__load_threads_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                guild_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadLoadOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_system_status_api_system_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemStatusOut"];
+                };
+            };
+        };
+    };
     health_api_health_get: {
         parameters: {
             query?: never;

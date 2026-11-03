@@ -1,0 +1,448 @@
+"""频道页的消息读取和实时通知（spec 0008）。这里的函数都不提交事务。
+
+消息内容的唯一来源是库：接口只读这里，SSE 载荷只带 ID。
+"""
+
+import json
+import re
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Literal
+
+from sqlalchemy import exists, func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
+
+from harvester.db.coverage_plan import BannerFacts, BannerReason, banner_reason
+from harvester.db.models import (
+    AccountChannelAccess,
+    Attachment,
+    Channel,
+    ChannelCoverage,
+    DiscordAccount,
+    DiscordUser,
+    Guild,
+    Message,
+    MessageRevision,
+)
+from harvester.db.raw import MESSAGE_CHANGED_CHANNEL, NEW_MESSAGE_CHANNEL
+from harvester.db.snapshots import THREAD_CHANNEL_TYPES, EmbedData, ForwardedData
+
+BIGINT_MAX = 2**63 - 1
+REPLY_PREVIEW_LENGTH = 100
+
+# 排除身份组写法 <@&id>：身份组仍按 spec 0003 显示固定文字。
+_USER_MENTION = re.compile(r"<@!?(\d+)>")
+_CHANNEL_MENTION = re.compile(r"<#(\d+)>")
+
+
+@dataclass(frozen=True)
+class Latest:
+    limit: int
+
+
+@dataclass(frozen=True)
+class Before:
+    message_id: int
+    limit: int
+
+
+@dataclass(frozen=True)
+class After:
+    message_id: int
+    limit: int
+
+
+@dataclass(frozen=True)
+class ByIds:
+    message_ids: tuple[int, ...]
+
+
+PageSelector = Latest | Before | After | ByIds
+
+
+@dataclass(frozen=True)
+class AttachmentRow:
+    id: int
+    filename: str
+    content_type: str | None
+    size_bytes: int
+
+
+@dataclass(frozen=True)
+class ReplyMissing:
+    id: int
+
+
+@dataclass(frozen=True)
+class ReplyFound:
+    id: int
+    author_name: str
+    preview: str
+    deleted: bool
+
+
+@dataclass(frozen=True)
+class MessageRow:
+    id: int
+    channel_id: int
+    author_id: int
+    author_name: str
+    author_avatar_hash: str | None
+    created_at: datetime
+    content: str
+    embeds: list[EmbedData]
+    forwarded: ForwardedData | None
+    attachments: tuple[AttachmentRow, ...]
+    edited_at: datetime | None
+    deleted_at: datetime | None
+    reply: ReplyMissing | ReplyFound | None
+
+
+@dataclass(frozen=True)
+class NamedRef:
+    id: int
+    name: str
+
+
+@dataclass(frozen=True)
+class MessagePage:
+    messages: tuple[MessageRow, ...]
+    has_more: bool
+    users: tuple[NamedRef, ...]
+    channels: tuple[NamedRef, ...]
+
+
+@dataclass(frozen=True)
+class ChannelDetail:
+    id: int
+    guild_id: int
+    guild_name: str
+    name: str
+    type: int
+    banner_reason: BannerReason | None
+
+
+def effective_edited_at(
+    version: int, edited_at: datetime | None, last_replaced_at: datetime | None
+) -> datetime | None:
+    """只有真正的编辑才显示「已编辑」：embed 展开不加版本。"""
+    if version <= 1:
+        return None
+    return edited_at or last_replaced_at
+
+
+def reply_preview(
+    content: str,
+    embeds: Sequence[EmbedData] | None,
+    has_attachment: bool,
+    forwarded: ForwardedData | None,
+) -> str:
+    """回复引用的摘要；正文为空时依次回退（AC-20）。"""
+    title = embeds[0].get("title") if embeds else None
+    if content or title:
+        return (content or title or "")[:REPLY_PREVIEW_LENGTH]
+    if has_attachment:
+        return "[附件]"
+    if forwarded is not None:
+        return "[转发]"
+    return "[无文字内容]"
+
+
+def _message_texts(row: MessageRow) -> Iterable[str]:
+    yield row.content
+    embeds = row.embeds
+    if row.forwarded is not None:
+        yield row.forwarded["content"]
+        embeds = [*embeds, *row.forwarded["embeds"]]
+    for embed in embeds:
+        yield embed.get("description", "")
+        for field in embed.get("fields", ()):
+            yield field["value"]
+
+
+def _valid_ids(matches: Iterable[str]) -> frozenset[int]:
+    """消息正文是第三方写的，超出 bigint 的数字不能传给数据库。"""
+    return frozenset(value for value in map(int, matches) if 1 <= value <= BIGINT_MAX)
+
+
+def extract_mentions(texts: Iterable[str]) -> tuple[frozenset[int], frozenset[int]]:
+    """从文字里取出被提及的用户和频道 ID。"""
+    joined = "\n".join(texts)
+    return (
+        _valid_ids(_USER_MENTION.findall(joined)),
+        _valid_ids(_CHANNEL_MENTION.findall(joined)),
+    )
+
+
+def _page_statement(channel_id: int, selector: PageSelector):
+    author = aliased(DiscordUser)
+    stmt = (
+        select(
+            Message.id,
+            Message.channel_id,
+            Message.author_id,
+            Message.author_display_name,
+            author.avatar_hash,
+            Message.created_at,
+            Message.content,
+            Message.embeds,
+            Message.forwarded,
+            Message.reply_to_id,
+            Message.version,
+            Message.edited_at,
+            Message.deleted_at,
+        )
+        .join(author, author.id == Message.author_id)
+        .where(Message.channel_id == channel_id)
+    )
+    match selector:
+        case Latest(limit=limit):
+            return stmt.order_by(Message.id.desc()).limit(limit + 1)
+        case Before(message_id=message_id, limit=limit):
+            return stmt.where(Message.id < message_id).order_by(Message.id.desc()).limit(limit + 1)
+        case After(message_id=message_id, limit=limit):
+            return stmt.where(Message.id > message_id).order_by(Message.id.asc()).limit(limit + 1)
+        case ByIds(message_ids=message_ids):
+            return stmt.where(Message.id.in_(message_ids)).order_by(Message.id.asc())
+
+
+def _limit_of(selector: PageSelector) -> int | None:
+    return None if isinstance(selector, ByIds) else selector.limit
+
+
+async def _attachments_by_message(
+    session: AsyncSession, message_ids: Sequence[int]
+) -> Mapping[int, tuple[AttachmentRow, ...]]:
+    rows = await session.execute(
+        select(
+            Attachment.message_id,
+            Attachment.id,
+            Attachment.filename,
+            Attachment.content_type,
+            Attachment.size_bytes,
+        )
+        .where(Attachment.message_id.in_(message_ids), Attachment.removed_at.is_(None))
+        .order_by(Attachment.id)
+    )
+    grouped: dict[int, tuple[AttachmentRow, ...]] = {}
+    for r in rows:
+        row = AttachmentRow(r.id, r.filename, r.content_type, r.size_bytes)
+        grouped[r.message_id] = (*grouped.get(r.message_id, ()), row)
+    return grouped
+
+
+async def _last_replaced_at(
+    session: AsyncSession, message_ids: Sequence[int]
+) -> Mapping[int, datetime]:
+    if not message_ids:
+        return {}
+    rows = await session.execute(
+        select(MessageRevision.message_id, func.max(MessageRevision.replaced_at))
+        .where(MessageRevision.message_id.in_(message_ids))
+        .group_by(MessageRevision.message_id)
+    )
+    return {message_id: replaced_at for message_id, replaced_at in rows}
+
+
+async def _replies_by_id(
+    session: AsyncSession, reply_ids: frozenset[int]
+) -> Mapping[int, ReplyFound]:
+    """被回复的消息按主键查，不限频道。"""
+    if not reply_ids:
+        return {}
+    has_attachment = exists(
+        select(1).where(Attachment.message_id == Message.id, Attachment.removed_at.is_(None))
+    ).label("has_attachment")
+    rows = await session.execute(
+        select(
+            Message.id,
+            Message.author_display_name,
+            Message.content,
+            Message.embeds,
+            Message.forwarded,
+            Message.deleted_at,
+            has_attachment,
+        ).where(Message.id.in_(reply_ids))
+    )
+    return {
+        r.id: ReplyFound(
+            id=r.id,
+            author_name=r.author_display_name,
+            preview=reply_preview(r.content, r.embeds, r.has_attachment, r.forwarded),
+            deleted=r.deleted_at is not None,
+        )
+        for r in rows
+    }
+
+
+async def _resolve_names(
+    session: AsyncSession, messages: Sequence[MessageRow]
+) -> tuple[tuple[NamedRef, ...], tuple[NamedRef, ...]]:
+    user_ids, channel_ids = extract_mentions(t for m in messages for t in _message_texts(m))
+    users: tuple[NamedRef, ...] = ()
+    channels: tuple[NamedRef, ...] = ()
+    if user_ids:
+        rows = await session.execute(
+            select(DiscordUser.id, DiscordUser.global_name, DiscordUser.username).where(
+                DiscordUser.id.in_(user_ids)
+            )
+        )
+        users = tuple(NamedRef(r.id, r.global_name or r.username) for r in rows)
+    if channel_ids:
+        rows = await session.execute(
+            select(Channel.id, Channel.name).where(Channel.id.in_(channel_ids))
+        )
+        channels = tuple(NamedRef(r.id, r.name) for r in rows)
+    return users, channels
+
+
+async def get_message_page(
+    session: AsyncSession, channel_id: int, selector: PageSelector
+) -> MessagePage | Literal["channel_not_found"]:
+    """按 ID 从旧到新返回一页消息，已删除的也在内。"""
+    if await session.scalar(select(Channel.id).where(Channel.id == channel_id)) is None:
+        return "channel_not_found"
+    rows = list(await session.execute(_page_statement(channel_id, selector)))
+    limit = _limit_of(selector)
+    has_more = limit is not None and len(rows) > limit
+    kept = rows[:limit] if limit is not None else rows
+    # 多查的一行用来判断 has_more；往旧的方向查是倒序的，翻回从旧到新。
+    ordered = kept if isinstance(selector, After | ByIds) else list(reversed(kept))
+
+    ids = [r.id for r in ordered]
+    attachments = await _attachments_by_message(session, ids)
+    replaced = await _last_replaced_at(
+        session, [r.id for r in ordered if r.version > 1 and r.edited_at is None]
+    )
+    replies = await _replies_by_id(
+        session, frozenset(r.reply_to_id for r in ordered if r.reply_to_id is not None)
+    )
+
+    def reply_of(reply_id: int | None) -> ReplyFound | ReplyMissing | None:
+        if reply_id is None:
+            return None
+        return replies.get(reply_id, ReplyMissing(reply_id))
+
+    messages = tuple(
+        MessageRow(
+            id=r.id,
+            channel_id=r.channel_id,
+            author_id=r.author_id,
+            author_name=r.author_display_name,
+            author_avatar_hash=r.avatar_hash,
+            created_at=r.created_at,
+            content=r.content,
+            embeds=r.embeds or [],
+            forwarded=r.forwarded,
+            attachments=attachments.get(r.id, ()),
+            edited_at=effective_edited_at(r.version, r.edited_at, replaced.get(r.id)),
+            deleted_at=r.deleted_at,
+            reply=reply_of(r.reply_to_id),
+        )
+        for r in ordered
+    )
+    users, channels = await _resolve_names(session, messages)
+    return MessagePage(messages, has_more, users, channels)
+
+
+async def get_channel_detail(session: AsyncSession, channel_id: int) -> ChannelDetail | None:
+    """频道页顶部要的信息；`banner_reason` 由后端算好，前端不用拼条件。"""
+    row = (
+        await session.execute(
+            select(
+                Channel.id,
+                Channel.guild_id,
+                Channel.name,
+                Channel.type,
+                Channel.status,
+                Channel.parent_id,
+                Channel.collect_enabled,
+                Channel.collector_account_id,
+                Guild.name.label("guild_name"),
+                Guild.status.label("guild_status"),
+            )
+            .join(Guild, Guild.id == Channel.guild_id)
+            .where(Channel.id == channel_id)
+        )
+    ).one_or_none()
+    if row is None:
+        return None
+    account = (
+        await session.execute(select(DiscordAccount.id, DiscordAccount.status))
+    ).one_or_none()
+    account_id = account.id if account is not None else None
+
+    async def can_read(target_id: int) -> bool:
+        return bool(
+            await session.scalar(
+                select(AccountChannelAccess.can_read).where(
+                    AccountChannelAccess.channel_id == target_id,
+                    AccountChannelAccess.account_id == account_id,
+                )
+            )
+        )
+
+    parent_status = (
+        await session.scalar(select(Channel.status).where(Channel.id == row.parent_id))
+        if row.parent_id is not None
+        else None
+    )
+    segment_open = await session.scalar(
+        select(
+            exists().where(
+                ChannelCoverage.channel_id == channel_id,
+                text("channel_coverage.source = 'realtime' AND upper_inf(channel_coverage.span)"),
+            )
+        )
+    )
+    facts = BannerFacts(
+        channel_status=row.status,
+        guild_status=row.guild_status,
+        collecting=(
+            row.collect_enabled
+            and account_id is not None
+            and row.collector_account_id == account_id
+        ),
+        can_read=await can_read(channel_id),
+        is_thread=row.type in THREAD_CHANNEL_TYPES,
+        parent_active=parent_status == "active",
+        parent_can_read=row.parent_id is not None and await can_read(row.parent_id),
+        account_status=account.status if account is not None else None,
+        segment_open=bool(segment_open),
+    )
+    return ChannelDetail(
+        id=row.id,
+        guild_id=row.guild_id,
+        guild_name=row.guild_name,
+        name=row.name,
+        type=row.type,
+        banner_reason=banner_reason(facts),
+    )
+
+
+async def _notify(session: AsyncSession, channel: str, payload: Mapping[str, object]) -> None:
+    await session.execute(
+        text("SELECT pg_notify(:channel, :payload)"),
+        {"channel": channel, "payload": json.dumps(payload)},
+    )
+
+
+async def notify_new_message(session: AsyncSession, channel_id: int, message_id: int) -> None:
+    # ID 必须是字符串，否则浏览器的 JSON.parse 会丢精度。
+    await _notify(
+        session,
+        NEW_MESSAGE_CHANNEL,
+        {"channel_id": str(channel_id), "message_id": str(message_id)},
+    )
+
+
+async def notify_message_changed(
+    session: AsyncSession, channel_id: int, message_ids: Sequence[int]
+) -> None:
+    await _notify(
+        session,
+        MESSAGE_CHANGED_CHANNEL,
+        {"channel_id": str(channel_id), "message_ids": [str(i) for i in message_ids]},
+    )

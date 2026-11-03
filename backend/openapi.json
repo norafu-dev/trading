@@ -5,6 +5,851 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/livez": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Livez",
+        "description": "只回答 ok，不查库，给外部监控用。",
+        "operationId": "livez_api_livez_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Liveness"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/state": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Auth State",
+        "operationId": "auth_state_api_auth_state_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthState"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Login",
+        "operationId": "login_api_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/setup/begin": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Setup Begin",
+        "operationId": "setup_begin_api_auth_setup_begin_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupBeginBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupBeginResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/setup/complete": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Setup Complete",
+        "operationId": "setup_complete_api_auth_setup_complete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupCompleteBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Logout",
+        "operationId": "logout_api_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        }
+      }
+    },
+    "/api/auth/login-events": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Login Events",
+        "operationId": "login_events_api_auth_login_events_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LoginEventOut"
+                  },
+                  "title": "Response Login Events Api Auth Login Events Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/account": {
+      "get": {
+        "tags": [
+          "discord"
+        ],
+        "summary": "Get Discord Account",
+        "operationId": "get_discord_account_api_discord_account_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "discord"
+        ],
+        "summary": "Add Discord Account",
+        "operationId": "add_discord_account_api_discord_account_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordAccountOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/account/label": {
+      "put": {
+        "tags": [
+          "discord"
+        ],
+        "summary": "Update Discord Label",
+        "operationId": "update_discord_label_api_discord_account_label_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordAccountOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/account/token": {
+      "put": {
+        "tags": [
+          "discord"
+        ],
+        "summary": "Replace Discord Token",
+        "operationId": "replace_discord_token_api_discord_account_token_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordAccountOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/account/disable": {
+      "post": {
+        "tags": [
+          "discord"
+        ],
+        "summary": "Disable Discord Account",
+        "operationId": "disable_discord_account_api_discord_account_disable_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordAccountOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/account/enable": {
+      "post": {
+        "tags": [
+          "discord"
+        ],
+        "summary": "Enable Discord Account",
+        "operationId": "enable_discord_account_api_discord_account_enable_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordAccountOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/account/reconnect": {
+      "post": {
+        "tags": [
+          "discord"
+        ],
+        "summary": "Reconnect Discord Account",
+        "operationId": "reconnect_discord_account_api_discord_account_reconnect_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordAccountOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/account/switch-identity": {
+      "post": {
+        "tags": [
+          "discord"
+        ],
+        "summary": "Switch Discord Identity",
+        "operationId": "switch_discord_identity_api_discord_account_switch_identity_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordAccountOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/guilds": {
+      "get": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "List Guilds",
+        "operationId": "list_guilds_api_discord_guilds_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuildsOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/guilds/{guild_id}/channels": {
+      "get": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "List Guild Channels",
+        "operationId": "list_guild_channels_api_discord_guilds__guild_id__channels_get",
+        "parameters": [
+          {
+            "name": "guild_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Guild Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/channels/{channel_id}/collect": {
+      "put": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "Set Channel Collect",
+        "operationId": "set_channel_collect_api_discord_channels__channel_id__collect_put",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Channel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/categories/{category_id}/collect": {
+      "put": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "Set Category Collect",
+        "operationId": "set_category_collect_api_discord_categories__category_id__collect_put",
+        "parameters": [
+          {
+            "name": "category_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Category Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryCollectOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/collected": {
+      "get": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "List Collected",
+        "operationId": "list_collected_api_discord_collected_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectedOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/channels/{channel_id}": {
+      "get": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Get Channel",
+        "operationId": "get_channel_api_discord_channels__channel_id__get",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Channel Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelDetailOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/channels/{channel_id}/messages": {
+      "get": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "List Messages",
+        "operationId": "list_messages_api_discord_channels__channel_id__messages_get",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Channel Id"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]{1,19}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]{1,19}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After"
+            }
+          },
+          {
+            "name": "ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 8000
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ids"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagesOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/guilds/{guild_id}/load-threads": {
+      "post": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Load Threads",
+        "operationId": "load_threads_api_discord_guilds__guild_id__load_threads_post",
+        "parameters": [
+          {
+            "name": "guild_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Guild Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadLoadOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/system/status": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Get System Status",
+        "operationId": "get_system_status_api_system_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemStatusOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -32,7 +877,7 @@
           "system"
         ],
         "summary": "Events",
-        "description": "Demo stream: a heartbeat every 20 s plus any new_message notifications.",
+        "description": "A heartbeat every 20 s plus message, account and channel change events.",
         "operationId": "events_api_events_get",
         "responses": {
           "200": {
@@ -66,6 +911,820 @@
   },
   "components": {
     "schemas": {
+      "AccountCreate": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "token": {
+            "type": "string",
+            "format": "password",
+            "title": "Token",
+            "writeOnly": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "token"
+        ],
+        "title": "AccountCreate"
+      },
+      "AccountEnvelope": {
+        "properties": {
+          "account": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiscordAccountOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "account"
+        ],
+        "title": "AccountEnvelope"
+      },
+      "AttachmentOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "filename",
+          "content_type",
+          "size_bytes"
+        ],
+        "title": "AttachmentOut"
+      },
+      "AuthState": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "setup_required",
+              "unauthenticated",
+              "authenticated"
+            ],
+            "title": "State"
+          }
+        },
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "AuthState"
+      },
+      "BackupRunOut": {
+        "properties": {
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "object_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Key"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "dump",
+                  "encrypt",
+                  "upload",
+                  "interrupted"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "started_at",
+          "finished_at",
+          "status",
+          "size_bytes",
+          "object_key",
+          "error"
+        ],
+        "title": "BackupRunOut"
+      },
+      "BackupStatusOut": {
+        "properties": {
+          "last_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BackupRunOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success At"
+          },
+          "overdue": {
+            "type": "boolean",
+            "title": "Overdue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "last_run",
+          "last_success_at",
+          "overdue"
+        ],
+        "title": "BackupStatusOut"
+      },
+      "CategoryCollectOut": {
+        "properties": {
+          "changed": {
+            "type": "integer",
+            "title": "Changed"
+          },
+          "skipped_no_access": {
+            "type": "integer",
+            "title": "Skipped No Access"
+          }
+        },
+        "type": "object",
+        "required": [
+          "changed",
+          "skipped_no_access"
+        ],
+        "title": "CategoryCollectOut"
+      },
+      "ChannelDetailOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "guild_id": {
+            "type": "string",
+            "title": "Guild Id"
+          },
+          "guild_name": {
+            "type": "string",
+            "title": "Guild Name"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "type": {
+            "type": "integer",
+            "title": "Type"
+          },
+          "banner_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "channel_deleted",
+                  "guild_left",
+                  "collect_off",
+                  "no_access",
+                  "thread_archived",
+                  "parent_unavailable",
+                  "account_reconnecting",
+                  "account_offline",
+                  "starting"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Banner Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "guild_id",
+          "guild_name",
+          "name",
+          "type",
+          "banner_reason"
+        ],
+        "title": "ChannelDetailOut"
+      },
+      "ChannelOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "guild_id": {
+            "type": "string",
+            "title": "Guild Id"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "type": {
+            "type": "integer",
+            "title": "Type"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived",
+              "deleted"
+            ],
+            "title": "Status"
+          },
+          "collect_enabled": {
+            "type": "boolean",
+            "title": "Collect Enabled"
+          },
+          "collectable": {
+            "type": "boolean",
+            "title": "Collectable"
+          },
+          "can_read": {
+            "type": "boolean",
+            "title": "Can Read"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "guild_id",
+          "parent_id",
+          "type",
+          "name",
+          "position",
+          "status",
+          "collect_enabled",
+          "collectable",
+          "can_read"
+        ],
+        "title": "ChannelOut"
+      },
+      "ChannelsOut": {
+        "properties": {
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/ChannelOut"
+            },
+            "type": "array",
+            "title": "Channels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channels"
+        ],
+        "title": "ChannelsOut"
+      },
+      "CollectBody": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "CollectBody"
+      },
+      "CollectedOut": {
+        "properties": {
+          "guilds": {
+            "items": {
+              "$ref": "#/components/schemas/GuildBriefOut"
+            },
+            "type": "array",
+            "title": "Guilds"
+          },
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/ChannelOut"
+            },
+            "type": "array",
+            "title": "Channels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "guilds",
+          "channels"
+        ],
+        "title": "CollectedOut"
+      },
+      "CollectorStatusOut": {
+        "properties": {
+          "last_heartbeat_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Heartbeat At"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale"
+          },
+          "has_account": {
+            "type": "boolean",
+            "title": "Has Account"
+          }
+        },
+        "type": "object",
+        "required": [
+          "last_heartbeat_at",
+          "stale",
+          "has_account"
+        ],
+        "title": "CollectorStatusOut"
+      },
+      "DiscordAccountOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "discord_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discord User Id"
+          },
+          "discord_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discord Username"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "connecting",
+              "online",
+              "reconnecting",
+              "token_invalid",
+              "banned",
+              "disabled",
+              "verification_required",
+              "login_paused",
+              "account_mismatch"
+            ],
+            "title": "Status"
+          },
+          "status_changed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Status Changed At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_heartbeat_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Heartbeat At"
+          },
+          "retry_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry At"
+          },
+          "collector_stale": {
+            "type": "boolean",
+            "title": "Collector Stale"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "discord_user_id",
+          "discord_username",
+          "status",
+          "status_changed_at",
+          "last_error",
+          "last_heartbeat_at",
+          "retry_at",
+          "collector_stale"
+        ],
+        "title": "DiscordAccountOut"
+      },
+      "EmbedAuthor": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "title": "EmbedAuthor"
+      },
+      "EmbedData": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "color": {
+            "type": "integer",
+            "title": "Color"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp"
+          },
+          "author": {
+            "$ref": "#/components/schemas/EmbedAuthor"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/EmbedField"
+            },
+            "type": "array",
+            "title": "Fields"
+          },
+          "footer_text": {
+            "type": "string",
+            "title": "Footer Text"
+          },
+          "image_url": {
+            "type": "string",
+            "title": "Image Url"
+          },
+          "thumbnail_url": {
+            "type": "string",
+            "title": "Thumbnail Url"
+          }
+        },
+        "type": "object",
+        "title": "EmbedData",
+        "description": "The embed fields we keep; keys whose value would be None are left out."
+      },
+      "EmbedField": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "inline": {
+            "type": "boolean",
+            "title": "Inline"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "value"
+        ],
+        "title": "EmbedField"
+      },
+      "ForwardedOut": {
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "title": "Message Id"
+          },
+          "channel_id": {
+            "type": "string",
+            "title": "Channel Id"
+          },
+          "guild_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guild Id"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "embeds": {
+            "items": {
+              "$ref": "#/components/schemas/EmbedData"
+            },
+            "type": "array",
+            "title": "Embeds"
+          },
+          "attachment_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Attachment Names"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message_id",
+          "channel_id",
+          "guild_id",
+          "content",
+          "embeds",
+          "attachment_names"
+        ],
+        "title": "ForwardedOut"
+      },
+      "GuildBriefOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "icon_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "icon_hash"
+        ],
+        "title": "GuildBriefOut"
+      },
+      "GuildOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "icon_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Hash"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "left",
+              "deleted"
+            ],
+            "title": "Status"
+          },
+          "enabled_count": {
+            "type": "integer",
+            "title": "Enabled Count"
+          },
+          "thread_load_pending": {
+            "type": "boolean",
+            "title": "Thread Load Pending"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "icon_hash",
+          "status",
+          "enabled_count",
+          "thread_load_pending"
+        ],
+        "title": "GuildOut"
+      },
+      "GuildsOut": {
+        "properties": {
+          "synced_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Synced At"
+          },
+          "guilds": {
+            "items": {
+              "$ref": "#/components/schemas/GuildOut"
+            },
+            "type": "array",
+            "title": "Guilds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "synced_at",
+          "guilds"
+        ],
+        "title": "GuildsOut"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
       "Health": {
         "properties": {
           "status": {
@@ -103,6 +1762,465 @@
           "database"
         ],
         "title": "Health"
+      },
+      "LabelUpdate": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "title": "LabelUpdate"
+      },
+      "Liveness": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "Liveness"
+      },
+      "LoginBody": {
+        "properties": {
+          "password": {
+            "type": "string",
+            "title": "Password"
+          },
+          "totp_code": {
+            "type": "string",
+            "maxLength": 32,
+            "title": "Totp Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "password",
+          "totp_code"
+        ],
+        "title": "LoginBody"
+      },
+      "LoginEventOut": {
+        "properties": {
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Occurred At"
+          },
+          "ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ip"
+          },
+          "user_agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Agent"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "success",
+              "bad_credentials",
+              "rate_limited",
+              "setup_bad_code",
+              "setup_completed",
+              "logout",
+              "reset"
+            ],
+            "title": "Outcome"
+          }
+        },
+        "type": "object",
+        "required": [
+          "occurred_at",
+          "ip",
+          "user_agent",
+          "outcome"
+        ],
+        "title": "LoginEventOut"
+      },
+      "MessageOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "channel_id": {
+            "type": "string",
+            "title": "Channel Id"
+          },
+          "author_id": {
+            "type": "string",
+            "title": "Author Id"
+          },
+          "author_name": {
+            "type": "string",
+            "title": "Author Name"
+          },
+          "author_avatar_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Avatar Hash"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "embeds": {
+            "items": {
+              "$ref": "#/components/schemas/EmbedData"
+            },
+            "type": "array",
+            "title": "Embeds"
+          },
+          "forwarded": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ForwardedOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/AttachmentOut"
+            },
+            "type": "array",
+            "title": "Attachments"
+          },
+          "edited_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edited At"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
+          },
+          "reply": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReplyOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "channel_id",
+          "author_id",
+          "author_name",
+          "author_avatar_hash",
+          "created_at",
+          "content",
+          "embeds",
+          "forwarded",
+          "attachments",
+          "edited_at",
+          "deleted_at",
+          "reply"
+        ],
+        "title": "MessageOut"
+      },
+      "MessagesOut": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/MessageOut"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/NamedRefOut"
+            },
+            "type": "array",
+            "title": "Users"
+          },
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/NamedRefOut"
+            },
+            "type": "array",
+            "title": "Channels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "messages",
+          "has_more",
+          "users",
+          "channels"
+        ],
+        "title": "MessagesOut"
+      },
+      "NamedRefOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "NamedRefOut"
+      },
+      "ReplyOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "missing": {
+            "type": "boolean",
+            "title": "Missing"
+          },
+          "author_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Name"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview"
+          },
+          "deleted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "missing"
+        ],
+        "title": "ReplyOut"
+      },
+      "SetupBeginBody": {
+        "properties": {
+          "setup_code": {
+            "type": "string",
+            "maxLength": 256,
+            "title": "Setup Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "setup_code"
+        ],
+        "title": "SetupBeginBody"
+      },
+      "SetupBeginResult": {
+        "properties": {
+          "otpauth_uri": {
+            "type": "string",
+            "title": "Otpauth Uri"
+          },
+          "secret": {
+            "type": "string",
+            "title": "Secret"
+          }
+        },
+        "type": "object",
+        "required": [
+          "otpauth_uri",
+          "secret"
+        ],
+        "title": "SetupBeginResult"
+      },
+      "SetupCompleteBody": {
+        "properties": {
+          "setup_code": {
+            "type": "string",
+            "maxLength": 256,
+            "title": "Setup Code"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
+          },
+          "totp_code": {
+            "type": "string",
+            "pattern": "^[0-9]{6}$",
+            "title": "Totp Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "setup_code",
+          "password",
+          "totp_code"
+        ],
+        "title": "SetupCompleteBody"
+      },
+      "SystemStatusOut": {
+        "properties": {
+          "collector": {
+            "$ref": "#/components/schemas/CollectorStatusOut"
+          },
+          "backup": {
+            "$ref": "#/components/schemas/BackupStatusOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "collector",
+          "backup"
+        ],
+        "title": "SystemStatusOut"
+      },
+      "ThreadLoadOut": {
+        "properties": {
+          "pending": {
+            "type": "boolean",
+            "title": "Pending"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pending"
+        ],
+        "title": "ThreadLoadOut"
+      },
+      "TokenUpdate": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "format": "password",
+            "title": "Token",
+            "writeOnly": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "title": "TokenUpdate"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
       }
     }
   }

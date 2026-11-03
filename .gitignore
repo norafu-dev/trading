@@ -10,6 +10,9 @@ __pycache__/
 .ruff_cache/
 .pytest_cache/
 
+# local log files (LOG_DIR)
+logs/
+
 # deploy state on the server
 deploy/.image-tag
 

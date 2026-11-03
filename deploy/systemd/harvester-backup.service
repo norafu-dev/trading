@@ -1,0 +1,16 @@
+# 每日备份（spec 0009）。bootstrap.sh 把 @USER@、@HOME@ 换成部署用户和它的家目录后
+# 写到 /etc/systemd/system/。系统级单元里 %h 是 root 的家目录，所以不用 %h。
+[Unit]
+Description=Harvester daily database backup to R2
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=@USER@
+WorkingDirectory=@HOME@/harvester
+ExecStart=@HOME@/harvester/backup.sh
+TimeoutStartSec=2h
+Nice=10
+IOSchedulingClass=idle

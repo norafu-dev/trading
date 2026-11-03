@@ -1,0 +1,11 @@
+# 每天 UTC 04:00（北京时间 12:00）后 5 分钟内跑一次；服务器当时关着就开机补跑。
+[Unit]
+Description=Run the Harvester backup daily at 04:00 UTC
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

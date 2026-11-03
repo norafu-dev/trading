@@ -14,6 +14,8 @@ deploy/    Caddy、生产 compose、deploy.sh
 
 ```sh
 cp .env.example .env && chmod 600 .env    # 改一个随机密码：openssl rand -hex 24
+# 再填 TOKEN_ENCRYPTION_KEY：cd backend && uv run python -m harvester.crypto genkey
+# 第一次打开 dashboard 前生成设置码：cd backend && uv run python -m harvester.api.setup_code
 docker compose up -d                      # postgres（127.0.0.1:5432）和 caddy（127.0.0.1:8080）
 
 cd backend
@@ -29,6 +31,8 @@ pnpm dev                                  # 终端 3，:3000
 
 浏览器打开 <http://localhost:8080>（经 Caddy 同源访问，和线上一致）。
 
+提交前检查（只需装一次）：`uv tool install pre-commit && pre-commit install`。之后每次 commit 会对改动的文件跑 ruff、Biome，再跑 pyright 和 tsc。
+
 ## 常用命令
 
 | 做什么 | 命令 |
@@ -36,7 +40,9 @@ pnpm dev                                  # 终端 3，:3000
 | 后端 lint / 格式 / 类型 | `cd backend && uv run ruff check . && uv run ruff format --check . && uv run pyright` |
 | 新建迁移 | `cd backend && uv run alembic revision --autogenerate -m "..."` |
 | 改了接口后同步前端类型 | `cd backend && uv run python -m harvester.api.export_openapi && cd ../web && pnpm gen:api` |
+| 前端 lint 和格式（Biome） | `cd web && pnpm lint`（检查）· `pnpm format`（自动修正） |
 | 前端类型检查 / 构建 | `cd web && pnpm typecheck && pnpm build` |
+| 手动跑全部提交前检查 | `pre-commit run --all-files` |
 | 构建镜像 | `docker build -t harvester-backend backend` · `docker build -f deploy/caddy.Dockerfile -t harvester-caddy .` |
 
 ## 发布
