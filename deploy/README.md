@@ -18,7 +18,7 @@ Harvester 跑在一台 Lightsail 服务器上（Ubuntu 24.04），所有东西�
 
 这些只做一次，结果存进密码管理器。
 
-1. **Cloudflare R2**：建一个私有桶（比如 `harvester-backups`）。在桶的设置里加一条生命周期规则：对象上传 14 天后删除。脚本自己从不删 R2 上的文件，过期全靠这条规则。
+1. **Cloudflare R2**：建一个私有桶（比如 `server-backups`）。在桶的设置里加一条生命周期规则：对象上传 14 天后删除。脚本自己从不删 R2 上的文件，过期全靠这条规则。
 2. **两个 R2 API token**（都只作用于这一个桶）：
    * 服务器用：权限「对象读写」，填进服务器的 `backup.env`。
    * Mac 用：权限「对象只读」，只用来演练恢复，存在密码管理器，不放到服务器上。
@@ -32,7 +32,8 @@ Harvester 跑在一台 Lightsail 服务器上（Ubuntu 24.04），所有东西�
 2. **初始化服务器**：
 
    ```bash
-   scp -r deploy/ ubuntu@<IP>:~/harvester/
+   ssh ubuntu@<IP> 'mkdir -p ~/harvester'   # 目录不存在时，下面的 scp 会失败
+   scp -r deploy/* ubuntu@<IP>:~/harvester/
    ssh ubuntu@<IP>
    sudo ~/harvester/bootstrap.sh ubuntu
    exit   # 重新登录，让 docker 组生效
@@ -52,13 +53,13 @@ Harvester 跑在一台 Lightsail 服务器上（Ubuntu 24.04），所有东西�
    ```
 
    写完把整个 `.env` 存一份到密码管理器（和 age 私钥分开两条）。
-5. **写 `~/harvester/backup.env`**：先 `cp ~/harvester/backup.env.example ~/harvester/backup.env && chmod 600 ~/harvester/backup.env`，再把值填进去（模板随 `scp -r deploy/` 一起过去了）。填好后长这样：
+5. **写 `~/harvester/backup.env`**：先 `cp ~/harvester/backup.env.example ~/harvester/backup.env && chmod 600 ~/harvester/backup.env`，再把值填进去（模板随上面的 `scp` 一起过去了）。填好后长这样：
 
    ```bash
    R2_ACCOUNT_ID=<Cloudflare 账号 ID>
    R2_ACCESS_KEY_ID=<服务器用的读写 token>
    R2_SECRET_ACCESS_KEY=<服务器用的读写 token>
-   R2_BUCKET=harvester-backups
+   R2_BUCKET=server-backups
    BACKUP_AGE_RECIPIENT=age1...
    ```
 
@@ -169,8 +170,8 @@ ls -l ~/harvester/backups/                   # 本机缓冲（只留最新 2 份
 export RCLONE_CONFIG_R2_TYPE=s3 RCLONE_CONFIG_R2_PROVIDER=Cloudflare
 export RCLONE_CONFIG_R2_ENDPOINT=https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com
 export RCLONE_CONFIG_R2_ACCESS_KEY_ID=<只读 token> RCLONE_CONFIG_R2_SECRET_ACCESS_KEY=<只读 token>
-rclone lsl r2:harvester-backups | sort -k2,3 | tail -3
-rclone copyto r2:harvester-backups/<文件名> ./latest.dump.age
+rclone lsl r2:server-backups | sort -k2,3 | tail -3
+rclone copyto r2:server-backups/<文件名> ./latest.dump.age
 
 # 2. 私钥临时存成文件，解密
 age -d -i restore.key -o latest.dump latest.dump.age && rm restore.key
