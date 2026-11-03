@@ -32,7 +32,8 @@ Harvester 跑在一台 Lightsail 服务器上（Ubuntu 24.04），所有东西�
 2. **初始化服务器**：
 
    ```bash
-   scp -r deploy/ ubuntu@<IP>:~/harvester/
+   ssh ubuntu@<IP> 'mkdir -p ~/harvester'   # 目录不存在时，下面的 scp 会失败
+   scp -r deploy/* ubuntu@<IP>:~/harvester/
    ssh ubuntu@<IP>
    sudo ~/harvester/bootstrap.sh ubuntu
    exit   # 重新登录，让 docker 组生效
@@ -52,7 +53,7 @@ Harvester 跑在一台 Lightsail 服务器上（Ubuntu 24.04），所有东西�
    ```
 
    写完把整个 `.env` 存一份到密码管理器（和 age 私钥分开两条）。
-5. **写 `~/harvester/backup.env`**：先 `cp ~/harvester/backup.env.example ~/harvester/backup.env && chmod 600 ~/harvester/backup.env`，再把值填进去（模板随 `scp -r deploy/` 一起过去了）。填好后长这样：
+5. **写 `~/harvester/backup.env`**：先 `cp ~/harvester/backup.env.example ~/harvester/backup.env && chmod 600 ~/harvester/backup.env`，再把值填进去（模板随上面的 `scp` 一起过去了）。填好后长这样：
 
    ```bash
    R2_ACCOUNT_ID=<Cloudflare 账号 ID>
