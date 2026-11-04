@@ -11,6 +11,7 @@ from harvester.config import (
     ApiR2MediaSettings,
     CollectorR2MediaSettings,
     LocalMediaSettings,
+    MediaStorageChoice,
     load_media_settings,
 )
 from harvester.media.storage import LocalStore, MemoryStore, R2Store, build_r2_client
@@ -21,6 +22,18 @@ WRITE = {
     "MEDIA_R2_WRITE_SECRET_ACCESS_KEY": "write-secret",
 }
 READ = {"MEDIA_R2_READ_ACCESS_KEY_ID": "read-id", "MEDIA_R2_READ_SECRET_ACCESS_KEY": "read-secret"}
+
+
+@pytest.fixture(autouse=True)
+def _ignore_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
+    """配置类默认会读仓库根目录的 .env；这里只认测试自己设的环境变量，不受本机 .env 影响。"""
+    for cls in (
+        MediaStorageChoice,
+        LocalMediaSettings,
+        ApiR2MediaSettings,
+        CollectorR2MediaSettings,
+    ):
+        monkeypatch.setitem(cls.model_config, "env_file", None)
 
 
 def set_env(monkeypatch: pytest.MonkeyPatch, values: dict[str, str]) -> None:
