@@ -365,6 +365,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/discord/unread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Unread */
+        get: operations["list_unread_api_discord_unread_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/channels/{channel_id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark Read */
+        post: operations["mark_read_api_discord_channels__channel_id__read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/discord/guilds/{guild_id}/load-threads": {
         parameters: {
             query?: never;
@@ -754,6 +788,16 @@ export interface components {
              */
             outcome: "success" | "bad_credentials" | "rate_limited" | "setup_bad_code" | "setup_completed" | "logout" | "reset";
         };
+        /** MarkReadIn */
+        MarkReadIn: {
+            /** Message Id */
+            message_id: string;
+        };
+        /** MarkReadOut */
+        MarkReadOut: {
+            /** Last Read Message Id */
+            last_read_message_id: string;
+        };
         /** MessageOut */
         MessageOut: {
             /** Id */
@@ -850,6 +894,18 @@ export interface components {
              * Format: password
              */
             token: string;
+        };
+        /** UnreadChannelOut */
+        UnreadChannelOut: {
+            /** Channel Id */
+            channel_id: string;
+            /** Count */
+            count: number;
+        };
+        /** UnreadOut */
+        UnreadOut: {
+            /** Channels */
+            channels: components["schemas"]["UnreadChannelOut"][];
         };
         /** ValidationError */
         ValidationError: {
@@ -1451,6 +1507,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessagesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_unread_api_discord_unread_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnreadOut"];
+                };
+            };
+        };
+    };
+    mark_read_api_discord_channels__channel_id__read_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkReadIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarkReadOut"];
                 };
             };
             /** @description Validation Error */

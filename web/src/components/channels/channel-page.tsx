@@ -14,6 +14,7 @@ import { ChannelStatusBanner } from "./channel-status-banner";
 import { useSetCurrentChannel } from "./unread-provider";
 import { useChannelDetail } from "./use-channel-detail";
 import { useChannelMessages } from "./use-channel-messages";
+import { useReportRead } from "./use-report-read";
 
 const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -21,6 +22,7 @@ function ChannelView({ channelId }: Readonly<{ channelId: string }>) {
   const now = useNow();
   const detail = useChannelDetail(channelId);
   const channel = useChannelMessages(channelId);
+  useReportRead(channelId, channel.messages.at(-1)?.id ?? null, channel.status === "ready");
 
   if (detail.error instanceof ApiResponseError && detail.error.status === 404) {
     return <ErrorBlock error={toUiError(detail.error)} className="h-full" />;

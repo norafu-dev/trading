@@ -10,6 +10,7 @@ export const GUILDS_KEY = ["discord-guilds"] as const;
 export const GUILD_CHANNELS_KEY = ["discord-guild-channels"] as const;
 export const COLLECTED_KEY = ["discord-collected"] as const;
 export const CHANNEL_DETAIL_KEY = ["discord-channel-detail"] as const;
+export const UNREAD_KEY = ["discord-unread"] as const;
 
 // 消息事件只是「该取数了」的提醒，内容都从消息接口取（spec 0008）。ID 是字符串。
 export type MessageStreamEvent =
@@ -32,7 +33,7 @@ const EventStreamContext = createContext<EventStreamState>({
 const MessageEventsContext = createContext<Subscribe>(() => () => {});
 
 // 整个 dashboard 共用一条 SSE 连接。账号状态变化和重新连上时都让账号查询失效（spec 0005）；
-// 频道数据变化和重新连上时，频道查询一起失效（spec 0006 AC-12）。
+// 频道数据变化和重新连上时，频道查询和未读数一起失效（spec 0006 AC-12，spec 0010 AC-7）。
 // 消息事件转发给订阅者，不写进 React 状态，这样每条消息不会让整个外壳重新渲染（spec 0008）。
 export function EventStreamProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [state, setState] = useState<EventStreamState>({ connected: false, lastHeartbeat: null });
@@ -49,7 +50,13 @@ export function EventStreamProvider({ children }: Readonly<{ children: ReactNode
       void queryClient.invalidateQueries({ queryKey: CHANNEL_DETAIL_KEY });
     };
     const refreshChannels = () => {
-      for (const queryKey of [GUILDS_KEY, GUILD_CHANNELS_KEY, COLLECTED_KEY, CHANNEL_DETAIL_KEY]) {
+      for (const queryKey of [
+        GUILDS_KEY,
+        GUILD_CHANNELS_KEY,
+        COLLECTED_KEY,
+        CHANNEL_DETAIL_KEY,
+        UNREAD_KEY,
+      ]) {
         void queryClient.invalidateQueries({ queryKey });
       }
     };

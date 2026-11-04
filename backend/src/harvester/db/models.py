@@ -352,3 +352,16 @@ class BackupRun(Base):
         ),
         Index("ix_backup_run_started_at", text("started_at DESC")),
     )
+
+
+class ChannelReadState(Base):
+    """每个频道最多一行已读位置（spec 0010）。没有行等于 0 条未读。"""
+
+    __tablename__ = "channel_read_state"
+
+    channel_id: Mapped[int] = mapped_column(
+        ForeignKey("channel.id"), primary_key=True, autoincrement=False
+    )
+    # 已读位置：消息雪花 ID，比它新的消息算未读；只增不减。
+    last_read_message_id: Mapped[int]
+    updated_at: Mapped[datetime] = _now()

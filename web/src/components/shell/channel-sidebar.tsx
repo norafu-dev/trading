@@ -18,11 +18,18 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 
 import type { ChannelGroup, ChannelNode } from "./build-channel-tree";
 
+// 接口最多数到 100 条，满了就当「很多」。
+const UNREAD_CAP = 100;
+
+export function unreadLabel(count: number): string {
+  return count >= UNREAD_CAP ? "99 条以上未读消息" : `${count} 条未读消息`;
+}
+
 type ChannelSidebarProps = Readonly<{
   guildName: string | null;
   groups: readonly ChannelGroup[];
   selectedChannelId: string | null;
-  unreadChannelIds?: ReadonlySet<string>;
+  unreadCounts?: ReadonlyMap<string, number>;
   hrefFor: (channelId: string) => string;
   onNavigate?: () => void;
 }>;
@@ -41,20 +48,23 @@ type ChannelItemProps = Omit<ChannelSidebarProps, "guildName" | "groups"> &
 function ChannelItem({
   node,
   selectedChannelId,
-  unreadChannelIds,
+  unreadCounts,
   hrefFor,
   onNavigate,
 }: ChannelItemProps) {
   const Icon = iconFor(node.type);
   const selected = node.id === selectedChannelId;
-  const unread = unreadChannelIds?.has(node.id) ?? false;
+  const unread = unreadCounts?.get(node.id) ?? 0;
   const content = (
     <>
       <Icon aria-hidden strokeWidth={1.75} className="size-4 shrink-0" />
-      <span className={cn("truncate", unread && "font-semibold text-foreground")}>{node.name}</span>
-      {unread ? (
-        <span className="ml-auto size-2 shrink-0 rounded-full bg-foreground">
-          <span className="sr-only">有未读消息</span>
+      <span className={cn("truncate", unread > 0 && "font-semibold text-foreground")}>
+        {node.name}
+      </span>
+      {unread > 0 ? (
+        <span className="ml-auto min-w-5 shrink-0 rounded-full bg-foreground px-1.5 text-center text-xs font-semibold leading-5 text-background">
+          <span aria-hidden>{unread >= UNREAD_CAP ? "99+" : unread}</span>
+          <span className="sr-only">{unreadLabel(unread)}</span>
         </span>
       ) : null}
     </>
@@ -90,7 +100,7 @@ function ChannelItem({
               key={thread.id}
               node={thread}
               selectedChannelId={selectedChannelId}
-              unreadChannelIds={unreadChannelIds}
+              unreadCounts={unreadCounts}
               hrefFor={hrefFor}
               onNavigate={onNavigate}
             />
@@ -106,11 +116,11 @@ export function ChannelSidebar({
   guildName,
   groups,
   selectedChannelId,
-  unreadChannelIds,
+  unreadCounts,
   hrefFor,
   onNavigate,
 }: ChannelSidebarProps) {
-  const itemProps = { selectedChannelId, unreadChannelIds, hrefFor, onNavigate };
+  const itemProps = { selectedChannelId, unreadCounts, hrefFor, onNavigate };
   return (
     <nav aria-label="频道" className="flex h-full w-60 shrink-0 flex-col bg-muted">
       <header className="flex h-12 shrink-0 items-center border-b border-border px-4">

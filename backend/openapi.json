@@ -786,6 +786,80 @@
         }
       }
     },
+    "/api/discord/unread": {
+      "get": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "List Unread",
+        "operationId": "list_unread_api_discord_unread_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnreadOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/channels/{channel_id}/read": {
+      "post": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Mark Read",
+        "operationId": "mark_read_api_discord_channels__channel_id__read_post",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Channel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkReadIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkReadOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/discord/guilds/{guild_id}/load-threads": {
       "post": {
         "tags": [
@@ -1863,6 +1937,33 @@
         ],
         "title": "LoginEventOut"
       },
+      "MarkReadIn": {
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "title": "Message Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message_id"
+        ],
+        "title": "MarkReadIn"
+      },
+      "MarkReadOut": {
+        "properties": {
+          "last_read_message_id": {
+            "type": "string",
+            "title": "Last Read Message Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "last_read_message_id"
+        ],
+        "title": "MarkReadOut"
+      },
       "MessageOut": {
         "properties": {
           "id": {
@@ -2181,6 +2282,40 @@
           "token"
         ],
         "title": "TokenUpdate"
+      },
+      "UnreadChannelOut": {
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "title": "Channel Id"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channel_id",
+          "count"
+        ],
+        "title": "UnreadChannelOut"
+      },
+      "UnreadOut": {
+        "properties": {
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/UnreadChannelOut"
+            },
+            "type": "array",
+            "title": "Channels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channels"
+        ],
+        "title": "UnreadOut"
       },
       "ValidationError": {
         "properties": {

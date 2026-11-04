@@ -79,6 +79,7 @@ describe("EventStreamProvider", () => {
       ["discord-guild-channels"],
       ["discord-collected"],
       ["discord-channel-detail"],
+      ["discord-unread"],
     ]);
   });
 

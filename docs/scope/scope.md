@@ -29,6 +29,7 @@ _这些都是让构建保持有序的建议，不是硬性要求。不合适的�
 | 14  | 导出                 | Slice 6    | planned     |
 | 15  | 关键词提醒           | Slice 7    | planned     |
 | 16  | 睡眠登录保护和日志文件 | Slice 1    | in-progress |
+| 17  | 数据库版频道未读数   | Slice 1    | in-progress |
 
 ## Foundations
 
@@ -168,6 +169,20 @@ spec [0007](../specs/0007-sleep-login-guard-log-files/index.md) · code in `back
   - [x] 睡眠保护：`wake_guard.py`、IDENTIFY 前等待，RESUME 不受影响，AC-1 到 AC-6
 - [ ] Verify it: `/check verify 睡眠登录保护和日志文件`
 - [ ] Test it: `/test 睡眠登录保护和日志文件`
+
+### 17. 数据库版频道未读数 · in-progress
+
+频道的未读状态改成存在数据库里的已读位置，侧栏显示每个频道的未读条数（满 100 显示 99+），刷新和断线重连都不丢。取代 spec 0008 的 AC-22。(from spec 0008)
+**Done when:** 刷新页面后未读数保持；断线期间到达的消息在重连后出现在侧栏；打开频道后徽标消失；开启采集的新频道只从开启那刻起算未读。
+spec [0010](../specs/0010-database-unread-counts.md) · code in `backend/src/harvester/db/`, `backend/src/harvester/api/message_routes.py`, `web/src/components/channels/`, `web/src/components/shell/`
+
+- [x] Design it (spec): `/architect 数据库版频道未读数`
+- [x] Build it: `/develop 数据库版频道未读数`
+  - [x] 表和未读接口：`channel_read_state` 迁移回填、开启采集建行、`GET /unread`，AC-1 到 AC-3
+  - [x] 前端接上未读接口：徽标和 99+、服务器圆点、删除内存逻辑，AC-5, AC-9
+  - [x] 标已读：`POST .../read`、频道页上报和可见性处理，AC-4, AC-6, AC-8
+  - [x] 刷新时机和收口：事件合并、重连、轮询、OpenAPI 同步、0008 的 AC-22 标注，AC-7, AC-9
+- [ ] Verify it: `/check verify 数据库版频道未读数`
 
 ## Slice 2: 历史采集
 

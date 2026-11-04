@@ -3,13 +3,14 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Path, Query, status
-from pydantic import AfterValidator, BaseModel
+from pydantic import AfterValidator, BaseModel, StringConstraints
 
 from harvester.api.deps import ClockDep
 from harvester.api.errors import ApiError
 from harvester.db import SessionFactoryDep
 from harvester.db import channels as channel_store
 from harvester.db import messages as message_store
+from harvester.db import read_state as read_store
 from harvester.db.channels import ThreadLoadError
 from harvester.db.coverage_plan import BannerReason
 from harvester.db.messages import (
@@ -55,6 +56,7 @@ def _check_ids(raw: str) -> str:
 # snowflake 超过 JS 的安全整数，接口上一律是字符串。
 PathId = Annotated[str, Path(pattern=r"^[0-9]{1,19}$"), AfterValidator(_check_id)]
 QueryId = Annotated[str, Query(pattern=r"^[0-9]{1,19}$"), AfterValidator(_check_id)]
+BodyId = Annotated[str, StringConstraints(pattern=r"^[0-9]{1,19}$"), AfterValidator(_check_id)]
 QueryIds = Annotated[str, Query(max_length=8000), AfterValidator(_check_ids)]
 
 
@@ -149,6 +151,23 @@ class ChannelDetailOut(BaseModel):
 
 class ThreadLoadOut(BaseModel):
     pending: bool
+
+
+class UnreadChannelOut(BaseModel):
+    channel_id: str
+    count: int
+
+
+class UnreadOut(BaseModel):
+    channels: list[UnreadChannelOut]
+
+
+class MarkReadIn(BaseModel):
+    message_id: BodyId
+
+
+class MarkReadOut(BaseModel):
+    last_read_message_id: str
 
 
 def _attachment_out(row: AttachmentRow) -> AttachmentOut:
@@ -260,6 +279,26 @@ async def list_messages(
         users=_named(page.users),
         channels=_named(page.channels),
     )
+
+
+@message_router.get("/unread")
+async def list_unread(factory: SessionFactoryDep) -> UnreadOut:
+    async with factory() as session:
+        rows = await read_store.list_unread(session)
+    return UnreadOut(
+        channels=[UnreadChannelOut(channel_id=str(r.channel_id), count=r.count) for r in rows]
+    )
+
+
+@message_router.post("/channels/{channel_id}/read")
+async def mark_read(
+    channel_id: PathId, body: MarkReadIn, factory: SessionFactoryDep
+) -> MarkReadOut:
+    async with factory() as session, session.begin():
+        position = await read_store.mark_read(session, int(channel_id), int(body.message_id))
+    if position == "channel_not_found":
+        raise ChannelNotFoundError
+    return MarkReadOut(last_read_message_id=str(position))
 
 
 @message_router.post("/guilds/{guild_id}/load-threads", status_code=status.HTTP_202_ACCEPTED)

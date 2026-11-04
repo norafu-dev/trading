@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 
 import { AppShell } from "@/components/shell/app-shell";
 
-import { UnreadProvider, useUnreadChannels } from "./unread-provider";
+import { UnreadProvider, useUnreadCounts } from "./unread-provider";
 import { useCollected } from "./use-collected";
 
 const EMPTY: readonly never[] = [];
@@ -13,7 +13,7 @@ type ShellLinks = Readonly<{ accountLink: ReactNode; homeLink: ReactNode; childr
 
 function ConnectedShell({ accountLink, homeLink, children }: ShellLinks) {
   const { data } = useCollected();
-  const unread = useUnreadChannels();
+  const unreadCounts = useUnreadCounts();
   return (
     <AppShell
       guilds={data?.guilds ?? EMPTY}
@@ -21,7 +21,7 @@ function ConnectedShell({ accountLink, homeLink, children }: ShellLinks) {
       collectorStatus="unknown"
       accountLink={accountLink}
       homeLink={homeLink}
-      unreadChannelIds={unread}
+      unreadCounts={unreadCounts}
     >
       {children}
     </AppShell>
