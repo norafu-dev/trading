@@ -20,7 +20,7 @@ from harvester.config import (
     load_media_settings,
 )
 from harvester.db import get_engine
-from harvester.media.storage import MediaStore, build_local_store
+from harvester.media.storage import MediaStore, R2Store, build_local_store, build_r2_client
 
 
 @asynccontextmanager
@@ -70,4 +70,9 @@ def _build_media_store() -> MediaStore:
     settings = load_media_settings("api")
     if isinstance(settings, LocalMediaSettings):
         return build_local_store(settings.media_local_dir)
-    raise NotImplementedError("R2 storage lands in milestone 5")
+    client = build_r2_client(
+        settings.endpoint_url,
+        settings.media_r2_read_access_key_id.get_secret_value(),
+        settings.media_r2_read_secret_access_key.get_secret_value(),
+    )
+    return R2Store(client=client, bucket=settings.media_r2_bucket)

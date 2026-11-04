@@ -16,11 +16,15 @@ from harvester.collector import media_worker
 from harvester.collector.discord_client import new_client
 from harvester.collector.supervisor import Deps, GatewayHandle, run_supervisor
 from harvester.collector.wake_guard import WakeGuard, watch_sleep
-from harvester.config import LocalMediaSettings, get_crypto_settings, load_media_settings
+from harvester.config import (
+    LocalMediaSettings,
+    get_crypto_settings,
+    load_media_settings,
+)
 from harvester.db import get_engine, get_sessionmaker, raw
 from harvester.db import media as media_db
 from harvester.db.system import record_collector_heartbeat
-from harvester.media.storage import MediaStore, build_local_store
+from harvester.media.storage import MediaStore, R2Store, build_local_store, build_r2_client
 
 log = structlog.get_logger("harvester.collector")
 
@@ -92,7 +96,12 @@ def _build_media_store() -> tuple[MediaStore, Path]:
     settings = load_media_settings("collector")
     if isinstance(settings, LocalMediaSettings):
         return build_local_store(settings.media_local_dir), settings.media_tmp_dir
-    raise NotImplementedError("R2 storage lands in milestone 5")
+    client = build_r2_client(
+        settings.endpoint_url,
+        settings.media_r2_write_access_key_id.get_secret_value(),
+        settings.media_r2_write_secret_access_key.get_secret_value(),
+    )
+    return R2Store(client=client, bucket=settings.media_r2_bucket), settings.media_tmp_dir
 
 
 async def _release_media_claims(factory: async_sessionmaker[AsyncSession]) -> None:

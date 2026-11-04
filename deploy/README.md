@@ -206,6 +206,37 @@ cd ~/harvester && docker compose -f compose.prod.yml --env-file .env exec -T pos
 * Mac token：只限这个桶的只读，只用来演练和灾后下载，在密码管理器里。
 * 任何一个泄露，在 Cloudflare 控制台撤销后重建，更新对应的地方即可。
 
+## 附件桶和两个 token
+
+附件（消息里的图片和文件）存在另一个私有 R2 桶里，和备份桶分开。文件按 `<频道 ID>/<年月>/<SHA-256>.<扩展名>` 存放，缩略图在同一个目录的 `thumbs/` 下。
+
+第一次上线前，在 Cloudflare 里做一次（你来做，我不会替你点）：
+
+1. 建一个私有桶 `harvester-media`，不开公开访问，**不加生命周期规则**（程序任何时候都不会删文件，桶里的文件就是附件的唯一副本）。
+2. 建两个只作用于这个桶的 API token：
+   * 对象读写：给 collector，写进 `.env` 的 `MEDIA_R2_WRITE_ACCESS_KEY_ID` 和 `MEDIA_R2_WRITE_SECRET_ACCESS_KEY`。
+   * 对象只读：给 api，写进 `MEDIA_R2_READ_ACCESS_KEY_ID` 和 `MEDIA_R2_READ_SECRET_ACCESS_KEY`。
+3. 服务器 `~/harvester/.env` 里再加这两项，并把四个密钥的副本存进密码管理器：
+
+```bash
+MEDIA_R2_ACCOUNT_ID=<Cloudflare 账号 ID，和备份用的是同一个>
+MEDIA_R2_BUCKET=harvester-media
+```
+
+`compose.prod.yml` 只把读写 token 给 collector，只把只读 token 给 api，两个进程拿不到对方的密钥。线上的 `MEDIA_STORAGE` 固定是 `r2`，缺任何一项，对应的进程启动时就报错退出。
+
+发布这个功能时，三个服务都要更新（迁移会给已有的附件和 embed 图补建下载任务）：
+
+```bash
+cd ~/harvester && IMAGE_TAG=<sha> ./deploy.sh migrate api collector
+```
+
+发布后 collector 会自己开始补下载，从最近的消息往回补。旧附件的 Discord 链接大多已过期，要先向 Discord 换新链接，节奏是每小时最多 600 个，所以库存多的话要补很久。进度看 dashboard 的「附件存储」设置页，首页「附件下载」一行能看到下载任务是否还在跑。
+
+* 附件**不进** `pg_dump`，也不另做备份：R2 自己有冗余。恢复旧的数据库备份后，桶里会多出数据库不认识的文件，无害。
+* 空间满了会停止下载并在图标栏显示红点，在「附件存储」页调高总容量即可继续。
+* 只读 token 或读写 token 泄露：在 Cloudflare 控制台撤销、重建，更新 `.env` 后重启对应的服务。
+
 ## 密钥副本在哪里
 
 | 东西 | 在哪里 | 不在哪里 |
@@ -215,4 +246,5 @@ cd ~/harvester && docker compose -f compose.prod.yml --env-file .env exec -T pos
 | age 公钥 | 服务器 `backup.env` | |
 | 服务器 R2 token（读写） | 服务器 `backup.env` | 密码管理器以外的任何地方 |
 | Mac R2 token（只读） | 密码管理器 | 服务器 |
+| 附件桶 R2 token（读写 / 只读） | 服务器 `~/harvester/.env`（读写只给 collector，只读只给 api）；密码管理器各一条 | git、日志 |
 | GHCR 只读 PAT | 服务器 `~/.docker/config.json`（`docker login` 写入） | |

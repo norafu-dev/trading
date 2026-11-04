@@ -13,6 +13,7 @@ import pytest
 from PIL import Image
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from structlog.testing import capture_logs
 
 from harvester.collector import media_worker
 from harvester.collector.media_worker import MediaDeps, PauseState
@@ -493,3 +494,28 @@ async def test_quota_counts_the_thumbnail(  # covers: AC-7
 
     [row] = await all_media(seeded)
     assert row.status == "no_space"
+
+
+async def test_logs_never_contain_link_signatures(  # covers: AC-19
+    seeded: Factory, tmp_path: Path
+) -> None:
+    signed = "https://cdn.discordapp.com/attachments/201/5001/a.png?ex=ffffffff&is=1&hm=SECRETSIG"
+    await ingest(seeded, 1_300_000_000_000_000_001, snapshot_attachment(url=signed))
+
+    def explode(_request: httpx.Request) -> httpx.Response:
+        raise RuntimeError(f"boom {signed}")
+
+    deps = make_deps(seeded, explode, tmp_path)
+    with capture_logs() as logs:
+        # 走和真实循环一样的入口：意外异常被兜住，只记类型和去掉查询参数的地址。
+        async with deps.factory() as session, session.begin():
+            [claimed] = await media_db.claim_batch(session, 1)
+        await media_worker._process_guarded(deps, claimed)  # pyright: ignore[reportPrivateUsage]
+        await run_once(make_deps(seeded, lambda _r: httpx.Response(500), tmp_path))
+
+    rendered = repr(logs)
+    assert logs, "worker should have logged something"
+    assert "SECRETSIG" not in rendered and "ex=" not in rendered
+    async with seeded() as session:
+        last_error = (await session.scalars(select(Media.last_error))).one()
+    assert last_error is None or ("SECRETSIG" not in last_error and "ex=" not in last_error)

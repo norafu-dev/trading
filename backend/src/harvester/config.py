@@ -1,6 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, overload
 from urllib.parse import urlsplit
 
 from pydantic import SecretStr, field_validator, model_validator
@@ -178,6 +178,12 @@ class ApiR2MediaSettings(_R2Common):
 MediaSettings = LocalMediaSettings | CollectorR2MediaSettings | ApiR2MediaSettings
 
 
+@overload
+def load_media_settings(role: Literal["api"]) -> LocalMediaSettings | ApiR2MediaSettings: ...
+@overload
+def load_media_settings(
+    role: Literal["collector"],
+) -> LocalMediaSettings | CollectorR2MediaSettings: ...
 def load_media_settings(role: MediaRole) -> MediaSettings:
     """先读 MEDIA_STORAGE，再实例化对应的类；缺任何一项必填配置都会抛校验错误。"""
     choice = MediaStorageChoice()  # pyright: ignore[reportCallIssue]  # 必填项来自环境变量
