@@ -31,7 +31,14 @@ from harvester.db.snapshots import MediaStatus
 from harvester.db.system import record_media_worker_heartbeat
 from harvester.media import policy
 from harvester.media.storage import MediaStore
-from harvester.media.urls import file_prefix, is_discord_hosted, object_key, strip_query
+from harvester.media.thumbnail import ImageInfo, inspect_image
+from harvester.media.urls import (
+    file_prefix,
+    is_discord_hosted,
+    object_key,
+    strip_query,
+    thumb_key,
+)
 
 log = structlog.get_logger("harvester.collector.media")
 
@@ -98,6 +105,8 @@ class MediaDeps:
     # 有行变成需要换链接时设上，换链接循环据此提前醒来。
     refresh_wake: asyncio.Event = field(default_factory=asyncio.Event)
     refresh_state: RefreshState = field(default_factory=RefreshState)
+    # 同一时间最多生成一张缩略图（AC-5）。
+    thumb_slot: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(1))
 
 
 # ---- 下载一个文件 --------------------------------------------------------------------
@@ -256,17 +265,41 @@ async def _store_downloaded(deps: MediaDeps, row: ClaimedMedia, done: Downloaded
         await _record_stored(deps, row, file=None, existing_file_id=existing)
         return
 
-    content_type = guess_content_type(row.declared_content_type, row.filename)
+    with tempfile.NamedTemporaryFile(dir=deps.tmp_dir, suffix=".webp", delete=True) as thumb_file:
+        thumb_path = Path(thumb_file.name)
+        async with deps.thumb_slot:
+            info = await asyncio.to_thread(inspect_image, done.path, thumb_path)
+        await _upload_and_record(deps, row, done, prefix, info, thumb_path)
+
+
+async def _upload_and_record(
+    deps: MediaDeps,
+    row: ClaimedMedia,
+    done: Downloaded,
+    prefix: str,
+    info: ImageInfo | None,
+    thumb_path: Path,
+) -> None:
+    content_type = (
+        info.content_type
+        if info is not None
+        else guess_content_type(row.declared_content_type, row.filename)
+    )
+    thumb = info.thumb if info is not None else None
     async with deps.factory() as session:
         limits = await media_db.get_limits(session)
         used = await media_db.used_bytes(session)
-    if used + done.size_bytes > limits.quota_bytes:
+    total = done.size_bytes + (thumb.size_bytes if thumb is not None else 0)
+    if used + total > limits.quota_bytes:
         await _terminal(deps, row, "no_space", None)
         return
 
     key = object_key(prefix, done.sha256.hex(), row.filename)
+    thumb_object_key = thumb_key(prefix, done.sha256.hex()) if thumb is not None else None
     try:
         await deps.store.put_file(key, done.path, content_type)
+        if thumb_object_key is not None:
+            await deps.store.put_file(thumb_object_key, thumb_path, "image/webp")
     except Exception as error:  # 存储边界：任何上传失败都按可重试处理
         log.warning("media.put_failed", media_id=row.id, error_type=type(error).__name__)
         await _fail(deps, row, HttpFailure(None, "r2_put"))
@@ -277,8 +310,12 @@ async def _store_downloaded(deps: MediaDeps, row: ClaimedMedia, done: Downloaded
         size_bytes=done.size_bytes,
         content_type=content_type,
         object_key=key,
-        width=row.declared_width,
-        height=row.declared_height,
+        width=info.width if info is not None else row.declared_width,
+        height=info.height if info is not None else row.declared_height,
+        thumb_object_key=thumb_object_key,
+        thumb_size_bytes=thumb.size_bytes if thumb is not None else None,
+        thumb_width=thumb.width if thumb is not None else None,
+        thumb_height=thumb.height if thumb is not None else None,
     )
     await _record_stored(deps, row, file=new, existing_file_id=None)
 

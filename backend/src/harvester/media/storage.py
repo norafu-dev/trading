@@ -8,6 +8,7 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
+from urllib.parse import quote
 
 
 class MediaStore(Protocol):
@@ -77,7 +78,10 @@ class MemoryStore:
     def presign_get(
         self, key: str, *, content_type: str, content_disposition: str, expires: int
     ) -> str | None:
-        return f"memory://{key}?type={content_type}&expires={expires}"
+        return (
+            f"memory://{key}?type={content_type}"
+            f"&disposition={quote(content_disposition)}&expires={expires}"
+        )
 
     def local_path(self, key: str) -> Path | None:
         return None

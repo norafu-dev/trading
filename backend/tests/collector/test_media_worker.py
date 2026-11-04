@@ -1,6 +1,7 @@
 """下载任务（spec 0011）：真实 PostgreSQL，假的 CDN（httpx.MockTransport），内存存储。"""
 
 import asyncio
+import io
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -9,6 +10,7 @@ from typing import cast
 
 import httpx
 import pytest
+from PIL import Image
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -437,3 +439,57 @@ async def test_403_burst_pauses_the_worker(
 
     assert deps.pause.until is not None
     assert await media_worker._pause_remaining(deps)  # pyright: ignore[reportPrivateUsage]
+
+
+def png_bytes(width: int, height: int) -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), "blue").save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+async def test_big_image_gets_a_thumbnail_next_to_the_original(  # covers: AC-4, AC-5
+    seeded: Factory, tmp_path: Path
+) -> None:
+    await ingest(seeded, 1_300_000_000_000_000_001, snapshot_attachment())
+    store = MemoryStore()
+    data = png_bytes(1600, 800)
+
+    await run_once(make_deps(seeded, lambda _r: httpx.Response(200, content=data), tmp_path, store))
+
+    async with seeded() as session:
+        stored = (await session.scalars(select(StoredFile))).one()
+    assert stored.thumb_object_key == f"201/2024-10/thumbs/{stored.sha256.hex()}.webp"
+    assert (stored.width, stored.height) == (1600, 800)
+    assert (stored.thumb_width, stored.thumb_height) == (800, 400)
+    assert set(store.objects) == {stored.object_key, stored.thumb_object_key}
+    async with seeded() as session:
+        assert await media_db.used_bytes(session) == len(data) + (stored.thumb_size_bytes or 0)
+
+
+async def test_small_image_has_no_thumbnail(seeded: Factory, tmp_path: Path) -> None:  # AC-5
+    await ingest(seeded, 1_300_000_000_000_000_001, snapshot_attachment())
+    data = png_bytes(300, 200)
+
+    await run_once(make_deps(seeded, lambda _r: httpx.Response(200, content=data), tmp_path))
+
+    async with seeded() as session:
+        stored = (await session.scalars(select(StoredFile))).one()
+    assert stored.thumb_object_key is None
+
+
+async def test_quota_counts_the_thumbnail(  # covers: AC-7
+    seeded: Factory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await ingest(seeded, 1_300_000_000_000_000_001, snapshot_attachment())
+    data = png_bytes(1600, 800)
+
+    async def tight(_session: AsyncSession) -> media_db.MediaLimits:
+        # 总容量刚好放得下原图、放不下缩略图。
+        return media_db.MediaLimits(max_file_bytes=50 * 1024 * 1024, quota_bytes=len(data) + 1)
+
+    monkeypatch.setattr(media_db, "get_limits", tight)
+
+    await run_once(make_deps(seeded, lambda _r: httpx.Response(200, content=data), tmp_path))
+
+    [row] = await all_media(seeded)
+    assert row.status == "no_space"
