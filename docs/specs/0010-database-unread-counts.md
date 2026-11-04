@@ -1,7 +1,7 @@
 # 0010. 数据库版频道未读数
 
 **Date**: 2026-11-04
-**Status**: In Progress
+**Status**: Accepted
 
 ## Summary
 

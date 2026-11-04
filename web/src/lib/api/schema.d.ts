@@ -416,6 +416,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/media/{media_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Media */
+        get: operations["get_media_api_media__media_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/system/status": {
         parameters: {
             query?: never;
@@ -798,6 +815,37 @@ export interface components {
             /** Last Read Message Id */
             last_read_message_id: string;
         };
+        /** MediaOut */
+        MediaOut: {
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "attachment" | "forwarded_attachment" | "embed_image" | "embed_thumbnail";
+            /** Attachment Id */
+            attachment_id: string | null;
+            /** Slot */
+            slot: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "stored" | "failed" | "too_large" | "no_space" | "gone";
+            /** Filename */
+            filename: string;
+            /** Content Type */
+            content_type: string | null;
+            /** Size Bytes */
+            size_bytes: number | null;
+            /** Width */
+            width: number | null;
+            /** Height */
+            height: number | null;
+            /** Has Thumb */
+            has_thumb: boolean;
+        };
         /** MessageOut */
         MessageOut: {
             /** Id */
@@ -819,6 +867,8 @@ export interface components {
             forwarded: components["schemas"]["ForwardedOut"] | null;
             /** Attachments */
             attachments: components["schemas"]["AttachmentOut"][];
+            /** Media */
+            media: components["schemas"]["MediaOut"][];
             /** Edited At */
             edited_at: string | null;
             /** Deleted At */
@@ -1594,6 +1644,45 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ThreadLoadOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_media_api_media__media_id__get: {
+        parameters: {
+            query?: {
+                variant?: "original" | "thumb";
+                download?: boolean;
+            };
+            header?: never;
+            path: {
+                media_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 本地模式：直接返回文件内容 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 跳到存储里这个文件的签名链接 */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

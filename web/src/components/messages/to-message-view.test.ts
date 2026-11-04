@@ -17,6 +17,7 @@ const BASE: MessageOut = {
   embeds: [],
   forwarded: null,
   attachments: [],
+  media: [],
   edited_at: null,
   deleted_at: null,
   reply: null,
@@ -73,7 +74,50 @@ describe("toMessageView", () => {
     expect(view.forwarded).toMatchObject({
       messageId: "7",
       guildId: null,
-      attachmentNames: ["a.png"],
+      attachments: [{ filename: "a.png", media: null }],
     });
+  });
+});
+
+describe("toMessageView media", () => {
+  // covers: spec 0011 AC-15
+  it("按附件 ID、转发序号和 embed 序号挂上 media", () => {
+    const mediaRow = (id: string, over: Partial<components["schemas"]["MediaOut"]>) => ({
+      id,
+      kind: "attachment" as const,
+      attachment_id: null,
+      slot: null,
+      status: "stored" as const,
+      filename: "f.png",
+      content_type: "image/png",
+      size_bytes: 1,
+      width: 2,
+      height: 3,
+      has_thumb: true,
+      ...over,
+    });
+    const view = toMessageView({
+      ...BASE,
+      attachments: [{ id: "50", filename: "f.png", content_type: "image/png", size_bytes: 1 }],
+      embeds: [{ image_url: "https://cdn.discordapp.com/attachments/1/2/e.png" }],
+      forwarded: {
+        message_id: "7",
+        channel_id: "8",
+        guild_id: null,
+        content: "",
+        embeds: [],
+        attachment_names: ["a.png", "b.png"],
+      },
+      media: [
+        mediaRow("1", { attachment_id: "50" }),
+        mediaRow("2", { kind: "forwarded_attachment", slot: 1 }),
+        mediaRow("3", { kind: "embed_image", slot: 0 }),
+      ],
+    });
+
+    expect(view.attachments[0]?.media?.id).toBe("1");
+    expect(view.forwarded?.attachments.map((a) => a.media?.id ?? null)).toEqual([null, "2"]);
+    expect(view.embeds[0]?.imageMedia?.id).toBe("3");
+    expect(view.embeds[0]?.thumbnailMedia).toBeNull();
   });
 });

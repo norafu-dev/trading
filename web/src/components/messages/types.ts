@@ -38,6 +38,9 @@ export type EmbedView = Readonly<{
   footerText: string | null;
   imageUrl: string | null;
   thumbnailUrl: string | null;
+  // Discord 托管的 embed 图有保存状态；第三方图片没有，继续按 imageUrl 直接加载。
+  imageMedia: MediaView | null;
+  thumbnailMedia: MediaView | null;
 }>;
 
 export type ForwardedView = Readonly<{
@@ -46,7 +49,7 @@ export type ForwardedView = Readonly<{
   guildId: string | null;
   content: string;
   embeds: readonly EmbedView[];
-  attachmentNames: readonly string[];
+  attachments: readonly ForwardedAttachmentView[];
 }>;
 
 export type AttachmentView = Readonly<{
@@ -54,6 +57,27 @@ export type AttachmentView = Readonly<{
   filename: string;
   contentType: string | null;
   sizeBytes: number; // 附件大小在安全整数范围内，可以用 number
+  media: MediaView | null; // 保存状态；没有 media 行时为 null，按原来的文件条显示
+}>;
+
+// 附件或 embed 图的保存状态（spec 0011）。文件通过 /api/media/{id} 读，不再碰 Discord 原链接。
+export type MediaStatus = "pending" | "stored" | "failed" | "too_large" | "no_space" | "gone";
+
+export type MediaView = Readonly<{
+  id: string;
+  status: MediaStatus;
+  filename: string;
+  contentType: string | null; // 已保存的用实际类型，否则是 Discord 给的
+  sizeBytes: number | null;
+  width: number | null;
+  height: number | null;
+  hasThumb: boolean;
+}>;
+
+// 转发里的附件：上线前入库的转发只有文件名，没有 media。
+export type ForwardedAttachmentView = Readonly<{
+  filename: string;
+  media: MediaView | null;
 }>;
 
 export type MessageListProps = Readonly<{

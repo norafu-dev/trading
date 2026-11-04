@@ -39,6 +39,9 @@ LoginOutcome = Literal[
 # 备份记录（spec 0009）：状态和失败步骤，都由 deploy/backup.sh 写入。
 BackupStatus = Literal["running", "succeeded", "failed"]
 BackupError = Literal["dump", "encrypt", "upload", "interrupted"]
+# 附件保存（spec 0011）：每个要下载的东西一行 media。
+MediaKind = Literal["attachment", "forwarded_attachment", "embed_image", "embed_thumbnail"]
+MediaStatus = Literal["pending", "stored", "failed", "too_large", "no_space", "gone"]
 
 # Text (0), announcement (5), announcement thread (10), public thread (11), private thread (12).
 # Must match the `ck_channel_collectable_type` constraint; a test keeps the two in sync.
@@ -165,6 +168,8 @@ class MessageSnapshot:
     mentions: tuple[UserSnapshot, ...] = ()
     # 编辑事件的原始载荷没有 attachments 键时为假：不同步附件，已有附件不会被标成已移除。
     attachments_known: bool = True
+    # 转发消息里的附件（spec 0011）：只用来建 media 行，不改 ForwardedData 的结构。
+    forwarded_attachments: tuple[AttachmentSnapshot, ...] = ()
 
 
 @dataclass(frozen=True)

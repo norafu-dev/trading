@@ -23,6 +23,9 @@ CHANNEL_COLLECT_CHANGED_CHANNEL = "channel_collect_changed"
 # 频道、服务器或开关的数据变了，api 据此通知页面重新取数；载荷是 {}（spec 0006）。
 CHANNELS_CHANGED_CHANNEL = "channels_changed"
 
+# 有新的 media 行要下载、或行被重新排队时通知 collector 的下载任务；载荷为空（spec 0011）。
+MEDIA_QUEUE_CHANNEL = "media_queue"
+
 # 全局一把锁，和账号无关；做多账号时再按账号区分（spec 0005）。
 COLLECTOR_LOCK_KEY = 0x6861_7276  # "harv"
 

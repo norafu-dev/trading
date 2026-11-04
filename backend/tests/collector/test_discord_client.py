@@ -843,7 +843,19 @@ def test_snapshot_reads_forwarded_message() -> None:  # covers: AC-1
             ),
             message_snapshots=[
                 SimpleNamespace(
-                    content="fwd", embeds=[embed], attachments=[SimpleNamespace(filename="a.png")]
+                    content="fwd",
+                    embeds=[embed],
+                    attachments=[
+                        SimpleNamespace(
+                            id=9,
+                            filename="a.png",
+                            content_type="image/png",
+                            size=5,
+                            url="https://cdn.discordapp.com/attachments/4/9/a.png?ex=1",
+                            width=2,
+                            height=3,
+                        )
+                    ],
                 )
             ],
         )
@@ -852,6 +864,7 @@ def test_snapshot_reads_forwarded_message() -> None:  # covers: AC-1
     assert snap is not None and snap.forwarded is not None
     assert snap.forwarded["message_id"] == 3
     assert snap.forwarded["attachment_names"] == ["a.png"]
+    assert [a.id for a in snap.forwarded_attachments] == [9]  # covers: spec 0011 AC-2
     assert snap.forwarded["embeds"][0].get("title") == "t"
     assert snap.reply_to_id is None
 

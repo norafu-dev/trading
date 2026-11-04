@@ -239,6 +239,13 @@ def _forwarded(message: discord.Message) -> ForwardedData | None:
     )
 
 
+def _forwarded_attachments(message: discord.Message) -> tuple[AttachmentSnapshot, ...]:
+    """转发消息里的附件，序号就是 media.slot；不是转发时为空（spec 0011）。"""
+    if _forwarded(message) is None:
+        return ()
+    return tuple(_attachment_snapshot(a) for a in message.message_snapshots[0].attachments)
+
+
 def snapshot_message(
     message: discord.Message, *, attachments_known: bool = True
 ) -> MessageSnapshot | None:
@@ -270,6 +277,7 @@ def snapshot_message(
             _user_snapshot(user, "bot" if user.bot else "user") for user in message.mentions
         ),
         attachments_known=attachments_known,
+        forwarded_attachments=_forwarded_attachments(message),
     )
 
 

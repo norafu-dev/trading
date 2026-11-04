@@ -8,7 +8,9 @@ import type { ParserStatus } from "@/lib/discord-markdown/use-markdown-parser";
 import type { TimeFormat } from "@/lib/format/time";
 import { safeUrl } from "@/lib/safe-url";
 
-import type { EmbedView, MentionResolver } from "./types";
+import { MediaImage } from "./media-image";
+import { MediaStatusText } from "./media-status";
+import type { EmbedView, MediaView, MentionResolver } from "./types";
 
 type EmbedProps = Readonly<{
   embed: EmbedView;
@@ -37,6 +39,16 @@ function EmbedImage({ src, className }: Readonly<{ src: string; className: strin
       onError={() => setFailed(true)}
       className={className}
     />
+  );
+}
+
+// Discord 托管的 embed 图走自己的存储（spec 0011）：已保存的显示图片，其他显示状态文字。
+function EmbedMedia({ media }: Readonly<{ media: MediaView }>) {
+  if (media.status === "stored") return <MediaImage media={media} fill />;
+  return (
+    <span className="grid size-full place-items-center p-2 text-center text-xs">
+      <MediaStatusText status={media.status} />
+    </span>
   );
 }
 
@@ -111,12 +123,20 @@ export function Embed({ embed, parser, resolver, now, format }: EmbedProps) {
       </div>
       {embed.thumbnailUrl ? (
         <div className="size-20 overflow-hidden rounded-md">
-          <EmbedImage src={embed.thumbnailUrl} className="size-full object-cover" />
+          {embed.thumbnailMedia ? (
+            <EmbedMedia media={embed.thumbnailMedia} />
+          ) : (
+            <EmbedImage src={embed.thumbnailUrl} className="size-full object-cover" />
+          )}
         </div>
       ) : null}
       {embed.imageUrl ? (
         <div className="col-span-2 mt-3 aspect-video w-full max-w-[400px] overflow-hidden rounded-md bg-muted">
-          <EmbedImage src={embed.imageUrl} className="size-full object-contain" />
+          {embed.imageMedia ? (
+            <EmbedMedia media={embed.imageMedia} />
+          ) : (
+            <EmbedImage src={embed.imageUrl} className="size-full object-contain" />
+          )}
         </div>
       ) : null}
       {footer.length > 0 ? (

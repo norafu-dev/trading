@@ -13,6 +13,7 @@ from sqlalchemy import Table, and_, delete, exists, func, or_, select, text, upd
 from sqlalchemy.dialects.postgresql import Range, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from harvester.db.media import sync_media_for_message
 from harvester.db.models import (
     Attachment,
     Channel,
@@ -286,6 +287,7 @@ async def ingest_message(
         if await _insert_message(session, snap, embeds, source):
             if snap.attachments_known:
                 await _sync_attachments(session, snap.id, snap.attachments, removed_at=None)
+            await sync_media_for_message(session, snap, embeds)
             return "inserted"
         stored = await _lock_message(session, snap.id)
         if stored is None:  # The conflicting insert committed, so the row must be there now.
@@ -333,6 +335,7 @@ async def ingest_message(
         await _sync_attachments(
             session, snap.id, snap.attachments, removed_at=snap.edited_at or received_at
         )
+    await sync_media_for_message(session, snap, embeds)
     await session.flush()
     return outcome
 

@@ -42,6 +42,8 @@ function embed(overrides: Partial<EmbedView> = {}): EmbedView {
     footerText: null,
     imageUrl: null,
     thumbnailUrl: null,
+    imageMedia: null,
+    thumbnailMedia: null,
     ...overrides,
   };
 }
@@ -125,9 +127,9 @@ describe("MessageRow", () => {
   it("附件显示文件名和按 1024 进位的大小", () => {
     renderRow({
       attachments: [
-        { id: "a", filename: "a.txt", contentType: null, sizeBytes: 1023 },
-        { id: "b", filename: "b.png", contentType: null, sizeBytes: 1024 },
-        { id: "c", filename: "c.zip", contentType: null, sizeBytes: 1_572_864 },
+        { id: "a", filename: "a.txt", contentType: null, sizeBytes: 1023, media: null },
+        { id: "b", filename: "b.png", contentType: null, sizeBytes: 1024, media: null },
+        { id: "c", filename: "c.zip", contentType: null, sizeBytes: 1_572_864, media: null },
       ],
     });
     for (const [name, size] of [
@@ -175,7 +177,7 @@ describe("MessageRow", () => {
         guildId: null,
         content: "被转发的话",
         embeds: [],
-        attachmentNames: ["设计稿.fig"],
+        attachments: [{ filename: "设计稿.fig", media: null }],
       },
     });
     expect(screen.getByText("转发")).toBeInTheDocument();

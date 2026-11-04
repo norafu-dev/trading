@@ -10,11 +10,10 @@ import { fallbackColorFor, initialFor } from "@/lib/discord-cdn";
 import { MessageContent } from "@/lib/discord-markdown/MessageContent";
 import type { ParserStatus } from "@/lib/discord-markdown/use-markdown-parser";
 import type { TimeFormat } from "@/lib/format/time";
-
-import { AttachmentChip } from "./attachment-chip";
 import type { MessageRowItem } from "./build-rows";
 import { Embed } from "./embed";
 import { ForwardedBlock } from "./forwarded-block";
+import { MediaAttachment } from "./media-attachment";
 import type { MentionResolver, ReplyView } from "./types";
 
 type MessageRowProps = Readonly<{
@@ -128,12 +127,13 @@ export const MessageRow = memo(function MessageRow({
             <Embed key={index} embed={embed} {...contentProps} />
           ))}
           {message.attachments.length > 0 ? (
-            <div className="mt-1 flex flex-wrap gap-1.5">
+            <div className="mt-1 flex flex-wrap items-start gap-1.5">
               {message.attachments.map((attachment) => (
-                <AttachmentChip
+                <MediaAttachment
                   key={attachment.id}
                   filename={attachment.filename}
                   sizeBytes={attachment.sizeBytes}
+                  media={attachment.media}
                 />
               ))}
             </div>

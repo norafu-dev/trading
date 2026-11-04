@@ -7,7 +7,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import exists, func, select
+from sqlalchemy import exists, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -111,4 +111,15 @@ async def get_system_status(session: AsyncSession) -> SystemStatus:
                 has_runs=last_run is not None, last_success_at=last_success_at, db_now=db_now
             ),
         ),
+    )
+
+
+async def record_media_worker_heartbeat(
+    session: AsyncSession, paused_until: datetime | None
+) -> None:
+    """下载任务的心跳和暂停结束时间（spec 0011）。进程心跳那一行还没建出来时什么也不写。"""
+    await session.execute(
+        update(CollectorHeartbeat)
+        .where(CollectorHeartbeat.id)
+        .values(media_worker_seen_at=func.now(), media_paused_until=paused_until)
     )

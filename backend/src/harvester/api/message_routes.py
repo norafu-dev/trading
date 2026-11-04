@@ -20,12 +20,13 @@ from harvester.db.messages import (
     Before,
     ByIds,
     Latest,
+    MediaRow,
     MessageRow,
     NamedRef,
     PageSelector,
     ReplyMissing,
 )
-from harvester.db.snapshots import EmbedData
+from harvester.db.snapshots import EmbedData, MediaKind, MediaStatus
 
 # 由 routes.py 挂到 protected_router 上，登录检查从那里继承。
 message_router = APIRouter(prefix="/discord", tags=["messages"])
@@ -94,6 +95,20 @@ class AttachmentOut(BaseModel):
     size_bytes: int
 
 
+class MediaOut(BaseModel):
+    id: str
+    kind: MediaKind
+    attachment_id: str | None
+    slot: int | None
+    status: MediaStatus
+    filename: str
+    content_type: str | None
+    size_bytes: int | None
+    width: int | None
+    height: int | None
+    has_thumb: bool
+
+
 class ForwardedOut(BaseModel):
     message_id: str
     channel_id: str
@@ -123,6 +138,7 @@ class MessageOut(BaseModel):
     embeds: list[EmbedData]
     forwarded: ForwardedOut | None
     attachments: list[AttachmentOut]
+    media: list[MediaOut]
     edited_at: str | None
     deleted_at: str | None
     reply: ReplyOut | None
@@ -179,6 +195,22 @@ def _attachment_out(row: AttachmentRow) -> AttachmentOut:
     )
 
 
+def _media_out(row: MediaRow) -> MediaOut:
+    return MediaOut(
+        id=str(row.id),
+        kind=row.kind,
+        attachment_id=str(row.attachment_id) if row.attachment_id is not None else None,
+        slot=row.slot,
+        status=row.status,
+        filename=row.filename,
+        content_type=row.content_type,
+        size_bytes=row.size_bytes,
+        width=row.width,
+        height=row.height,
+        has_thumb=row.has_thumb,
+    )
+
+
 def _reply_out(row: MessageRow) -> ReplyOut | None:
     reply = row.reply
     if reply is None:
@@ -221,6 +253,7 @@ def _message_out(row: MessageRow) -> MessageOut:
         embeds=row.embeds,
         forwarded=_forwarded_out(row),
         attachments=[_attachment_out(a) for a in row.attachments],
+        media=[_media_out(m) for m in row.media],
         edited_at=row.edited_at.isoformat() if row.edited_at else None,
         deleted_at=row.deleted_at.isoformat() if row.deleted_at else None,
         reply=_reply_out(row),

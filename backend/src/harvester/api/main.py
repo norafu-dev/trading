@@ -13,11 +13,14 @@ from harvester.api.routes import router
 from harvester.config import (
     ApiSettings,
     CryptoSettings,
+    LocalMediaSettings,
     get_api_settings,
     get_crypto_settings,
     is_local_origin,
+    load_media_settings,
 )
 from harvester.db import get_engine
+from harvester.media.storage import MediaStore, build_local_store
 
 
 @asynccontextmanager
@@ -34,7 +37,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         await get_engine().dispose()
 
 
-def create_app(settings: ApiSettings, crypto: CryptoSettings) -> FastAPI:
+def create_app(
+    settings: ApiSettings, crypto: CryptoSettings, media_store: MediaStore | None = None
+) -> FastAPI:
     # 生产环境不提供文档路由。
     docs_enabled = is_local_origin(settings.site_origin)
     app = FastAPI(
@@ -47,6 +52,7 @@ def create_app(settings: ApiSettings, crypto: CryptoSettings) -> FastAPI:
     )
     app.state.api_settings = settings
     app.state.key_ring = crypto.key_ring
+    app.state.media_store = media_store
     register_error_handlers(app)
     app.add_middleware(origin_check, site_origin=settings.site_origin)
     app.include_router(public_router)
@@ -56,4 +62,12 @@ def create_app(settings: ApiSettings, crypto: CryptoSettings) -> FastAPI:
 
 def create_app_from_env() -> FastAPI:
     """uvicorn 的工厂入口；配置不全时启动就报错退出。"""
-    return create_app(get_api_settings(), get_crypto_settings())
+    return create_app(get_api_settings(), get_crypto_settings(), _build_media_store())
+
+
+def _build_media_store() -> MediaStore:
+    """MEDIA_STORAGE 没设置或 R2 配置不全时，这里抛校验错误，api 启动失败（AC-20）。"""
+    settings = load_media_settings("api")
+    if isinstance(settings, LocalMediaSettings):
+        return build_local_store(settings.media_local_dir)
+    raise NotImplementedError("R2 storage lands in milestone 5")

@@ -24,7 +24,7 @@ _这些都是让构建保持有序的建议，不是硬性要求。不合适的�
 | 9   | 部署与常驻运行       | Slice 1    | in-progress |
 | 10  | 按时间段采集历史消息 | Slice 2    | planned     |
 | 11  | 编辑与删除留痕       | Slice 3    | planned     |
-| 12  | 附件与图片保存       | Slice 4    | planned     |
+| 12  | 附件与图片保存       | Slice 4    | in-progress |
 | 13  | 消息搜索与筛选       | Slice 5    | planned     |
 | 14  | 导出                 | Slice 6    | planned     |
 | 15  | 关键词提醒           | Slice 7    | planned     |
@@ -170,7 +170,7 @@ spec [0007](../specs/0007-sleep-login-guard-log-files/index.md) · code in `back
 - [ ] Verify it: `/check verify 睡眠登录保护和日志文件`
 - [ ] Test it: `/test 睡眠登录保护和日志文件`
 
-### 17. 数据库版频道未读数 · in-progress
+### 17. 数据库版频道未读数 · done
 
 频道的未读状态改成存在数据库里的已读位置，侧栏显示每个频道的未读条数（满 100 显示 99+），刷新和断线重连都不丢。取代 spec 0008 的 AC-22。(from spec 0008)
 **Done when:** 刷新页面后未读数保持；断线期间到达的消息在重连后出现在侧栏；打开频道后徽标消失；开启采集的新频道只从开启那刻起算未读。
@@ -182,7 +182,7 @@ spec [0010](../specs/0010-database-unread-counts.md) · code in `backend/src/har
   - [x] 前端接上未读接口：徽标和 99+、服务器圆点、删除内存逻辑，AC-5, AC-9
   - [x] 标已读：`POST .../read`、频道页上报和可见性处理，AC-4, AC-6, AC-8
   - [x] 刷新时机和收口：事件合并、重连、轮询、OpenAPI 同步、0008 的 AC-22 标注，AC-7, AC-9
-- [ ] Verify it: `/check verify 数据库版频道未读数`
+- [x] Verify it: `/check verify 数据库版频道未读数`
 
 ## Slice 2: 历史采集
 
@@ -204,12 +204,20 @@ spec [0010](../specs/0010-database-unread-counts.md) · code in `backend/src/har
 
 ## Slice 4: 附件保存
 
-### 12. 附件与图片保存 · needs a decision
+### 12. 附件与图片保存 · in-progress
 
 把消息里的图片和文件下载到自己的存储里，因为 Discord 的附件链接会过期。(basis: Discord CDN 链接带过期签名)
 **Done when:** 新消息的附件自动下载保存；dashboard 里图片能预览、文件能下载，不依赖 Discord 的原链接；有单个文件大小上限和总容量的设置。
+spec [0011](../specs/0011-attachment-media-storage/index.md)
 
-- [ ] Design it (spec): `/architect 附件与图片保存`
+- [x] Design it (spec): `/architect 附件与图片保存`
+- [ ] Build it: `/develop 附件与图片保存`
+  - [x] 打通细线：三张表的迁移和补建、本地存储、附件建行、最简下载任务、`GET /api/media/{id}`、消息里显示图片，AC-1, AC-4, AC-12, AC-16, AC-20
+  - [ ] 下载可靠性：准入和退避、领取校验、403 熔断、异常兜底和心跳、`GatewayHandle`、换链接循环（每小时 600 个）、频道关闭时暂停，AC-6, AC-7, AC-10, AC-11, AC-18, AC-22, AC-23
+  - [ ] 覆盖范围：转发附件、Discord 托管的 embed 图、换图重置、地址检查、缩略图，AC-2, AC-3, AC-5, AC-13
+  - [ ] 界面和设置：设置和重试接口、大图和播放器、状态文字、设置页「附件存储」、图标栏红点、首页「附件下载」，AC-7 到 AC-9, AC-14, AC-15, AC-17, AC-21, AC-22
+  - [ ] 上线 R2 和收口：`R2Store`、按进程分发密钥、建桶和 token、部署手册、测试和各项检查，AC-14, AC-19, AC-20, AC-1 到 AC-23
+- [ ] Verify it: `/check verify 附件与图片保存`
 
 ## Slice 5: 搜索与筛选
 

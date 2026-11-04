@@ -4,6 +4,7 @@ import random
 import signal
 from datetime import UTC, datetime
 from functools import partial
+from pathlib import Path
 
 import asyncpg
 import structlog
@@ -11,12 +12,14 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from harvester.collector import media_worker
 from harvester.collector.discord_client import new_client
 from harvester.collector.supervisor import Deps, run_supervisor
 from harvester.collector.wake_guard import WakeGuard, watch_sleep
-from harvester.config import get_crypto_settings
+from harvester.config import LocalMediaSettings, get_crypto_settings, load_media_settings
 from harvester.db import get_engine, get_sessionmaker, raw
 from harvester.db.system import record_collector_heartbeat
+from harvester.media.storage import MediaStore, build_local_store
 
 log = structlog.get_logger("harvester.collector")
 
@@ -83,6 +86,14 @@ async def _beat_process(factory: async_sessionmaker[AsyncSession]) -> None:
         await asyncio.sleep(PROCESS_HEARTBEAT_INTERVAL)
 
 
+def _build_media_store() -> tuple[MediaStore, Path]:
+    """按配置构造存储和临时目录；缺配置时这里抛校验错误，进程启动失败（AC-20）。"""
+    settings = load_media_settings("collector")
+    if isinstance(settings, LocalMediaSettings):
+        return build_local_store(settings.media_local_dir), settings.media_tmp_dir
+    raise NotImplementedError("R2 storage lands in milestone 5")
+
+
 async def _cancel_and_wait(task: "asyncio.Task[None]", limit: float) -> None:
     task.cancel()
     await asyncio.wait((task,), timeout=limit)
@@ -105,6 +116,7 @@ async def run() -> int:
 
     wake = asyncio.Event()
     channels_wake = asyncio.Event()
+    media_wake = asyncio.Event()
 
     # 复用锁连接：断开即退出。先 LISTEN 再第一次读账号，不会漏通知。
     def on_account_changed(_conn: object, _pid: int, _channel: str, _payload: object) -> None:
@@ -112,11 +124,17 @@ async def run() -> int:
 
     def on_collect_changed(_conn: object, _pid: int, _channel: str, _payload: object) -> None:
         channels_wake.set()
+        media_wake.set()  # 频道重新打开后，暂停的附件马上继续（AC-23）
+
+    def on_media_queue(_conn: object, _pid: int, _channel: str, _payload: object) -> None:
+        media_wake.set()
 
     await lock_conn.add_listener(raw.ACCOUNT_CHANGED_CHANNEL, on_account_changed)
     await lock_conn.add_listener(raw.CHANNEL_COLLECT_CHANGED_CHANNEL, on_collect_changed)
+    await lock_conn.add_listener(raw.MEDIA_QUEUE_CHANNEL, on_media_queue)
 
     engine = get_engine()
+    media_http = media_worker.new_http_client()
     try:
         async with engine.connect() as conn:
             version = await conn.scalar(text("SHOW server_version"))
@@ -124,6 +142,17 @@ async def run() -> int:
 
         guard = WakeGuard()
         factory = get_sessionmaker()
+        store, tmp_dir = _build_media_store()
+        await media_worker.prepare_start(factory, tmp_dir)
+        media_deps = media_worker.MediaDeps(
+            factory=factory,
+            store=store,
+            http=media_http,
+            tmp_dir=tmp_dir,
+            wake=media_wake,
+            pause=media_worker.PauseState(),
+            clock=_utc_now,
+        )
         supervisor = asyncio.create_task(
             run_supervisor(
                 Deps(
@@ -143,6 +172,9 @@ async def run() -> int:
             asyncio.create_task(_poll_account(wake), name="account-poll"),
             asyncio.create_task(watch_sleep(guard), name="sleep-watch"),
             asyncio.create_task(_beat_process(factory), name="process-heartbeat"),
+            # 下载任务不放进 waiters：它出错只记日志、自己重试，不会让进程退出（AC-22）。
+            asyncio.create_task(media_worker.run_download_loop(media_deps), name="media-worker"),
+            asyncio.create_task(media_worker.run_heartbeat_loop(media_deps), name="media-beat"),
         )
         stop_wait = asyncio.create_task(stop.wait(), name="stop-wait")
         lost_wait = asyncio.create_task(lost.wait(), name="lost-wait")
@@ -167,6 +199,7 @@ async def run() -> int:
             with contextlib.suppress(asyncio.CancelledError):
                 await asyncio.gather(*background, return_exceptions=True)
     finally:
+        await media_http.aclose()
         await engine.dispose()
         if not lock_conn.is_closed():
             await lock_conn.close()

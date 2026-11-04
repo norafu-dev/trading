@@ -903,6 +903,70 @@
         }
       }
     },
+    "/api/media/{media_id}": {
+      "get": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Get Media",
+        "operationId": "get_media_api_media__media_id__get",
+        "parameters": [
+          {
+            "name": "media_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Media Id"
+            }
+          },
+          {
+            "name": "variant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "original",
+                "thumb"
+              ],
+              "type": "string",
+              "default": "original",
+              "title": "Variant"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Download"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "本地模式：直接返回文件内容"
+          },
+          "302": {
+            "description": "跳到存储里这个文件的签名链接"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/system/status": {
       "get": {
         "tags": [
@@ -1964,6 +2028,125 @@
         ],
         "title": "MarkReadOut"
       },
+      "MediaOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "attachment",
+              "forwarded_attachment",
+              "embed_image",
+              "embed_thumbnail"
+            ],
+            "title": "Kind"
+          },
+          "attachment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachment Id"
+          },
+          "slot": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slot"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "stored",
+              "failed",
+              "too_large",
+              "no_space",
+              "gone"
+            ],
+            "title": "Status"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "has_thumb": {
+            "type": "boolean",
+            "title": "Has Thumb"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "attachment_id",
+          "slot",
+          "status",
+          "filename",
+          "content_type",
+          "size_bytes",
+          "width",
+          "height",
+          "has_thumb"
+        ],
+        "title": "MediaOut"
+      },
       "MessageOut": {
         "properties": {
           "id": {
@@ -2025,6 +2208,13 @@
             "type": "array",
             "title": "Attachments"
           },
+          "media": {
+            "items": {
+              "$ref": "#/components/schemas/MediaOut"
+            },
+            "type": "array",
+            "title": "Media"
+          },
           "edited_at": {
             "anyOf": [
               {
@@ -2070,6 +2260,7 @@
           "embeds",
           "forwarded",
           "attachments",
+          "media",
           "edited_at",
           "deleted_at",
           "reply"

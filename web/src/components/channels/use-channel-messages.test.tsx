@@ -38,6 +38,7 @@ const row = (id: string, content = "c"): MessagesPage["messages"][number] => ({
   author_id: "2",
   author_name: "a",
   author_avatar_hash: null,
+  media: [],
   created_at: "2026-11-02T00:00:00Z",
   content,
   embeds: [],

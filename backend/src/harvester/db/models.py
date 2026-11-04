@@ -39,6 +39,8 @@ from harvester.db.snapshots import (
     ForwardedData,
     GuildStatus,
     LoginOutcome,
+    MediaKind,
+    MediaStatus,
     MessageSource,
     UserKind,
 )
@@ -321,6 +323,9 @@ class CollectorHeartbeat(Base):
         Boolean, primary_key=True, server_default=text("true"), autoincrement=False
     )
     last_seen_at: Mapped[datetime]
+    # 下载任务每 30 秒写一次；暂停结束时间在没有暂停时为空（spec 0011）。
+    media_worker_seen_at: Mapped[datetime | None]
+    media_paused_until: Mapped[datetime | None]
 
     __table_args__ = (CheckConstraint("id", name="single"),)
 
@@ -365,3 +370,128 @@ class ChannelReadState(Base):
     # 已读位置：消息雪花 ID，比它新的消息算未读；只增不减。
     last_read_message_id: Mapped[int]
     updated_at: Mapped[datetime] = _now()
+
+
+# Feature 12 tables (spec 0011).
+class StoredFile(Base):
+    """存储里的一个真实文件，同一频道同一个月里按内容只存一份。"""
+
+    __tablename__ = "stored_file"
+
+    id: Mapped[int] = mapped_column(Identity(always=True), primary_key=True)
+    prefix: Mapped[str]
+    sha256: Mapped[bytes] = mapped_column(LargeBinary)
+    size_bytes: Mapped[int]
+    content_type: Mapped[str]
+    object_key: Mapped[str] = mapped_column(unique=True)
+    width: Mapped[int | None] = mapped_column(Integer)
+    height: Mapped[int | None] = mapped_column(Integer)
+    thumb_object_key: Mapped[str | None]
+    thumb_size_bytes: Mapped[int | None]
+    thumb_width: Mapped[int | None] = mapped_column(Integer)
+    thumb_height: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = _now()
+
+    __table_args__ = (
+        UniqueConstraint("prefix", "sha256", name="uq_stored_file_prefix_sha256"),
+        CheckConstraint("octet_length(sha256) = 32", name="sha256_length"),
+        CheckConstraint("size_bytes >= 0", name="size_not_negative"),
+        CheckConstraint(
+            "(thumb_object_key IS NULL AND thumb_size_bytes IS NULL"
+            " AND thumb_width IS NULL AND thumb_height IS NULL)"
+            " OR (thumb_object_key IS NOT NULL AND thumb_size_bytes IS NOT NULL"
+            " AND thumb_width IS NOT NULL AND thumb_height IS NOT NULL)",
+            name="thumb_all_or_none",
+        ),
+    )
+
+
+class Media(Base):
+    """每个要下载的附件或 embed 图一行。从不删除，只改状态。"""
+
+    __tablename__ = "media"
+
+    id: Mapped[int] = mapped_column(Identity(always=True), primary_key=True)
+    message_id: Mapped[int] = mapped_column(ForeignKey("message.id"))
+    kind: Mapped[MediaKind] = mapped_column(Text)
+    attachment_id: Mapped[int | None] = mapped_column(ForeignKey("attachment.id"))
+    slot: Mapped[int | None] = mapped_column(Integer)
+    discord_attachment_id: Mapped[int | None]
+    filename: Mapped[str]
+    declared_content_type: Mapped[str | None]
+    declared_size_bytes: Mapped[int | None]
+    declared_width: Mapped[int | None] = mapped_column(Integer)
+    declared_height: Mapped[int | None] = mapped_column(Integer)
+    source_url: Mapped[str]
+    status: Mapped[MediaStatus] = mapped_column(Text, server_default="pending")
+    attempts: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"))
+    next_attempt_at: Mapped[datetime] = _now()
+    claimed_at: Mapped[datetime | None]
+    needs_refresh: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    refreshed_at: Mapped[datetime | None]
+    aborted_at_bytes: Mapped[int | None]
+    last_error: Mapped[str | None]
+    file_id: Mapped[int | None] = mapped_column(ForeignKey("stored_file.id"))
+    created_at: Mapped[datetime] = _now()
+    stored_at: Mapped[datetime | None]
+
+    __table_args__ = (
+        CheckConstraint(_in("kind", get_args(MediaKind)), name="kind"),
+        CheckConstraint(_in("status", get_args(MediaStatus)), name="status"),
+        CheckConstraint(
+            "(kind = 'attachment' AND attachment_id IS NOT NULL AND slot IS NULL)"
+            " OR (kind <> 'attachment' AND attachment_id IS NULL AND slot IS NOT NULL"
+            " AND slot >= 0)",
+            name="kind_shape",
+        ),
+        CheckConstraint("(status = 'stored') = (file_id IS NOT NULL)", name="file_pair"),
+        UniqueConstraint("attachment_id", name="uq_media_attachment"),
+        Index(
+            "uq_media_message_slot",
+            "message_id",
+            "kind",
+            "slot",
+            unique=True,
+            postgresql_where=text("kind <> 'attachment'"),
+        ),
+        Index(
+            "ix_media_queue",
+            text("message_id DESC"),
+            postgresql_where=text(
+                "status = 'pending' AND claimed_at IS NULL AND NOT needs_refresh"
+            ),
+        ),
+        Index(
+            "ix_media_refresh",
+            text("message_id DESC"),
+            postgresql_where=text("status = 'pending' AND needs_refresh"),
+        ),
+        Index(
+            "ix_media_problem",
+            "status",
+            postgresql_where=text("status IN ('too_large', 'no_space', 'failed')"),
+        ),
+        Index("ix_media_message", "message_id"),
+        Index("ix_media_file", "file_id"),
+    )
+
+
+class MediaSettings(Base):
+    """单行：单个文件上限和总容量上限，字节。"""
+
+    __tablename__ = "media_settings"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, autoincrement=False)
+    max_file_bytes: Mapped[int] = mapped_column(server_default=text("52428800"))
+    quota_bytes: Mapped[int] = mapped_column(server_default=text("53687091200"))
+    updated_at: Mapped[datetime] = _now()
+
+    __table_args__ = (
+        CheckConstraint("id = 1", name="single_row"),
+        CheckConstraint(
+            "max_file_bytes BETWEEN 1048576 AND 1073741824", name="max_file_bytes_range"
+        ),
+        CheckConstraint(
+            "quota_bytes BETWEEN 1073741824 AND 10737418240000", name="quota_bytes_range"
+        ),
+    )

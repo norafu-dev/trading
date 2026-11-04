@@ -23,11 +23,19 @@ from harvester.db.models import (
     DiscordAccount,
     DiscordUser,
     Guild,
+    Media,
     Message,
     MessageRevision,
+    StoredFile,
 )
 from harvester.db.raw import MESSAGE_CHANGED_CHANNEL, NEW_MESSAGE_CHANNEL
-from harvester.db.snapshots import THREAD_CHANNEL_TYPES, EmbedData, ForwardedData
+from harvester.db.snapshots import (
+    THREAD_CHANNEL_TYPES,
+    EmbedData,
+    ForwardedData,
+    MediaKind,
+    MediaStatus,
+)
 
 BIGINT_MAX = 2**63 - 1
 REPLY_PREVIEW_LENGTH = 100
@@ -71,6 +79,23 @@ class AttachmentRow:
 
 
 @dataclass(frozen=True)
+class MediaRow:
+    """一个附件或 embed 图的保存状态；已保存的用实际文件的类型和尺寸（spec 0011）。"""
+
+    id: int
+    kind: MediaKind
+    attachment_id: int | None
+    slot: int | None
+    status: MediaStatus
+    filename: str
+    content_type: str | None
+    size_bytes: int | None
+    width: int | None
+    height: int | None
+    has_thumb: bool
+
+
+@dataclass(frozen=True)
 class ReplyMissing:
     id: int
 
@@ -95,6 +120,7 @@ class MessageRow:
     embeds: list[EmbedData]
     forwarded: ForwardedData | None
     attachments: tuple[AttachmentRow, ...]
+    media: tuple[MediaRow, ...]
     edited_at: datetime | None
     deleted_at: datetime | None
     reply: ReplyMissing | ReplyFound | None
@@ -233,6 +259,53 @@ async def _attachments_by_message(
     return grouped
 
 
+async def _media_by_message(
+    session: AsyncSession, message_ids: Sequence[int]
+) -> Mapping[int, tuple[MediaRow, ...]]:
+    """当前页的 media 一次查出（走 ix_media_message），不逐条查。"""
+    rows = await session.execute(
+        select(
+            Media.message_id,
+            Media.id,
+            Media.kind,
+            Media.attachment_id,
+            Media.slot,
+            Media.status,
+            Media.filename,
+            Media.declared_content_type,
+            Media.declared_size_bytes,
+            Media.declared_width,
+            Media.declared_height,
+            StoredFile.content_type.label("stored_content_type"),
+            StoredFile.size_bytes.label("stored_size_bytes"),
+            StoredFile.width.label("stored_width"),
+            StoredFile.height.label("stored_height"),
+            StoredFile.thumb_object_key,
+        )
+        .outerjoin(StoredFile, StoredFile.id == Media.file_id)
+        .where(Media.message_id.in_(message_ids))
+        .order_by(Media.kind, Media.attachment_id, Media.slot)
+    )
+    grouped: dict[int, tuple[MediaRow, ...]] = {}
+    for r in rows:
+        stored = r.status == "stored"
+        row = MediaRow(
+            id=r.id,
+            kind=r.kind,
+            attachment_id=r.attachment_id,
+            slot=r.slot,
+            status=r.status,
+            filename=r.filename,
+            content_type=r.stored_content_type if stored else r.declared_content_type,
+            size_bytes=r.stored_size_bytes if stored else r.declared_size_bytes,
+            width=(r.stored_width or r.declared_width) if stored else r.declared_width,
+            height=(r.stored_height or r.declared_height) if stored else r.declared_height,
+            has_thumb=r.thumb_object_key is not None,
+        )
+        grouped[r.message_id] = (*grouped.get(r.message_id, ()), row)
+    return grouped
+
+
 async def _last_replaced_at(
     session: AsyncSession, message_ids: Sequence[int]
 ) -> Mapping[int, datetime]:
@@ -313,6 +386,7 @@ async def get_message_page(
 
     ids = [r.id for r in ordered]
     attachments = await _attachments_by_message(session, ids)
+    media = await _media_by_message(session, ids)
     replaced = await _last_replaced_at(
         session, [r.id for r in ordered if r.version > 1 and r.edited_at is None]
     )
@@ -337,6 +411,7 @@ async def get_message_page(
             embeds=r.embeds or [],
             forwarded=r.forwarded,
             attachments=attachments.get(r.id, ()),
+            media=media.get(r.id, ()),
             edited_at=effective_edited_at(r.version, r.edited_at, replaced.get(r.id)),
             deleted_at=r.deleted_at,
             reply=reply_of(r.reply_to_id),
