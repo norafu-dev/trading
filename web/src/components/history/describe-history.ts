@@ -141,3 +141,42 @@ export function describeCreate(result: CreateJobsResult): string {
   const channels = new Set(result.jobs.map((j) => j.channel_id)).size;
   return `已为 ${channels} 个频道建了 ${result.jobs.length} 个任务`;
 }
+
+type PickerChannel = Readonly<{ name: string; collect_enabled: boolean }>;
+export type PickerGuild<C extends PickerChannel> = Readonly<{
+  id: string;
+  name: string;
+  channels: readonly C[];
+}>;
+
+/** 搜索服务器名或频道名，不分大小写；空搜索原样返回。没有匹配频道的服务器去掉。 */
+export function filterGuilds<C extends PickerChannel>(
+  guilds: readonly PickerGuild<C>[],
+  query: string,
+): readonly PickerGuild<C>[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return guilds;
+  return guilds
+    .map((g) => ({
+      ...g,
+      channels: g.name.toLowerCase().includes(needle)
+        ? g.channels
+        : g.channels.filter((c) => c.name.toLowerCase().includes(needle)),
+    }))
+    .filter((g) => g.channels.length > 0);
+}
+
+/** 拆成「正在采集」和「其他频道」两组，各自仍按服务器分组。 */
+export function splitByCollect<C extends PickerChannel>(
+  guilds: readonly PickerGuild<C>[],
+): Readonly<{ collecting: readonly PickerGuild<C>[]; others: readonly PickerGuild<C>[] }> {
+  const pick = (enabled: boolean) =>
+    guilds
+      .map((g) => ({ ...g, channels: g.channels.filter((c) => c.collect_enabled === enabled) }))
+      .filter((g) => g.channels.length > 0);
+  return { collecting: pick(true), others: pick(false) };
+}
+
+export function countChannels(guilds: readonly PickerGuild<PickerChannel>[]): number {
+  return guilds.reduce((sum, g) => sum + g.channels.length, 0);
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { CheckCircle2Icon, InfoIcon, SearchIcon } from "lucide-react";
+import { CheckCircle2Icon, ChevronRightIcon, InfoIcon, SearchIcon } from "lucide-react";
 import { type FormEvent, useId, useState } from "react";
 
 import { ErrorBlock } from "@/components/states/error-block";
@@ -22,13 +22,16 @@ import { toUiError } from "@/lib/api/errors";
 import {
   type CreateJobsResult,
   checkRange,
+  countChannels,
   describeCreate,
+  filterGuilds,
   MAX_CHANNELS,
   PRESET_LABELS,
   presetInputs,
   type RangeInputs,
   type RangePreset,
   SKIP_LABELS,
+  splitByCollect,
 } from "./describe-history";
 import { type SelectableGuild, useCreateHistoryJobs, useSelectableChannels } from "./use-history";
 
@@ -40,21 +43,71 @@ type ChannelPickerProps = Readonly<{
   onToggle: (channelId: string) => void;
 }>;
 
+function ChannelRows({
+  guilds,
+  selected,
+  onToggle,
+}: Readonly<{
+  guilds: readonly SelectableGuild[];
+  selected: ReadonlySet<string>;
+  onToggle: (channelId: string) => void;
+}>) {
+  const full = selected.size >= MAX_CHANNELS;
+  return guilds.map((guild) => (
+    <div key={guild.id} className="flex flex-col pb-1">
+      <p className="px-3 pt-2 pb-1 text-xs font-medium text-muted-foreground">{guild.name}</p>
+      {guild.channels.map((channel) => {
+        const checked = selected.has(channel.id);
+        return (
+          <label
+            key={channel.id}
+            className={cn(
+              "flex cursor-pointer items-center gap-3 px-3 py-1.5 text-sm hover:bg-accent",
+              !checked && full && "cursor-not-allowed opacity-50",
+            )}
+          >
+            <input
+              type="checkbox"
+              className="size-4 shrink-0 accent-primary"
+              checked={checked}
+              disabled={!checked && full}
+              onChange={() => onToggle(channel.id)}
+            />
+            <span className="truncate">
+              <span aria-hidden className="text-muted-foreground">
+                #{" "}
+              </span>
+              {channel.name}
+            </span>
+          </label>
+        );
+      })}
+    </div>
+  ));
+}
+
+function SectionTitle({ children }: Readonly<{ children: React.ReactNode }>) {
+  return (
+    <p className="sticky top-0 z-10 border-b border-border bg-popover px-3 py-2 text-sm font-semibold">
+      {children}
+    </p>
+  );
+}
+
+// 开了实时采集的频道放前面；其他能读的频道默认收起，搜索时两组一起搜。
 function ChannelPicker({ groups, selected, onToggle }: ChannelPickerProps) {
   const [query, setQuery] = useState("");
-  const searchId = useId();
-  const needle = query.trim().toLowerCase();
-  const visible = groups
-    .map((g) => ({
-      ...g,
-      channels: needle
-        ? g.channels.filter(
-            (c) => c.name.toLowerCase().includes(needle) || g.name.toLowerCase().includes(needle),
-          )
-        : g.channels,
-    }))
-    .filter((g) => g.channels.length > 0);
-  const full = selected.size >= MAX_CHANNELS;
+  const { collecting, others } = splitByCollect(groups);
+  // 没有正在采集的频道，或者预选的频道在「其他频道」里时，一开始就展开。
+  const [othersOpen, setOthersOpen] = useState(
+    () => collecting.length === 0 || others.some((g) => g.channels.some((c) => selected.has(c.id))),
+  );
+  const searching = query.trim() !== "";
+  const shownCollecting = filterGuilds(collecting, query);
+  const shownOthers = filterGuilds(others, query);
+  const othersCount = countChannels(shownOthers);
+  const othersVisible = searching || othersOpen;
+  const nothing = shownCollecting.length === 0 && shownOthers.length === 0;
 
   return (
     <fieldset className="flex min-w-0 flex-col gap-2">
@@ -71,7 +124,6 @@ function ChannelPicker({ groups, selected, onToggle }: ChannelPickerProps) {
           className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
         />
         <Input
-          id={searchId}
           aria-label="搜索频道"
           placeholder="搜索服务器或频道"
           value={query}
@@ -79,49 +131,43 @@ function ChannelPicker({ groups, selected, onToggle }: ChannelPickerProps) {
           className="pl-9"
         />
       </div>
-      <div className="max-h-64 overflow-y-auto rounded-md border border-border">
-        {visible.length === 0 ? (
+      <div className="max-h-72 overflow-y-auto rounded-md border border-border">
+        {nothing ? (
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">没有匹配的频道</p>
-        ) : (
-          visible.map((guild) => (
-            <div key={guild.id} className="flex flex-col py-1">
-              <p className="px-3 pt-2 pb-1 text-xs font-medium text-muted-foreground">
-                {guild.name}
-              </p>
-              {guild.channels.map((channel) => {
-                const checked = selected.has(channel.id);
-                return (
-                  <label
-                    key={channel.id}
-                    className={cn(
-                      "flex cursor-pointer items-center gap-3 px-3 py-1.5 text-sm hover:bg-accent",
-                      !checked && full && "cursor-not-allowed opacity-50",
-                    )}
-                  >
-                    <input
-                      type="checkbox"
-                      className="size-4 accent-primary"
-                      checked={checked}
-                      disabled={!checked && full}
-                      onChange={() => onToggle(channel.id)}
-                    />
-                    <span className="truncate">
-                      <span aria-hidden className="text-muted-foreground">
-                        #{" "}
-                      </span>
-                      {channel.name}
-                    </span>
-                    {channel.collect_enabled ? null : (
-                      <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                        未开实时采集
-                      </span>
-                    )}
-                  </label>
-                );
-              })}
-            </div>
-          ))
-        )}
+        ) : null}
+        {shownCollecting.length > 0 ? (
+          <section aria-label="正在采集">
+            <SectionTitle>正在采集</SectionTitle>
+            <ChannelRows guilds={shownCollecting} selected={selected} onToggle={onToggle} />
+          </section>
+        ) : null}
+        {shownOthers.length > 0 ? (
+          <section aria-label="其他频道">
+            {searching ? (
+              <SectionTitle>其他频道（{othersCount}）</SectionTitle>
+            ) : (
+              <button
+                type="button"
+                aria-expanded={othersOpen}
+                onClick={() => setOthersOpen((open) => !open)}
+                className="sticky top-0 z-10 flex w-full items-center gap-2 border-b border-border bg-popover px-3 py-2 text-left text-sm font-semibold hover:bg-accent"
+              >
+                <ChevronRightIcon
+                  aria-hidden
+                  strokeWidth={1.75}
+                  className={cn("size-4 transition-transform", othersOpen && "rotate-90")}
+                />
+                其他频道（{othersCount}）
+                <span className="ml-auto text-xs font-normal text-muted-foreground">
+                  小号能读，没开实时采集
+                </span>
+              </button>
+            )}
+            {othersVisible ? (
+              <ChannelRows guilds={shownOthers} selected={selected} onToggle={onToggle} />
+            ) : null}
+          </section>
+        ) : null}
       </div>
     </fieldset>
   );
@@ -281,7 +327,9 @@ function NewJobForm({
   if (create.data) {
     return (
       <>
-        <ResultView result={create.data} names={names} />
+        <div className="-mx-4 min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+          <ResultView result={create.data} names={names} />
+        </div>
         <DialogFooter>
           <Button onClick={onDone}>完成</Button>
         </DialogFooter>
@@ -292,38 +340,42 @@ function NewJobForm({
   const submitError = create.error ? toUiError(create.error) : null;
 
   return (
-    <form onSubmit={submit} className="flex min-w-0 flex-col gap-5" noValidate>
-      {channels.isPending ? (
-        <div className="grid h-40 place-items-center">
-          <Spinner />
-        </div>
-      ) : channels.isError ? (
-        <ErrorBlock error={toUiError(channels.error)} className="h-40" />
-      ) : channels.groups.length === 0 ? (
-        <p className="rounded-md border border-border px-3 py-6 text-center text-sm text-muted-foreground">
-          还没有小号能读的频道。先在「频道管理」里同步服务器和频道。
-        </p>
-      ) : (
-        <ChannelPicker groups={channels.groups} selected={selected} onToggle={toggle} />
-      )}
-      <RangeFields inputs={inputs} onChange={setInputs} />
-      <div className="flex items-start gap-3">
-        <input
-          id={refetchId}
-          type="checkbox"
-          className="mt-0.5 size-4 accent-primary"
-          checked={refetch}
-          onChange={(event) => setRefetch(event.target.checked)}
-        />
-        <div className="flex flex-col gap-0.5">
-          <Label htmlFor={refetchId}>整段重抓</Label>
-          <p className="text-xs text-muted-foreground">
-            不跳过已经采齐的时间，并把这段时间里 Discord 上已经删掉的消息标为已删除。请求会多很多。
+    <form onSubmit={submit} className="flex min-h-0 min-w-0 flex-1 flex-col" noValidate>
+      {/* 中间这块自己滚动，底部按钮一直看得见。 */}
+      <div className="-mx-4 flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pb-4">
+        {channels.isPending ? (
+          <div className="grid h-40 place-items-center">
+            <Spinner />
+          </div>
+        ) : channels.isError ? (
+          <ErrorBlock error={toUiError(channels.error)} className="h-40" />
+        ) : channels.groups.length === 0 ? (
+          <p className="rounded-md border border-border px-3 py-6 text-center text-sm text-muted-foreground">
+            还没有小号能读的频道。先在「频道管理」里同步服务器和频道。
           </p>
+        ) : (
+          <ChannelPicker groups={channels.groups} selected={selected} onToggle={toggle} />
+        )}
+        <RangeFields inputs={inputs} onChange={setInputs} />
+        <div className="flex items-start gap-3">
+          <input
+            id={refetchId}
+            type="checkbox"
+            className="mt-0.5 size-4 accent-primary"
+            checked={refetch}
+            onChange={(event) => setRefetch(event.target.checked)}
+          />
+          <div className="flex flex-col gap-0.5">
+            <Label htmlFor={refetchId}>整段重抓</Label>
+            <p className="text-xs text-muted-foreground">
+              不跳过已经采齐的时间，并把这段时间里 Discord
+              上已经删掉的消息标为已删除。请求会多很多。
+            </p>
+          </div>
         </div>
       </div>
       {formError || submitError ? (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="-mx-4 border-t border-border px-4 py-3 text-sm text-destructive">
           {formError ?? `${submitError?.title}：${submitError?.detail}`}
         </p>
       ) : null}
@@ -344,7 +396,7 @@ function NewJobForm({
 export function NewJobDialog({ open, onOpenChange, initialChannelIds = [] }: NewJobDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl">
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-xl">
         <DialogHeader>
           <DialogTitle className="text-xl font-semibold">新建历史采集任务</DialogTitle>
           <DialogDescription>

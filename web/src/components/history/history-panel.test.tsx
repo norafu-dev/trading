@@ -113,12 +113,12 @@ const CHANNELS = {
   ],
 };
 
-function serve(page: HistoryJobPage) {
+function serve(page: HistoryJobPage, channels: typeof CHANNELS = CHANNELS) {
   get.mockImplementation((path: string) => {
     if (path === "/api/history/jobs") return Promise.resolve({ data: page, ...jsonResponse(200) });
     if (path === "/api/discord/guilds")
       return Promise.resolve({ data: GUILDS, ...jsonResponse(200) });
-    return Promise.resolve({ data: CHANNELS, ...jsonResponse(200) });
+    return Promise.resolve({ data: channels, ...jsonResponse(200) });
   });
 }
 
@@ -173,6 +173,7 @@ describe("HistoryPanel", () => {
     await within(dialog).findByText("alerts");
     expect(within(dialog).queryByText("secret")).not.toBeInTheDocument();
     await user.click(within(dialog).getByRole("checkbox", { name: /alerts/ }));
+    await user.click(within(dialog).getByRole("button", { name: /其他频道（1）/ }));
     await user.click(within(dialog).getByRole("checkbox", { name: /quiet/ }));
     await user.click(within(dialog).getByRole("button", { name: "全部历史" }));
     await user.click(within(dialog).getByRole("button", { name: "建任务" }));
@@ -198,5 +199,47 @@ describe("HistoryPanel", () => {
 
     expect(within(dialog).getByRole("alert")).toHaveTextContent("至少选一个频道");
     expect(post).not.toHaveBeenCalled();
+  });
+
+  // covers: spec 0012 AC-1
+  it("开了实时采集的频道在前，其他频道默认收起，搜索时一起搜", async () => {
+    serve({ jobs: [], batches: [], next_before_id: null });
+    const user = userEvent.setup();
+    renderWithQuery(<HistoryPanel />);
+
+    await user.click(
+      (await screen.findAllByRole("button", { name: "新建任务" }))[0] as HTMLElement,
+    );
+    const dialog = await screen.findByRole("dialog");
+    const collecting = await within(dialog).findByRole("region", { name: "正在采集" });
+    expect(within(collecting).getByText("alerts")).toBeInTheDocument();
+    const toggle = within(dialog).getByRole("button", { name: /其他频道（1）/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(within(dialog).queryByText("quiet")).not.toBeInTheDocument();
+
+    await user.type(within(dialog).getByRole("textbox", { name: "搜索频道" }), "qui");
+
+    const others = within(dialog).getByRole("region", { name: "其他频道" });
+    expect(within(others).getByText("quiet")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("region", { name: "正在采集" })).not.toBeInTheDocument();
+  });
+
+  it("没有开实时采集的频道时，其他频道一开始就展开", async () => {
+    serve(
+      { jobs: [], batches: [], next_before_id: null },
+      { channels: CHANNELS.channels.map((c) => ({ ...c, collect_enabled: false })) },
+    );
+    const user = userEvent.setup();
+    renderWithQuery(<HistoryPanel />);
+
+    await user.click(
+      (await screen.findAllByRole("button", { name: "新建任务" }))[0] as HTMLElement,
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByRole("button", { name: /其他频道（2）/ })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(within(dialog).getByText("quiet")).toBeInTheDocument();
   });
 });

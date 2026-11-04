@@ -3,12 +3,15 @@ import { describe, expect, it } from "vitest";
 import {
   batchStatusSummary,
   checkRange,
+  countChannels,
   describeCreate,
+  filterGuilds,
   groupByBatch,
   type HistoryJob,
   localInputToIso,
   percent,
   presetInputs,
+  splitByCollect,
   toLocalInput,
 } from "./describe-history";
 
@@ -118,5 +121,37 @@ describe("列表辅助", () => {
     expect(describeCreate({ batch_id: "b1", jobs: [JOB, { ...JOB, id: "2" }], skipped: [] })).toBe(
       "已为 1 个频道建了 2 个任务",
     );
+  });
+});
+
+describe("频道选择", () => {
+  const guilds = [
+    {
+      id: "100",
+      name: "Signals",
+      channels: [
+        { id: "1", name: "alerts", collect_enabled: true },
+        { id: "2", name: "news", collect_enabled: false },
+      ],
+    },
+    { id: "110", name: "Other", channels: [{ id: "3", name: "General", collect_enabled: false }] },
+  ];
+
+  // covers: spec 0012 AC-1
+  it("按是否开了实时采集拆成两组，仍按服务器分组", () => {
+    const { collecting, others } = splitByCollect(guilds);
+    expect(collecting.map((g) => [g.id, g.channels.map((c) => c.id)])).toEqual([["100", ["1"]]]);
+    expect(others.map((g) => [g.id, g.channels.map((c) => c.id)])).toEqual([
+      ["100", ["2"]],
+      ["110", ["3"]],
+    ]);
+    expect(countChannels(others)).toBe(2);
+  });
+
+  it("搜索频道名或服务器名，不分大小写", () => {
+    expect(filterGuilds(guilds, "general").map((g) => g.id)).toEqual(["110"]);
+    expect(filterGuilds(guilds, "SIGNALS")[0]?.channels).toHaveLength(2);
+    expect(filterGuilds(guilds, "  ")).toBe(guilds);
+    expect(filterGuilds(guilds, "zzz")).toEqual([]);
   });
 });
