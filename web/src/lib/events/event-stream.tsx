@@ -11,6 +11,10 @@ export const GUILD_CHANNELS_KEY = ["discord-guild-channels"] as const;
 export const COLLECTED_KEY = ["discord-collected"] as const;
 export const CHANNEL_DETAIL_KEY = ["discord-channel-detail"] as const;
 export const UNREAD_KEY = ["discord-unread"] as const;
+export const HISTORY_KEY = ["history"] as const;
+
+// 历史任务变化很频繁（每抓一页一次），合并成 1 秒一次重新取数（spec 0012 AC-14）。
+const HISTORY_COALESCE_MS = 1_000;
 
 // 消息事件只是「该取数了」的提醒，内容都从消息接口取（spec 0008）。ID 是字符串。
 export type MessageStreamEvent =
@@ -63,12 +67,21 @@ export function EventStreamProvider({ children }: Readonly<{ children: ReactNode
     const emit = (event: MessageStreamEvent) => {
       for (const listener of listeners.current) listener(event);
     };
+    let historyTimer: ReturnType<typeof setTimeout> | null = null;
+    const refreshHistory = () => {
+      if (historyTimer !== null) return;
+      historyTimer = setTimeout(() => {
+        historyTimer = null;
+        void queryClient.invalidateQueries({ queryKey: HISTORY_KEY });
+      }, HISTORY_COALESCE_MS);
+    };
     let opened = false;
     const source = new EventSource("/api/events");
     source.onopen = () => {
       setState((current) => ({ ...current, connected: true }));
       refreshAccount();
       refreshChannels();
+      refreshHistory();
       // 第一次连上时页面正在取数，只有之后的重连才可能漏了消息。
       if (opened) emit({ type: "reconnected" });
       opened = true;
@@ -84,10 +97,14 @@ export function EventStreamProvider({ children }: Readonly<{ children: ReactNode
     });
     source.addEventListener("account_status", refreshAccount);
     source.addEventListener("channels_changed", refreshChannels);
+    source.addEventListener("history_changed", refreshHistory);
     for (const name of ["new_message", "message_changed"]) {
       source.addEventListener(name, (event) => emit(JSON.parse(event.data) as MessageStreamEvent));
     }
-    return () => source.close();
+    return () => {
+      source.close();
+      if (historyTimer !== null) clearTimeout(historyTimer);
+    };
   }, [queryClient]);
 
   return (

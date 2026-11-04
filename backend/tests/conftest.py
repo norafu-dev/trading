@@ -79,8 +79,9 @@ async def engine(migrated_db: URL) -> AsyncIterator[AsyncEngine]:
     tables = ", ".join(t.name for t in Base.metadata.sorted_tables)
     async with engine.begin() as conn:
         await conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
-        # 迁移插入的单行默认设置，清表后要放回去（spec 0011）。
+        # 迁移插入的单行默认设置，清表后要放回去（spec 0011、0012）。
         await conn.execute(text("INSERT INTO media_settings (id) VALUES (1)"))
+        await conn.execute(text("INSERT INTO history_settings (id) VALUES (1)"))
     await engine.dispose()
 
 

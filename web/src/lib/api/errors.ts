@@ -75,6 +75,8 @@ const REJECTED_BY_CODE: Readonly<Record<string, Pick<UiError, "title" | "detail"
   category_not_found: { title: "分类不存在", detail: "刷新页面看看最新的频道列表。" },
   not_a_category: { title: "不是分类", detail: "刷新页面看看最新的频道列表。" },
   bad_origin: { title: "请求被拒绝", detail: "请求来源不被允许，请从 dashboard 的网址打开。" },
+  invalid_range: { title: "时间段不正确", detail: "开始时间要早于结束时间。" },
+  too_many_channels: { title: "频道太多了", detail: "每次最多选 50 个频道，分几次建任务。" },
 };
 
 function fromCode(error: ApiResponseError): UiError | null {

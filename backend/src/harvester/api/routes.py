@@ -17,6 +17,7 @@ from harvester.api.deps import (
     session_still_valid,
 )
 from harvester.api.discord_routes import discord_router
+from harvester.api.history_routes import history_router
 from harvester.api.media_routes import media_router
 from harvester.api.message_routes import message_router
 from harvester.api.notifications import Broadcaster
@@ -34,6 +35,7 @@ router.include_router(discord_router)
 router.include_router(channel_router)
 router.include_router(message_router)
 router.include_router(media_router)
+router.include_router(history_router)
 router.include_router(system_router)
 
 

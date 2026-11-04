@@ -26,6 +26,10 @@ CHANNELS_CHANGED_CHANNEL = "channels_changed"
 # 有新的 media 行要下载、或行被重新排队时通知 collector 的下载任务；载荷为空（spec 0011）。
 MEDIA_QUEUE_CHANNEL = "media_queue"
 
+# 历史任务的状态、进度、设置或总开关变了；载荷是 {"job_id": "1", "channel_id": "2"} 或 {}
+# （spec 0012）。collector 据此及时响应暂停和新任务，页面据此重新取任务列表。
+HISTORY_CHANGED_CHANNEL = "history_changed"
+
 # 全局一把锁，和账号无关；做多账号时再按账号区分（spec 0005）。
 COLLECTOR_LOCK_KEY = 0x6861_7276  # "harv"
 

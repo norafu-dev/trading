@@ -1,7 +1,7 @@
 # 0012. 按时间段采集历史消息
 
 **Date**: 2026-11-04
-**Status**: Proposed
+**Status**: In Progress
 
 ## Summary
 

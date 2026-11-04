@@ -485,6 +485,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/history/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List History Jobs */
+        get: operations["list_history_jobs_api_history_jobs_get"];
+        put?: never;
+        /**
+         * Create History Jobs
+         * @description 建任务：去重、按频道创建时间截断起点、扣掉已覆盖和已排队的时间（AC-1、AC-2）。
+         */
+        post: operations["create_history_jobs_api_history_jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/system/status": {
         parameters: {
             query?: never;
@@ -679,6 +700,29 @@ export interface components {
             /** Has Account */
             has_account: boolean;
         };
+        /** CreateJobsIn */
+        CreateJobsIn: {
+            /** Channel Ids */
+            channel_ids: string[];
+            /** Range Start */
+            range_start?: string | null;
+            /** Range End */
+            range_end?: string | null;
+            /**
+             * Refetch
+             * @default false
+             */
+            refetch: boolean;
+        };
+        /** CreateJobsOut */
+        CreateJobsOut: {
+            /** Batch Id */
+            batch_id: string | null;
+            /** Jobs */
+            jobs: components["schemas"]["HistoryJobOut"][];
+            /** Skipped */
+            skipped: components["schemas"]["SkippedChannelOut"][];
+        };
         /** DiscordAccountOut */
         DiscordAccountOut: {
             /** Id */
@@ -819,6 +863,100 @@ export interface components {
             database: "ok" | "unreachable";
             /** Database Time */
             database_time?: string | null;
+        };
+        /** HistoryBatchOut */
+        HistoryBatchOut: {
+            /** Batch Id */
+            batch_id: string;
+            /** Channel Count */
+            channel_count: number;
+            /** Fetched Count */
+            fetched_count: number;
+            status_counts: components["schemas"]["HistoryStatusCountsOut"];
+        };
+        /** HistoryJobOut */
+        HistoryJobOut: {
+            /** Id */
+            id: string;
+            /** Batch Id */
+            batch_id: string;
+            /** Channel Id */
+            channel_id: string;
+            /** Guild Name */
+            guild_name: string;
+            /** Channel Name */
+            channel_name: string;
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "manual" | "gap_manual" | "gap_auto";
+            /** Refetch */
+            refetch: boolean;
+            /**
+             * Range Start
+             * Format: date-time
+             */
+            range_start: string;
+            /**
+             * Range End
+             * Format: date-time
+             */
+            range_end: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "running" | "paused" | "done" | "failed" | "cancelled";
+            /** Fetched Count */
+            fetched_count: number;
+            /** Pages Fetched */
+            pages_fetched: number;
+            /** Cursor At */
+            cursor_at: string | null;
+            /** Progress */
+            progress: number;
+            /** Wait Reason */
+            wait_reason: ("rate_limited" | "retrying") | null;
+            /** Wait Until */
+            wait_until: string | null;
+            /** Not Before */
+            not_before: string | null;
+            /** Error */
+            error: ("no_access" | "channel_deleted" | "suspect_empty" | "unexpected") | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Started At */
+            started_at: string | null;
+            /** Finished At */
+            finished_at: string | null;
+        };
+        /** HistoryJobPageOut */
+        HistoryJobPageOut: {
+            /** Jobs */
+            jobs: components["schemas"]["HistoryJobOut"][];
+            /** Batches */
+            batches: components["schemas"]["HistoryBatchOut"][];
+            /** Next Before Id */
+            next_before_id: string | null;
+        };
+        /** HistoryStatusCountsOut */
+        HistoryStatusCountsOut: {
+            /** Pending */
+            pending: number;
+            /** Running */
+            running: number;
+            /** Paused */
+            paused: number;
+            /** Done */
+            done: number;
+            /** Failed */
+            failed: number;
+            /** Cancelled */
+            cancelled: number;
         };
         /** LabelUpdate */
         LabelUpdate: {
@@ -1030,6 +1168,16 @@ export interface components {
             password: string;
             /** Totp Code */
             totp_code: string;
+        };
+        /** SkippedChannelOut */
+        SkippedChannelOut: {
+            /** Channel Id */
+            channel_id: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "not_found" | "channel_deleted" | "not_collectable" | "no_access" | "nothing_to_fetch";
         };
         /** SystemStatusOut */
         SystemStatusOut: {
@@ -1892,6 +2040,73 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_history_jobs_api_history_jobs_get: {
+        parameters: {
+            query?: {
+                view?: "active" | "finished";
+                since_days?: number;
+                before_id?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryJobPageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_history_jobs_api_history_jobs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateJobsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateJobsOut"];
+                };
             };
             /** @description Validation Error */
             422: {

@@ -1092,6 +1092,134 @@
         }
       }
     },
+    "/api/history/jobs": {
+      "get": {
+        "tags": [
+          "history"
+        ],
+        "summary": "List History Jobs",
+        "operationId": "list_history_jobs_api_history_jobs_get",
+        "parameters": [
+          {
+            "name": "view",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "active",
+                "finished"
+              ],
+              "type": "string",
+              "default": "active",
+              "title": "View"
+            }
+          },
+          {
+            "name": "since_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 30,
+              "minimum": 1,
+              "default": 7,
+              "title": "Since Days"
+            }
+          },
+          {
+            "name": "before_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]{1,19}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryJobPageOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "history"
+        ],
+        "summary": "Create History Jobs",
+        "description": "建任务：去重、按频道创建时间截断起点、扣掉已覆盖和已排队的时间（AC-1、AC-2）。",
+        "operationId": "create_history_jobs_api_history_jobs_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateJobsIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateJobsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/system/status": {
       "get": {
         "tags": [
@@ -1619,6 +1747,89 @@
         ],
         "title": "CollectorStatusOut"
       },
+      "CreateJobsIn": {
+        "properties": {
+          "channel_ids": {
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Channel Ids"
+          },
+          "range_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Range Start"
+          },
+          "range_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Range End"
+          },
+          "refetch": {
+            "type": "boolean",
+            "title": "Refetch",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "channel_ids"
+        ],
+        "title": "CreateJobsIn"
+      },
+      "CreateJobsOut": {
+        "properties": {
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryJobOut"
+            },
+            "type": "array",
+            "title": "Jobs"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/SkippedChannelOut"
+            },
+            "type": "array",
+            "title": "Skipped"
+          }
+        },
+        "type": "object",
+        "required": [
+          "batch_id",
+          "jobs",
+          "skipped"
+        ],
+        "title": "CreateJobsOut"
+      },
       "DiscordAccountOut": {
         "properties": {
           "id": {
@@ -2025,6 +2236,300 @@
           "database"
         ],
         "title": "Health"
+      },
+      "HistoryBatchOut": {
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "title": "Batch Id"
+          },
+          "channel_count": {
+            "type": "integer",
+            "title": "Channel Count"
+          },
+          "fetched_count": {
+            "type": "integer",
+            "title": "Fetched Count"
+          },
+          "status_counts": {
+            "$ref": "#/components/schemas/HistoryStatusCountsOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "batch_id",
+          "channel_count",
+          "fetched_count",
+          "status_counts"
+        ],
+        "title": "HistoryBatchOut"
+      },
+      "HistoryJobOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "batch_id": {
+            "type": "string",
+            "title": "Batch Id"
+          },
+          "channel_id": {
+            "type": "string",
+            "title": "Channel Id"
+          },
+          "guild_name": {
+            "type": "string",
+            "title": "Guild Name"
+          },
+          "channel_name": {
+            "type": "string",
+            "title": "Channel Name"
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "gap_manual",
+              "gap_auto"
+            ],
+            "title": "Origin"
+          },
+          "refetch": {
+            "type": "boolean",
+            "title": "Refetch"
+          },
+          "range_start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Range Start"
+          },
+          "range_end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Range End"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "paused",
+              "done",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "fetched_count": {
+            "type": "integer",
+            "title": "Fetched Count"
+          },
+          "pages_fetched": {
+            "type": "integer",
+            "title": "Pages Fetched"
+          },
+          "cursor_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor At"
+          },
+          "progress": {
+            "type": "number",
+            "title": "Progress"
+          },
+          "wait_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "rate_limited",
+                  "retrying"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wait Reason"
+          },
+          "wait_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wait Until"
+          },
+          "not_before": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Not Before"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "no_access",
+                  "channel_deleted",
+                  "suspect_empty",
+                  "unexpected"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "batch_id",
+          "channel_id",
+          "guild_name",
+          "channel_name",
+          "origin",
+          "refetch",
+          "range_start",
+          "range_end",
+          "status",
+          "fetched_count",
+          "pages_fetched",
+          "cursor_at",
+          "progress",
+          "wait_reason",
+          "wait_until",
+          "not_before",
+          "error",
+          "created_at",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "HistoryJobOut"
+      },
+      "HistoryJobPageOut": {
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryJobOut"
+            },
+            "type": "array",
+            "title": "Jobs"
+          },
+          "batches": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryBatchOut"
+            },
+            "type": "array",
+            "title": "Batches"
+          },
+          "next_before_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Before Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "jobs",
+          "batches",
+          "next_before_id"
+        ],
+        "title": "HistoryJobPageOut"
+      },
+      "HistoryStatusCountsOut": {
+        "properties": {
+          "pending": {
+            "type": "integer",
+            "title": "Pending"
+          },
+          "running": {
+            "type": "integer",
+            "title": "Running"
+          },
+          "paused": {
+            "type": "integer",
+            "title": "Paused"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "cancelled": {
+            "type": "integer",
+            "title": "Cancelled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pending",
+          "running",
+          "paused",
+          "done",
+          "failed",
+          "cancelled"
+        ],
+        "title": "HistoryStatusCountsOut"
       },
       "LabelUpdate": {
         "properties": {
@@ -2708,6 +3213,31 @@
           "totp_code"
         ],
         "title": "SetupCompleteBody"
+      },
+      "SkippedChannelOut": {
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "title": "Channel Id"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "not_found",
+              "channel_deleted",
+              "not_collectable",
+              "no_access",
+              "nothing_to_fetch"
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channel_id",
+          "reason"
+        ],
+        "title": "SkippedChannelOut"
       },
       "SystemStatusOut": {
         "properties": {

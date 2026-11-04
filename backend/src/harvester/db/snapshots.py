@@ -42,6 +42,14 @@ BackupError = Literal["dump", "encrypt", "upload", "interrupted"]
 # 附件保存（spec 0011）：每个要下载的东西一行 media。
 MediaKind = Literal["attachment", "forwarded_attachment", "embed_image", "embed_thumbnail"]
 MediaStatus = Literal["pending", "stored", "failed", "too_large", "no_space", "gone"]
+# 历史采集（spec 0012）：任务状态、来源、失败原因、单个任务的等待原因。
+HistoryJobStatus = Literal["pending", "running", "paused", "done", "failed", "cancelled"]
+HistoryOrigin = Literal["manual", "gap_manual", "gap_auto"]
+HistoryError = Literal["no_access", "channel_deleted", "suspect_empty", "unexpected"]
+HistoryWaitReason = Literal["rate_limited", "retrying"]
+# 总开关的暂停原因；历史采集整体在休息或等限额时的原因（写在 collector_heartbeat 上）。
+HistoryPausedReason = Literal["manual", "rate_limited", "account_risk"]
+HistoryWaitingReason = Literal["rest", "quota"]
 
 # Text (0), announcement (5), announcement thread (10), public thread (11), private thread (12).
 # Must match the `ck_channel_collectable_type` constraint; a test keeps the two in sync.

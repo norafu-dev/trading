@@ -12,7 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from harvester.collector import media_worker
+from harvester.collector import history_worker, media_worker
 from harvester.collector.discord_client import new_client
 from harvester.collector.supervisor import Deps, GatewayHandle, run_supervisor
 from harvester.collector.wake_guard import WakeGuard, watch_sleep
@@ -136,6 +136,7 @@ async def run() -> int:
     wake = asyncio.Event()
     channels_wake = asyncio.Event()
     media_wake = asyncio.Event()
+    history_wake = asyncio.Event()
 
     # 复用锁连接：断开即退出。先 LISTEN 再第一次读账号，不会漏通知。
     def on_account_changed(_conn: object, _pid: int, _channel: str, _payload: object) -> None:
@@ -148,9 +149,13 @@ async def run() -> int:
     def on_media_queue(_conn: object, _pid: int, _channel: str, _payload: object) -> None:
         media_wake.set()
 
+    def on_history_changed(_conn: object, _pid: int, _channel: str, _payload: object) -> None:
+        history_wake.set()
+
     await lock_conn.add_listener(raw.ACCOUNT_CHANGED_CHANNEL, on_account_changed)
     await lock_conn.add_listener(raw.CHANNEL_COLLECT_CHANGED_CHANNEL, on_collect_changed)
     await lock_conn.add_listener(raw.MEDIA_QUEUE_CHANNEL, on_media_queue)
+    await lock_conn.add_listener(raw.HISTORY_CHANGED_CHANNEL, on_history_changed)
 
     engine = get_engine()
     media_http = media_worker.new_http_client()
@@ -173,6 +178,13 @@ async def run() -> int:
             pause=media_worker.PauseState(),
             clock=_utc_now,
             gateway=gateway,
+        )
+        history_deps = history_worker.HistoryDeps(
+            factory=factory,
+            gateway=gateway,
+            wake=history_wake,
+            clock=_utc_now,
+            uniform=random.uniform,
         )
         supervisor = asyncio.create_task(
             run_supervisor(
@@ -198,6 +210,10 @@ async def run() -> int:
             asyncio.create_task(media_worker.run_download_loop(media_deps), name="media-worker"),
             asyncio.create_task(media_worker.run_heartbeat_loop(media_deps), name="media-beat"),
             asyncio.create_task(media_worker.run_refresh_loop(media_deps), name="media-refresh"),
+            # 历史任务同样不放进 waiters：出错只记日志、自己从头再来（spec 0012）。
+            asyncio.create_task(
+                history_worker.run_history_loop(history_deps), name="history-worker"
+            ),
         )
         stop_wait = asyncio.create_task(stop.wait(), name="stop-wait")
         lost_wait = asyncio.create_task(lost.wait(), name="lost-wait")
@@ -222,6 +238,7 @@ async def run() -> int:
             with contextlib.suppress(asyncio.CancelledError):
                 await asyncio.gather(*background, return_exceptions=True)
             await _release_media_claims(factory)
+            await history_worker.release_on_stop(factory)
     finally:
         await media_http.aclose()
         await engine.dispose()

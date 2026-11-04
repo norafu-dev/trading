@@ -42,6 +42,7 @@ from harvester.collector.failures import (
     classify_failure,
     next_delay,
 )
+from harvester.collector.history_page import HistoryPage
 from harvester.collector.refresh import RefreshResult
 from harvester.crypto import PURPOSE_DISCORD_TOKEN, DecryptError, KeyRing, decrypt
 from harvester.db import account as accounts
@@ -81,6 +82,8 @@ class GatewaySession(Protocol):
 
     async def subscribe_guilds(self, guild_ids: frozenset[int]) -> frozenset[int]: ...
 
+    async def fetch_history_page(self, channel_id: int, before_id: int) -> HistoryPage: ...
+
     async def close(self) -> None: ...
 
 
@@ -90,12 +93,14 @@ class UnexpectedFailureError(Exception):
 
 @dataclass
 class GatewayHandle:
-    """下载任务用来判断「小号在线」的显式容器（spec 0011）：有会话才能换链接。
+    """下载任务和历史任务用来判断「小号在线」的显式容器（spec 0011、0012）。
 
     只有监督循环写它：READY/RESUMED 且写库成功后放入，断线、重试、会话结束时清空。
+    `account_id` 是这个会话对应的账号，历史任务领取时写进任务行。
     """
 
     session: GatewaySession | None = None
+    account_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -196,6 +201,7 @@ async def _on_ready(
     if not await _write_status(deps, account.id, account.config_version, "online", None):
         return replace(state, done=True)
     log.info("collector.online", generation=event.generation)
+    deps.gateway.account_id = account.id
     deps.gateway.session = state.gateway
     return replace(
         state,
@@ -212,6 +218,7 @@ async def _on_resumed(deps: Deps, account: AccountRow, state: SessionState) -> S
     if not await _write_status(deps, account.id, account.config_version, "online", None):
         return replace(state, done=True)
     log.info("collector.resumed")
+    deps.gateway.account_id = account.id
     deps.gateway.session = state.gateway
     resumed = replace(
         state,

@@ -190,11 +190,11 @@ spec [0010](../specs/0010-database-unread-counts.md) · code in `backend/src/har
 
 选频道和起止时间，后台把这段时间的消息抓回来，和实时采集的数据合在一起。也用来补齐断线期间漏掉的消息。
 **Done when:** 能为一个或多个频道建立指定时间段的采集任务；dashboard 显示进度、可暂停或取消；中断后能从断点继续；和实时消息不重复；请求节奏受限速保护。
-spec [0012](../specs/0012-history-message-backfill/index.md)
+spec [0012](../specs/0012-history-message-backfill/index.md) · code in `backend/src/harvester/db/history.py`, `backend/src/harvester/collector/history_worker.py`, `web/src/components/history/`
 
 - [x] Design it (spec): `/architect 按时间段采集历史消息`
 - [ ] Build it: `/develop 按时间段采集历史消息`
-  - [ ] 打通细线：迁移，建任务和范围扣减，collector 领取、从新到旧翻页、入库、`done` 写覆盖段，空页保护，`history_changed`，最小的历史页，AC-1 到 AC-4, AC-3a, AC-14, AC-22
+  - [x] 打通细线：迁移，建任务和范围扣减，collector 领取、从新到旧翻页、入库、`done` 写覆盖段，空页保护，`history_changed`，最小的历史页，AC-1 到 AC-4, AC-3a, AC-14, AC-22
   - [ ] 节奏和安全：随机间隔、休息、滚动限额，429 日志计数和账号风险自动暂停，总开关，抢先和断点，设置页和系统状态，AC-5 到 AC-8, AC-10, AC-19, AC-20
   - [ ] 操作和失败：暂停、继续、取消、重试，部分覆盖段，异常映射和重试上限，整段重抓逐页对账，清理，AC-9, AC-11 到 AC-14, AC-21
   - [ ] 缺口：缺口计算、一键补、自动补短缺口，频道页提示和按钮，补采后频道页刷新，AC-15 到 AC-18
