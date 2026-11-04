@@ -86,3 +86,32 @@ export function describeBackup(backup: SystemStatusData["backup"], time: TimeTex
     title: time.full(finished),
   };
 }
+
+// 首页「附件下载」一行（spec 0011 AC-22）：心跳的相对时间；任务无响应或暂停时单独说明。
+export function describeMediaWorker(media: SystemStatusData["media"], time: TimeText): StatusLine {
+  const seen = media.last_seen_at;
+  if (media.stale) {
+    return seen
+      ? {
+          tone: "error",
+          value: "附件下载任务无响应",
+          detail: `最近心跳 ${time.relative(seen)}`,
+          title: time.full(seen),
+        }
+      : { tone: "error", value: "附件下载任务无响应", detail: "还没有心跳" };
+  }
+  if (media.paused_until) {
+    return {
+      tone: "pending",
+      value: `已暂停到 ${time.full(media.paused_until)}`,
+      detail: seen ? `最近心跳 ${time.relative(seen)}` : undefined,
+    };
+  }
+  if (!seen) return { tone: "pending", value: "未运行" };
+  return {
+    tone: "ok",
+    value: "正常",
+    detail: `最近心跳 ${time.relative(seen)}`,
+    title: time.full(seen),
+  };
+}

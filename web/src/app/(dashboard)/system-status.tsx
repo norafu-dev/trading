@@ -10,6 +10,7 @@ import { useDiscordAccount } from "@/components/discord/use-discord-account";
 import {
   describeBackup,
   describeCollector,
+  describeMediaWorker,
   type StatusLine,
   type TimeText,
   type Tone,
@@ -90,6 +91,7 @@ export function SystemStatus() {
         : describe(system.data);
   const collectorRow = systemLine((data) => describeCollector(data.collector, time));
   const backupRow = systemLine((data) => describeBackup(data.backup, time));
+  const mediaRow = systemLine((data) => describeMediaWorker(data.media, time));
 
   const apiRow = health.isPending
     ? ({ tone: "pending", value: "检查中" } as const)
@@ -135,6 +137,8 @@ export function SystemStatus() {
         <StatusRow label="采集进程" {...collectorRow} />
         <Separator />
         <StatusRow label="备份" {...backupRow} />
+        <Separator />
+        <StatusRow label="附件下载" {...mediaRow} />
       </dl>
     </section>
   );

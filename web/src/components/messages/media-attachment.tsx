@@ -3,6 +3,7 @@ import { MediaImage } from "./media-image";
 import { MediaPlayer } from "./media-player";
 import { MediaStatusText } from "./media-status";
 import { kindOfMedia, mediaUrl } from "./media-url";
+import { RetryMediaButton } from "./retry-media-button";
 import type { MediaView } from "./types";
 
 type MediaAttachmentProps = Readonly<{
@@ -19,6 +20,9 @@ export function MediaAttachment({ filename, sizeBytes, media }: MediaAttachmentP
     return (
       <AttachmentChip filename={filename} sizeBytes={sizeBytes ?? media.sizeBytes}>
         <MediaStatusText status={media.status} />
+        {media.status === "failed" || media.status === "gone" ? (
+          <RetryMediaButton mediaId={media.id} />
+        ) : null}
       </AttachmentChip>
     );
   }

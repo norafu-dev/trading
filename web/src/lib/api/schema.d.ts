@@ -416,6 +416,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/media/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Media Settings */
+        get: operations["get_media_settings_api_media_settings_get"];
+        /** Put Media Settings */
+        put: operations["put_media_settings_api_media_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/media/retry-failed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Failed */
+        post: operations["retry_failed_api_media_retry_failed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/media/{media_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Media */
+        post: operations["retry_media_api_media__media_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/media/{media_id}": {
         parameters: {
             query?: never;
@@ -815,6 +867,21 @@ export interface components {
             /** Last Read Message Id */
             last_read_message_id: string;
         };
+        /** MediaCountsOut */
+        MediaCountsOut: {
+            /** Pending */
+            pending: number;
+            /** Stored */
+            stored: number;
+            /** Failed */
+            failed: number;
+            /** Too Large */
+            too_large: number;
+            /** No Space */
+            no_space: number;
+            /** Gone */
+            gone: number;
+        };
         /** MediaOut */
         MediaOut: {
             /** Id */
@@ -845,6 +912,38 @@ export interface components {
             height: number | null;
             /** Has Thumb */
             has_thumb: boolean;
+        };
+        /** MediaSettingsIn */
+        MediaSettingsIn: {
+            /** Max File Mb */
+            max_file_mb: number;
+            /** Quota Gb */
+            quota_gb: number;
+        };
+        /** MediaSettingsOut */
+        MediaSettingsOut: {
+            /** Max File Mb */
+            max_file_mb: number;
+            /** Quota Gb */
+            quota_gb: number;
+            /** Used Bytes */
+            used_bytes: number;
+            counts: components["schemas"]["MediaCountsOut"];
+            /** Pending Channel Off */
+            pending_channel_off: number;
+            /** Storage Full */
+            storage_full: boolean;
+        };
+        /** MediaWorkerStatusOut */
+        MediaWorkerStatusOut: {
+            /** Storage Full */
+            storage_full: boolean;
+            /** Last Seen At */
+            last_seen_at: string | null;
+            /** Stale */
+            stale: boolean;
+            /** Paused Until */
+            paused_until: string | null;
         };
         /** MessageOut */
         MessageOut: {
@@ -906,6 +1005,11 @@ export interface components {
             /** Deleted */
             deleted?: boolean | null;
         };
+        /** RequeuedOut */
+        RequeuedOut: {
+            /** Requeued */
+            requeued: number;
+        };
         /** SetupBeginBody */
         SetupBeginBody: {
             /** Setup Code */
@@ -931,6 +1035,7 @@ export interface components {
         SystemStatusOut: {
             collector: components["schemas"]["CollectorStatusOut"];
             backup: components["schemas"]["BackupStatusOut"];
+            media: components["schemas"]["MediaWorkerStatusOut"];
         };
         /** ThreadLoadOut */
         ThreadLoadOut: {
@@ -1643,6 +1748,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadLoadOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_media_settings_api_media_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaSettingsOut"];
+                };
+            };
+        };
+    };
+    put_media_settings_api_media_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MediaSettingsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaSettingsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_failed_api_media_retry_failed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequeuedOut"];
+                };
+            };
+        };
+    };
+    retry_media_api_media__media_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                media_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaOut"];
                 };
             };
             /** @description Validation Error */

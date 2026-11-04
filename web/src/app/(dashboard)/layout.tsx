@@ -1,6 +1,7 @@
 import { AuthGate } from "@/components/auth/AuthGate";
 import { CollectedShell } from "@/components/channels/collected-shell";
 import { AccountRailLink } from "@/components/discord/account-rail-link";
+import { MediaRailLink } from "@/components/media/media-rail-link";
 import { HomeRailLink } from "@/components/system/home-rail-link";
 import { EventStreamProvider } from "@/lib/events/event-stream";
 
@@ -9,7 +10,15 @@ export default function DashboardLayout({ children }: LayoutProps<"/">) {
   return (
     <AuthGate>
       <EventStreamProvider>
-        <CollectedShell accountLink={<AccountRailLink />} homeLink={<HomeRailLink />}>
+        <CollectedShell
+          accountLink={
+            <>
+              <AccountRailLink />
+              <MediaRailLink />
+            </>
+          }
+          homeLink={<HomeRailLink />}
+        >
           {children}
         </CollectedShell>
       </EventStreamProvider>

@@ -35,9 +35,17 @@ class BackupStatusOut(BaseModel):
     overdue: bool
 
 
+class MediaWorkerStatusOut(BaseModel):
+    storage_full: bool
+    last_seen_at: datetime | None
+    stale: bool
+    paused_until: datetime | None
+
+
 class SystemStatusOut(BaseModel):
     collector: CollectorStatusOut
     backup: BackupStatusOut
+    media: MediaWorkerStatusOut
 
 
 def _to_out(status: system_db.SystemStatus) -> SystemStatusOut:
@@ -61,6 +69,12 @@ def _to_out(status: system_db.SystemStatus) -> SystemStatusOut:
             else None,
             last_success_at=status.backup.last_success_at,
             overdue=status.backup.overdue,
+        ),
+        media=MediaWorkerStatusOut(
+            storage_full=status.media.storage_full,
+            last_seen_at=status.media.last_seen_at,
+            stale=status.media.stale,
+            paused_until=status.media.paused_until,
         ),
     )
 

@@ -259,7 +259,7 @@ async def _attachments_by_message(
     return grouped
 
 
-async def _media_by_message(
+async def media_by_message(
     session: AsyncSession, message_ids: Sequence[int]
 ) -> Mapping[int, tuple[MediaRow, ...]]:
     """当前页的 media 一次查出（走 ix_media_message），不逐条查。"""
@@ -386,7 +386,7 @@ async def get_message_page(
 
     ids = [r.id for r in ordered]
     attachments = await _attachments_by_message(session, ids)
-    media = await _media_by_message(session, ids)
+    media = await media_by_message(session, ids)
     replaced = await _last_replaced_at(
         session, [r.id for r in ordered if r.version > 1 and r.edited_at is None]
     )

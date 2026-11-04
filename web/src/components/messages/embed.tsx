@@ -10,6 +10,7 @@ import { safeUrl } from "@/lib/safe-url";
 
 import { MediaImage } from "./media-image";
 import { MediaStatusText } from "./media-status";
+import { RetryMediaButton } from "./retry-media-button";
 import type { EmbedView, MediaView, MentionResolver } from "./types";
 
 type EmbedProps = Readonly<{
@@ -46,8 +47,11 @@ function EmbedImage({ src, className }: Readonly<{ src: string; className: strin
 function EmbedMedia({ media }: Readonly<{ media: MediaView }>) {
   if (media.status === "stored") return <MediaImage media={media} fill />;
   return (
-    <span className="grid size-full place-items-center p-2 text-center text-xs">
+    <span className="flex size-full flex-col items-center justify-center gap-1 p-2 text-center text-xs">
       <MediaStatusText status={media.status} />
+      {media.status === "failed" || media.status === "gone" ? (
+        <RetryMediaButton mediaId={media.id} />
+      ) : null}
     </span>
   );
 }

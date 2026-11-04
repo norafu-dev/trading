@@ -903,6 +903,131 @@
         }
       }
     },
+    "/api/media/settings": {
+      "get": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Get Media Settings",
+        "operationId": "get_media_settings_api_media_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaSettingsOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Put Media Settings",
+        "operationId": "put_media_settings_api_media_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaSettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaSettingsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/media/retry-failed": {
+      "post": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Retry Failed",
+        "operationId": "retry_failed_api_media_retry_failed_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequeuedOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/media/{media_id}/retry": {
+      "post": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Retry Media",
+        "operationId": "retry_media_api_media__media_id__retry_post",
+        "parameters": [
+          {
+            "name": "media_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Media Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/media/{media_id}": {
       "get": {
         "tags": [
@@ -2028,6 +2153,44 @@
         ],
         "title": "MarkReadOut"
       },
+      "MediaCountsOut": {
+        "properties": {
+          "pending": {
+            "type": "integer",
+            "title": "Pending"
+          },
+          "stored": {
+            "type": "integer",
+            "title": "Stored"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "too_large": {
+            "type": "integer",
+            "title": "Too Large"
+          },
+          "no_space": {
+            "type": "integer",
+            "title": "No Space"
+          },
+          "gone": {
+            "type": "integer",
+            "title": "Gone"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pending",
+          "stored",
+          "failed",
+          "too_large",
+          "no_space",
+          "gone"
+        ],
+        "title": "MediaCountsOut"
+      },
       "MediaOut": {
         "properties": {
           "id": {
@@ -2146,6 +2309,109 @@
           "has_thumb"
         ],
         "title": "MediaOut"
+      },
+      "MediaSettingsIn": {
+        "properties": {
+          "max_file_mb": {
+            "type": "integer",
+            "maximum": 1024.0,
+            "minimum": 1.0,
+            "title": "Max File Mb"
+          },
+          "quota_gb": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Quota Gb"
+          }
+        },
+        "type": "object",
+        "required": [
+          "max_file_mb",
+          "quota_gb"
+        ],
+        "title": "MediaSettingsIn"
+      },
+      "MediaSettingsOut": {
+        "properties": {
+          "max_file_mb": {
+            "type": "integer",
+            "title": "Max File Mb"
+          },
+          "quota_gb": {
+            "type": "integer",
+            "title": "Quota Gb"
+          },
+          "used_bytes": {
+            "type": "integer",
+            "title": "Used Bytes"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/MediaCountsOut"
+          },
+          "pending_channel_off": {
+            "type": "integer",
+            "title": "Pending Channel Off"
+          },
+          "storage_full": {
+            "type": "boolean",
+            "title": "Storage Full"
+          }
+        },
+        "type": "object",
+        "required": [
+          "max_file_mb",
+          "quota_gb",
+          "used_bytes",
+          "counts",
+          "pending_channel_off",
+          "storage_full"
+        ],
+        "title": "MediaSettingsOut"
+      },
+      "MediaWorkerStatusOut": {
+        "properties": {
+          "storage_full": {
+            "type": "boolean",
+            "title": "Storage Full"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale"
+          },
+          "paused_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused Until"
+          }
+        },
+        "type": "object",
+        "required": [
+          "storage_full",
+          "last_seen_at",
+          "stale",
+          "paused_until"
+        ],
+        "title": "MediaWorkerStatusOut"
       },
       "MessageOut": {
         "properties": {
@@ -2373,6 +2639,19 @@
         ],
         "title": "ReplyOut"
       },
+      "RequeuedOut": {
+        "properties": {
+          "requeued": {
+            "type": "integer",
+            "title": "Requeued"
+          }
+        },
+        "type": "object",
+        "required": [
+          "requeued"
+        ],
+        "title": "RequeuedOut"
+      },
       "SetupBeginBody": {
         "properties": {
           "setup_code": {
@@ -2437,12 +2716,16 @@
           },
           "backup": {
             "$ref": "#/components/schemas/BackupStatusOut"
+          },
+          "media": {
+            "$ref": "#/components/schemas/MediaWorkerStatusOut"
           }
         },
         "type": "object",
         "required": [
           "collector",
-          "backup"
+          "backup",
+          "media"
         ],
         "title": "SystemStatusOut"
       },

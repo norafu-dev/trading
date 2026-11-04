@@ -195,7 +195,7 @@ def _attachment_out(row: AttachmentRow) -> AttachmentOut:
     )
 
 
-def _media_out(row: MediaRow) -> MediaOut:
+def media_out(row: MediaRow) -> MediaOut:
     return MediaOut(
         id=str(row.id),
         kind=row.kind,
@@ -253,7 +253,7 @@ def _message_out(row: MessageRow) -> MessageOut:
         embeds=row.embeds,
         forwarded=_forwarded_out(row),
         attachments=[_attachment_out(a) for a in row.attachments],
-        media=[_media_out(m) for m in row.media],
+        media=[media_out(m) for m in row.media],
         edited_at=row.edited_at.isoformat() if row.edited_at else None,
         deleted_at=row.deleted_at.isoformat() if row.deleted_at else None,
         reply=_reply_out(row),

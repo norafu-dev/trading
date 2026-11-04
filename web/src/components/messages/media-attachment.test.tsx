@@ -1,9 +1,15 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { jsonResponse, renderWithQuery } from "@/components/auth/test-utils";
 
 import { MediaAttachment } from "./media-attachment";
 import { kindOfMedia, mediaUrl } from "./media-url";
 import type { MediaView } from "./types";
+
+const { post } = vi.hoisted(() => ({ post: vi.fn() }));
+vi.mock("@/lib/api/client", () => ({ api: { POST: post } }));
 
 function media(overrides: Partial<MediaView> = {}): MediaView {
   return {
@@ -20,6 +26,10 @@ function media(overrides: Partial<MediaView> = {}): MediaView {
 }
 
 describe("MediaAttachment", () => {
+  beforeEach(() => {
+    post.mockReset();
+  });
+
   // covers: spec 0011 AC-15
   it("已保存的图片显示缩略图，不碰 Discord 原链接", () => {
     render(<MediaAttachment filename="shot.png" media={media()} />);
@@ -66,9 +76,34 @@ describe("MediaAttachment", () => {
     ["failed", "保存失败"],
     ["gone", "Discord 上已失效"],
   ] as const)("%s 显示「%s」", (status, text) => {
-    render(<MediaAttachment filename="x.bin" media={media({ status })} />);
+    renderWithQuery(<MediaAttachment filename="x.bin" media={media({ status })} />);
     expect(screen.getByText(text)).toBeInTheDocument();
     expect(screen.getByText("x.bin")).toBeInTheDocument();
+  });
+
+  // covers: spec 0011 AC-17
+  it("只有失败和已失效的附件有「重试」按钮", () => {
+    for (const status of ["pending", "too_large", "no_space"] as const) {
+      const { unmount } = renderWithQuery(
+        <MediaAttachment filename="x.bin" media={media({ status })} />,
+      );
+      expect(screen.queryByRole("button", { name: "重试" })).not.toBeInTheDocument();
+      unmount();
+    }
+    renderWithQuery(<MediaAttachment filename="x.bin" media={media({ status: "gone" })} />);
+    expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
+  });
+
+  it("点「重试」调接口，并乐观地改成「保存中」", async () => {
+    post.mockResolvedValue({ data: { id: "7", status: "pending" }, ...jsonResponse(200) });
+    renderWithQuery(<MediaAttachment filename="x.bin" media={media({ status: "failed" })} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "重试" }));
+
+    await waitFor(() => expect(screen.getByText("保存中")).toBeInTheDocument());
+    expect(post).toHaveBeenCalledWith("/api/media/{media_id}/retry", {
+      params: { path: { media_id: 7 } },
+    });
   });
 
   it("没有 media 行时按原来的文件条显示", () => {
