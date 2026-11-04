@@ -5,7 +5,7 @@
 # pyright: reportPrivateUsage=false
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any, Protocol, cast
 
@@ -14,6 +14,7 @@ import discord
 import structlog
 from curl_cffi import CurlError
 from discord.gateway import DiscordWebSocket, ReconnectWebSocket
+from discord.http import Route
 
 from harvester.collector.events import (
     ChannelRemoved,
@@ -36,6 +37,7 @@ from harvester.collector.events import (
     ThreadArchived,
 )
 from harvester.collector.failures import ConnectionFailure
+from harvester.collector.refresh import RateLimited, Refreshed, RefreshResult, Unavailable
 from harvester.collector.wake_guard import WakeGuard
 from harvester.db.snapshots import (
     ACCESS_CHANNEL_TYPES,
@@ -53,6 +55,7 @@ from harvester.db.snapshots import (
     UserSnapshot,
     normalize_embeds,
 )
+from harvester.media.urls import strip_query
 
 log = structlog.get_logger("harvester.collector.discord_client")
 
@@ -82,6 +85,42 @@ def _retry_after_header(exc: discord.HTTPException) -> float | None:
         return float(raw) if raw is not None else None
     except ValueError:
         return None
+
+
+def _parse_refreshed(data: object) -> Mapping[str, str] | None:
+    """`{"refreshed_urls": [{"original": ..., "refreshed": ...}]}`；格式不对返回 None。"""
+    if not isinstance(data, dict):
+        return None
+    items: object = cast(dict[str, object], data).get("refreshed_urls")
+    if not isinstance(items, list):
+        return None
+    mapping: dict[str, str] = {}
+    for item in cast(list[object], items):
+        if not isinstance(item, dict):
+            return None
+        entry = cast(dict[str, object], item)
+        original, refreshed = entry.get("original"), entry.get("refreshed")
+        if not isinstance(original, str) or not isinstance(refreshed, str):
+            return None
+        mapping[strip_query(original)] = refreshed
+    return mapping
+
+
+async def refresh_attachment_urls(client: discord.Client, urls: Sequence[str]) -> RefreshResult:
+    """用已登录会话的 HTTP 客户端换新链接；走 discord.py-self 的限速（spec 0011 AC-11）。"""
+    http = cast(Any, client).http
+    try:
+        data = await http.request(
+            Route("POST", "/attachments/refresh-urls"), json={"attachment_urls": list(urls)}
+        )
+    except discord.HTTPException as exc:
+        if exc.status == 429:
+            return RateLimited(_retry_after_header(exc) or 60.0)
+        return Unavailable(f"http_{exc.status}")
+    except (discord.DiscordException, aiohttp.ClientError, CurlError, OSError, TimeoutError):
+        return Unavailable("network")
+    mapping = _parse_refreshed(data)
+    return Refreshed(mapping) if mapping is not None else Unavailable("parse")
 
 
 def to_failure(exc: Exception, *, during_login: bool = False) -> ConnectionFailure | None:
@@ -368,6 +407,9 @@ class HarvesterClient(discord.Client):
             self._schedule_guild(int(data["guild_id"]))
 
         state.parsers["THREAD_LIST_SYNC"] = parse
+
+    async def refresh_attachment_urls(self, urls: Sequence[str]) -> RefreshResult:
+        return await refresh_attachment_urls(self, urls)
 
     async def subscribe_guilds(self, guild_ids: frozenset[int]) -> frozenset[int]:
         """返回实际发出的服务器；库会把多个服务器合并成一条网关指令发送。"""

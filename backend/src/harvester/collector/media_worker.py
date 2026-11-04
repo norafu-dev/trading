@@ -6,12 +6,14 @@
 """
 
 import asyncio
+import contextlib
 import hashlib
 import mimetypes
 import shutil
 import tempfile
 import time
-from collections.abc import Awaitable, Callable
+from collections import deque
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -20,6 +22,8 @@ import httpx
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from harvester.collector.refresh import RateLimited, Refreshed, Unavailable
+from harvester.collector.supervisor import GatewayHandle
 from harvester.db import media as media_db
 from harvester.db.media import ClaimedMedia, NewStoredFile
 from harvester.db.messages import notify_message_changed
@@ -42,6 +46,13 @@ HEARTBEAT_INTERVAL = 30.0
 BREAKER_WINDOW = 60.0
 BREAKER_LIMIT = 10
 PAUSE_DURATION = timedelta(minutes=30)
+# 换链接：每批最多 50 个，两批之间至少隔 30 秒，每小时最多 600 个（AC-11）。
+REFRESH_BATCH = 50
+REFRESH_GAP = 30.0
+REFRESH_PER_HOUR = 600
+REFRESH_WINDOW = 3600.0
+# Discord 暂时不可用（5xx、网络、401、403 等）时循环的退避：1、5、30 分钟。
+UNAVAILABLE_BACKOFF = (60.0, 300.0, 1800.0)
 CHUNK_SIZE = 64 * 1024
 DOWNLOAD_TOTAL_TIMEOUT = 600.0
 DOWNLOAD_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=10.0)
@@ -65,6 +76,14 @@ class PauseState:
     until: datetime | None = None
 
 
+@dataclass
+class RefreshState:
+    """换链接循环的内存状态：最近一小时发出的链接数，和连续不可用的次数。"""
+
+    sent: deque[tuple[float, int]] = field(default_factory=deque[tuple[float, int]])
+    failures: int = 0
+
+
 @dataclass(frozen=True)
 class MediaDeps:
     factory: async_sessionmaker[AsyncSession]
@@ -75,6 +94,10 @@ class MediaDeps:
     pause: PauseState
     clock: Callable[[], datetime]
     monotonic: Callable[[], float] = time.monotonic
+    gateway: GatewayHandle = field(default_factory=GatewayHandle)
+    # 有行变成需要换链接时设上，换链接循环据此提前醒来。
+    refresh_wake: asyncio.Event = field(default_factory=asyncio.Event)
+    refresh_state: RefreshState = field(default_factory=RefreshState)
 
 
 # ---- 下载一个文件 --------------------------------------------------------------------
@@ -200,6 +223,7 @@ async def _fail(deps: MediaDeps, row: ClaimedMedia, failure: HttpFailure) -> Non
                 return await media_db.mark_needs_refresh(session, row.id, row.claimed_at)
 
             await _finish(deps, row, mark, notify=False)
+            deps.refresh_wake.set()
             log.info("media.needs_refresh", media_id=row.id, reason=failure.code)
         case "gone":
             await _terminal(deps, row, "gone", failure.code)
@@ -286,6 +310,7 @@ async def process_row(deps: MediaDeps, row: ClaimedMedia) -> None:
             return await media_db.mark_needs_refresh(session, row.id, row.claimed_at)
 
         await _finish(deps, row, mark, notify=False)
+        deps.refresh_wake.set()
         return
     if not is_discord_hosted(row.source_url):  # 正常不会发生，但每次发请求前都检查（AC-3）
         await _terminal(deps, row, "gone", "not_discord_host")
@@ -361,9 +386,17 @@ async def _pause_remaining(deps: MediaDeps) -> bool:
 
 async def run_download_loop(deps: MediaDeps) -> None:
     running: set[asyncio.Task[None]] = set()
+    try:
+        await _download_forever(deps, running)
+    finally:
+        for task in running:  # 停止时正在下载的一并取消，领取标记由收尾放回队列
+            task.cancel()
+
+
+async def _download_forever(deps: MediaDeps, running: set["asyncio.Task[None]"]) -> None:
     while True:
         try:
-            running = {task for task in running if not task.done()}
+            running.difference_update({task for task in running if task.done()})
             paused = await _pause_remaining(deps)
             claimed: tuple[ClaimedMedia, ...] = ()
             free = MAX_CONCURRENT_DOWNLOADS - len(running)
@@ -392,4 +425,79 @@ async def run_heartbeat_loop(deps: MediaDeps) -> None:
             raise
         except Exception as error:
             log.error("media.loop_failed", loop="heartbeat", error_type=type(error).__name__)
+            await asyncio.sleep(ERROR_BACKOFF)
+
+
+# ---- 换链接循环 ----------------------------------------------------------------------
+
+
+def hourly_budget(
+    sent: Sequence[tuple[float, int]], now: float, *, limit: int = REFRESH_PER_HOUR
+) -> tuple[int, float]:
+    """最近一小时还能换多少个；额度用完时返回要等多久最早的一批才滑出窗口。"""
+    recent = [(at, count) for at, count in sent if now - at < REFRESH_WINDOW]
+    used = sum(count for _, count in recent)
+    if used < limit:
+        return limit - used, 0.0
+    oldest = min(at for at, _ in recent)
+    return 0, max(oldest + REFRESH_WINDOW - now, 1.0)
+
+
+@dataclass(frozen=True)
+class RefreshStep:
+    """一轮之后要等多久。`interruptible` 为真时有新行要换链接就提前醒来。"""
+
+    wait: float
+    interruptible: bool
+
+
+async def refresh_once(deps: MediaDeps) -> RefreshStep:
+    """取一批需要换链接的行，用小号会话换，按结果写回（AC-11）。"""
+    idle = RefreshStep(POLL_INTERVAL, interruptible=True)
+    session_handle = deps.gateway.session
+    if session_handle is None:  # 账号不在线：这些行等账号上线再处理
+        return idle
+    state = deps.refresh_state
+    now = deps.monotonic()
+    remaining, wait = hourly_budget(state.sent, now)
+    if remaining <= 0:
+        return RefreshStep(wait, interruptible=False)
+    async with deps.factory() as session:
+        rows = await media_db.list_refresh_batch(session, min(REFRESH_BATCH, remaining))
+    if not rows:
+        return idle
+
+    result = await session_handle.refresh_attachment_urls([row.source_url for row in rows])
+    match result:
+        case Refreshed(urls=urls):
+            async with deps.factory() as session, session.begin():
+                refreshed, gone = await media_db.apply_refresh(session, rows, urls)
+            state.sent.append((now, len(rows)))
+            state.failures = 0
+            log.info("media.refresh_batch", requested=len(rows), refreshed=refreshed, gone=gone)
+            return RefreshStep(REFRESH_GAP, interruptible=False)
+        case RateLimited(retry_after=retry_after):
+            log.warning("media.refresh_rate_limited", retry_after=retry_after)
+            return RefreshStep(max(retry_after, 1.0), interruptible=False)
+        case Unavailable(reason=reason):
+            state.failures += 1
+            backoff = UNAVAILABLE_BACKOFF[min(state.failures, len(UNAVAILABLE_BACKOFF)) - 1]
+            log.warning("media.refresh_unavailable", reason=reason, backoff=backoff)
+            return RefreshStep(backoff, interruptible=False)
+
+
+async def run_refresh_loop(deps: MediaDeps) -> None:
+    while True:
+        try:
+            step = await refresh_once(deps)
+            if step.interruptible:
+                deps.refresh_wake.clear()
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(deps.refresh_wake.wait(), timeout=step.wait)
+            else:
+                await asyncio.sleep(step.wait)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # AC-22
+            log.error("media.loop_failed", loop="refresh", error_type=type(error).__name__)
             await asyncio.sleep(ERROR_BACKOFF)

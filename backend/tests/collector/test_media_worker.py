@@ -1,9 +1,11 @@
 """下载任务（spec 0011）：真实 PostgreSQL，假的 CDN（httpx.MockTransport），内存存储。"""
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 import httpx
 import pytest
@@ -12,11 +14,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from harvester.collector import media_worker
 from harvester.collector.media_worker import MediaDeps, PauseState
+from harvester.collector.refresh import RateLimited, Refreshed, RefreshResult, Unavailable
+from harvester.collector.supervisor import GatewayHandle, GatewaySession
 from harvester.db import media as media_db
 from harvester.db.ingest import ingest_message
 from harvester.db.models import Channel, Media, StoredFile
 from harvester.db.snapshots import AttachmentSnapshot
 from harvester.media.storage import MemoryStore
+from harvester.media.urls import strip_query
 from tests.db.builders import CHANNEL, at, message, seed_channel
 
 Factory = async_sessionmaker[AsyncSession]
@@ -288,3 +293,147 @@ async def test_newest_messages_are_claimed_first(seeded: Factory) -> None:  # co
         claimed = await media_db.claim_batch(session, 1)
 
     assert [c.message_id for c in claimed] == [1_300_000_000_000_000_009]
+
+
+# ---- 换链接（AC-11）-------------------------------------------------------------------
+
+
+class FakeGateway:
+    """只实现换链接；`results` 按调用顺序返回，同时记下每批发出的链接。"""
+
+    def __init__(self, *results: RefreshResult) -> None:
+        self.results = list(results)
+        self.batches: list[list[str]] = []
+
+    async def refresh_attachment_urls(self, urls: Sequence[str]) -> RefreshResult:
+        self.batches.append(list(urls))
+        return self.results.pop(0)
+
+
+def with_gateway(deps: MediaDeps, gateway: FakeGateway | None) -> MediaDeps:
+    handle = GatewayHandle(session=cast(GatewaySession, gateway) if gateway else None)
+    return replace(deps, gateway=handle)
+
+
+async def set_needs_refresh(factory: Factory) -> None:
+    async with factory() as session, session.begin():
+        await session.execute(update(Media).values(needs_refresh=True))
+
+
+def idle_deps(factory: Factory, tmp_path: Path) -> MediaDeps:
+    return make_deps(factory, lambda _r: httpx.Response(500), tmp_path)
+
+
+async def test_expired_link_is_marked_for_refresh_not_downloaded(  # covers: AC-11
+    seeded: Factory, tmp_path: Path
+) -> None:
+    expired = "https://cdn.discordapp.com/attachments/201/5001/a.png?ex=1&is=2&hm=3"
+    await ingest(seeded, 1_300_000_000_000_000_001, snapshot_attachment(url=expired))
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, content=PNG)
+
+    await run_once(make_deps(seeded, handler, tmp_path))
+
+    [row] = await all_media(seeded)
+    assert row.needs_refresh and row.attempts == 0 and requests == []
+    async with seeded() as session, session.begin():
+        assert await media_db.claim_batch(session, 5) == ()  # 下载不再领取它
+
+
+async def test_refresh_writes_new_link_and_resets_nothing_else(  # covers: AC-11
+    seeded: Factory, tmp_path: Path
+) -> None:
+    await ingest(seeded, 1_300_000_000_000_000_001, snapshot_attachment())
+    await set_needs_refresh(seeded)
+    new = "https://cdn.discordapp.com/attachments/201/5001/a.png?ex=ffffffff&hm=new"
+    gateway = FakeGateway(Refreshed({strip_query(URL): new}))
+    deps = with_gateway(idle_deps(seeded, tmp_path), gateway)
+
+    step = await media_worker.refresh_once(deps)
+
+    [row] = await all_media(seeded)
+    assert (row.source_url, row.needs_refresh, row.attempts) == (new, False, 0)
+    assert row.refreshed_at is not None
+    assert step.wait == media_worker.REFRESH_GAP and not step.interruptible
+
+
+async def test_row_missing_from_a_good_response_is_gone(  # covers: AC-11
+    seeded: Factory, tmp_path: Path
+) -> None:
+    await ingest(seeded, 1_300_000_000_000_000_001, snapshot_attachment())
+    await set_needs_refresh(seeded)
+    deps = with_gateway(idle_deps(seeded, tmp_path), FakeGateway(Refreshed({})))
+
+    await media_worker.refresh_once(deps)
+
+    [row] = await all_media(seeded)
+    assert row.status == "gone" and not row.needs_refresh
+
+
+async def test_unavailable_leaves_rows_and_backs_off(  # covers: AC-11
+    seeded: Factory, tmp_path: Path
+) -> None:
+    await ingest(seeded, 1_300_000_000_000_000_001, snapshot_attachment())
+    await set_needs_refresh(seeded)
+    gateway = FakeGateway(Unavailable("http_500"), Unavailable("http_500"), RateLimited(7.0))
+    deps = with_gateway(idle_deps(seeded, tmp_path), gateway)
+
+    first = await media_worker.refresh_once(deps)
+    second = await media_worker.refresh_once(deps)
+    third = await media_worker.refresh_once(deps)
+
+    [row] = await all_media(seeded)
+    assert row.status == "pending" and row.needs_refresh
+    assert (first.wait, second.wait, third.wait) == (60.0, 300.0, 7.0)
+
+
+async def test_no_gateway_session_means_no_refresh_call(  # covers: AC-11
+    seeded: Factory, tmp_path: Path
+) -> None:
+    await ingest(seeded, 1_300_000_000_000_000_001, snapshot_attachment())
+    await set_needs_refresh(seeded)
+    deps = with_gateway(idle_deps(seeded, tmp_path), None)
+
+    step = await media_worker.refresh_once(deps)
+
+    assert step.interruptible
+    [row] = await all_media(seeded)
+    assert row.needs_refresh
+
+
+async def test_sixty_rows_go_in_two_batches_and_budget_caps_the_hour(  # covers: AC-11
+    seeded: Factory, tmp_path: Path
+) -> None:
+    for i in range(60):
+        await ingest(
+            seeded,
+            1_300_000_000_000_000_100 + i,
+            snapshot_attachment(
+                6000 + i, f"https://cdn.discordapp.com/attachments/201/{6000 + i}/a.png"
+            ),
+        )
+    await set_needs_refresh(seeded)
+    gateway = FakeGateway(Refreshed({}), Refreshed({}))
+    deps = with_gateway(idle_deps(seeded, tmp_path), gateway)
+
+    await media_worker.refresh_once(deps)
+    await media_worker.refresh_once(deps)
+
+    assert [len(b) for b in gateway.batches] == [50, 10]
+    assert media_worker.hourly_budget([(0.0, 600)], 10.0) == (0, 3590.0)
+    assert media_worker.hourly_budget([(0.0, 600)], 3601.0) == (600, 0.0)
+    assert media_worker.hourly_budget([(0.0, 550)], 10.0) == (50, 0.0)
+
+
+async def test_403_burst_pauses_the_worker(
+    seeded: Factory, tmp_path: Path
+) -> None:  # covers: AC-10
+    deps = idle_deps(seeded, tmp_path)
+    for media_id in range(11):
+        media_worker._note_forbidden(deps, media_id)  # pyright: ignore[reportPrivateUsage]
+
+    assert deps.pause.until is not None
+    assert await media_worker._pause_remaining(deps)  # pyright: ignore[reportPrivateUsage]

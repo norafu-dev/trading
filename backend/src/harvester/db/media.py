@@ -5,6 +5,7 @@ collector 的下载任务领取、写结果；api 只改状态（重试、改设
 被重置或手动重试过，旧的下载结果就写不进去（AC-18）。
 """
 
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -14,8 +15,8 @@ from sqlalchemy import Table, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from harvester.db.models import Media, MediaSettings, StoredFile
-from harvester.db.raw import MEDIA_QUEUE_CHANNEL
+from harvester.db.models import Channel, Media, MediaSettings, Message, StoredFile
+from harvester.db.raw import MEDIA_QUEUE_CHANNEL, MESSAGE_CHANGED_CHANNEL
 from harvester.db.snapshots import (
     AttachmentSnapshot,
     EmbedData,
@@ -82,6 +83,16 @@ class NewStoredFile:
 
 async def notify_media_queue(session: AsyncSession) -> None:
     await session.execute(text("SELECT pg_notify(:channel, '')"), {"channel": MEDIA_QUEUE_CHANNEL})
+
+
+async def _notify_message_changed(session: AsyncSession, channel_id: int, message_id: int) -> None:
+    """和 `messages.notify_message_changed` 同一个载荷。不直接用它：messages 经 coverage_plan
+    引用 ingest，ingest 又引用本模块，会循环导入。"""
+    payload = {"channel_id": str(channel_id), "message_ids": [str(message_id)]}
+    await session.execute(
+        text("SELECT pg_notify(:channel, :payload)"),
+        {"channel": MESSAGE_CHANGED_CHANNEL, "payload": json.dumps(payload)},
+    )
 
 
 # ---- 建行（ingest_message 的事务里调用）------------------------------------------------
@@ -444,3 +455,71 @@ async def mark_needs_refresh(session: AsyncSession, media_id: int, claimed_at: d
         .returning(Media.id)
     )
     return updated is not None
+
+
+# ---- 换链接循环 ----------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RefreshRow:
+    id: int
+    message_id: int
+    channel_id: int
+    source_url: str
+
+
+async def list_refresh_batch(session: AsyncSession, limit: int) -> tuple[RefreshRow, ...]:
+    """需要换链接的行，新消息在前；所在频道关闭的不处理（AC-23）。走 ix_media_refresh。"""
+    rows = await session.execute(
+        select(Media.id, Media.message_id, Message.channel_id, Media.source_url)
+        .join(Message, Message.id == Media.message_id)
+        .join(Channel, Channel.id == Message.channel_id)
+        .where(Media.status == "pending", Media.needs_refresh, Channel.collect_enabled)
+        .order_by(Media.message_id.desc(), Media.id)
+        .limit(limit)
+    )
+    return tuple(RefreshRow(r.id, r.message_id, r.channel_id, r.source_url) for r in rows)
+
+
+async def apply_refresh(
+    session: AsyncSession, rows: Sequence[RefreshRow], urls: Mapping[str, str]
+) -> tuple[int, int]:
+    """Discord 正常响应后：换到新链接的写回，没被返回的记 gone。返回 (换到, 失效) 的数量。
+
+    每条 UPDATE 都确认这一行仍在等换链接且链接没变：期间被重置过的不受影响。
+    """
+    refreshed = gone = 0
+    for row in rows:
+        new_url = urls.get(strip_query(row.source_url))
+        still_waiting = (
+            Media.id == row.id,
+            Media.status == "pending",
+            Media.needs_refresh,
+            Media.source_url == row.source_url,
+        )
+        if new_url is not None and is_discord_hosted(new_url):
+            updated = await session.scalar(
+                update(Media)
+                .where(*still_waiting)
+                .values(
+                    source_url=new_url,
+                    needs_refresh=False,
+                    refreshed_at=func.now(),
+                    next_attempt_at=func.now(),
+                )
+                .returning(Media.id)
+            )
+            refreshed += updated is not None
+        else:
+            updated = await session.scalar(
+                update(Media)
+                .where(*still_waiting)
+                .values(status="gone", needs_refresh=False, last_error="not_refreshed")
+                .returning(Media.id)
+            )
+            if updated is not None:
+                gone += 1
+                await _notify_message_changed(session, row.channel_id, row.message_id)
+    if refreshed:
+        await notify_media_queue(session)
+    return refreshed, gone

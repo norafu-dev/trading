@@ -2,7 +2,7 @@
 
 import asyncio
 import contextlib
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -35,6 +35,7 @@ from harvester.collector.events import (
     ThreadArchived,
 )
 from harvester.collector.failures import ConnectionFailure
+from harvester.collector.refresh import RefreshResult, Unavailable
 from harvester.collector.supervisor import (
     Deps,
     GatewaySession,
@@ -96,6 +97,9 @@ class FakeSession:
     subscribe_calls: list[frozenset[int]] = field(default_factory=list[frozenset[int]])
     # 不在缓存里的服务器：订阅不算发出去。
     unavailable: frozenset[int] = frozenset()
+
+    async def refresh_attachment_urls(self, urls: Sequence[str]) -> RefreshResult:
+        return Unavailable("not_used")
 
     async def run_session(self, token: str) -> None:
         self.tokens.append(token)
@@ -1616,3 +1620,28 @@ async def test_guild_sync_does_not_clear_the_request(harness: Harness) -> None: 
 
     async with harness.factory() as session:
         assert await session.scalar(select(Guild.thread_load_requested_at)) is not None
+
+
+async def test_gateway_handle_follows_the_session(
+    harness: Harness,
+) -> None:  # covers: spec 0011 AC-11
+    handle = harness.deps.gateway
+    await add_account(harness)
+    assert handle.session is None
+
+    harness.start()
+    await harness.wait_status("online")
+    session = harness.current
+    assert handle.session is session
+
+    harness.clock.advance(1)
+    session.queue.put_nowait(Disconnected(session.generation, harness.clock()))
+    await harness.wait_status("reconnecting")
+    assert handle.session is None
+
+    assert harness.task is not None
+    harness.task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await harness.task
+    harness.task = None
+    assert handle.session is None

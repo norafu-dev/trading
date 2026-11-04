@@ -14,10 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from harvester.collector import media_worker
 from harvester.collector.discord_client import new_client
-from harvester.collector.supervisor import Deps, run_supervisor
+from harvester.collector.supervisor import Deps, GatewayHandle, run_supervisor
 from harvester.collector.wake_guard import WakeGuard, watch_sleep
 from harvester.config import LocalMediaSettings, get_crypto_settings, load_media_settings
 from harvester.db import get_engine, get_sessionmaker, raw
+from harvester.db import media as media_db
 from harvester.db.system import record_collector_heartbeat
 from harvester.media.storage import MediaStore, build_local_store
 
@@ -94,6 +95,15 @@ def _build_media_store() -> tuple[MediaStore, Path]:
     raise NotImplementedError("R2 storage lands in milestone 5")
 
 
+async def _release_media_claims(factory: async_sessionmaker[AsyncSession]) -> None:
+    """停止时尽力把正在下载的行放回队列；做不到也没关系，下次启动会释放（AC-18）。"""
+    try:
+        async with asyncio.timeout(2.0), factory() as session, session.begin():
+            await media_db.release_claims_on_start(session)
+    except (SQLAlchemyError, OSError, TimeoutError) as error:
+        log.warning("collector.media_release_failed", error_type=type(error).__name__)
+
+
 async def _cancel_and_wait(task: "asyncio.Task[None]", limit: float) -> None:
     task.cancel()
     await asyncio.wait((task,), timeout=limit)
@@ -144,6 +154,7 @@ async def run() -> int:
         factory = get_sessionmaker()
         store, tmp_dir = _build_media_store()
         await media_worker.prepare_start(factory, tmp_dir)
+        gateway = GatewayHandle()
         media_deps = media_worker.MediaDeps(
             factory=factory,
             store=store,
@@ -152,6 +163,7 @@ async def run() -> int:
             wake=media_wake,
             pause=media_worker.PauseState(),
             clock=_utc_now,
+            gateway=gateway,
         )
         supervisor = asyncio.create_task(
             run_supervisor(
@@ -163,6 +175,7 @@ async def run() -> int:
                     uniform=random.uniform,
                     wake=wake,
                     channels_wake=channels_wake,
+                    gateway=gateway,
                 )
             ),
             name="supervisor",
@@ -175,6 +188,7 @@ async def run() -> int:
             # 下载任务不放进 waiters：它出错只记日志、自己重试，不会让进程退出（AC-22）。
             asyncio.create_task(media_worker.run_download_loop(media_deps), name="media-worker"),
             asyncio.create_task(media_worker.run_heartbeat_loop(media_deps), name="media-beat"),
+            asyncio.create_task(media_worker.run_refresh_loop(media_deps), name="media-refresh"),
         )
         stop_wait = asyncio.create_task(stop.wait(), name="stop-wait")
         lost_wait = asyncio.create_task(lost.wait(), name="lost-wait")
@@ -198,6 +212,7 @@ async def run() -> int:
                 task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await asyncio.gather(*background, return_exceptions=True)
+            await _release_media_claims(factory)
     finally:
         await media_http.aclose()
         await engine.dispose()

@@ -2,8 +2,8 @@
 
 import asyncio
 import contextlib
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, replace
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Protocol
 
@@ -42,6 +42,7 @@ from harvester.collector.failures import (
     classify_failure,
     next_delay,
 )
+from harvester.collector.refresh import RefreshResult
 from harvester.crypto import PURPOSE_DISCORD_TOKEN, DecryptError, KeyRing, decrypt
 from harvester.db import account as accounts
 from harvester.db import channel_sync
@@ -76,6 +77,8 @@ _NO_LOGIN: frozenset[AccountStatus] = frozenset(
 class GatewaySession(Protocol):
     async def run_session(self, token: str) -> None: ...
 
+    async def refresh_attachment_urls(self, urls: Sequence[str]) -> RefreshResult: ...
+
     async def subscribe_guilds(self, guild_ids: frozenset[int]) -> frozenset[int]: ...
 
     async def close(self) -> None: ...
@@ -83,6 +86,16 @@ class GatewaySession(Protocol):
 
 class UnexpectedFailureError(Exception):
     """分类表之外的失败。消息只有类型名，不带任何响应内容。"""
+
+
+@dataclass
+class GatewayHandle:
+    """下载任务用来判断「小号在线」的显式容器（spec 0011）：有会话才能换链接。
+
+    只有监督循环写它：READY/RESUMED 且写库成功后放入，断线、重试、会话结束时清空。
+    """
+
+    session: GatewaySession | None = None
 
 
 @dataclass(frozen=True)
@@ -102,6 +115,7 @@ class Deps:
     crash_guard_seconds: float = CRASH_GUARD_SECONDS
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
     drain_seconds: float = DRAIN_SECONDS
+    gateway: GatewayHandle = field(default_factory=GatewayHandle)
 
 
 @dataclass(frozen=True)
@@ -182,6 +196,7 @@ async def _on_ready(
     if not await _write_status(deps, account.id, account.config_version, "online", None):
         return replace(state, done=True)
     log.info("collector.online", generation=event.generation)
+    deps.gateway.session = state.gateway
     return replace(
         state,
         status="online",
@@ -197,6 +212,7 @@ async def _on_resumed(deps: Deps, account: AccountRow, state: SessionState) -> S
     if not await _write_status(deps, account.id, account.config_version, "online", None):
         return replace(state, done=True)
     log.info("collector.resumed")
+    deps.gateway.session = state.gateway
     resumed = replace(
         state,
         status="online",
@@ -303,6 +319,7 @@ def _channel_write(account: AccountRow, event: ChannelEvent) -> ChannelWrite:
 async def _on_disconnected(
     deps: Deps, account: AccountRow, state: SessionState, event: Disconnected
 ) -> SessionState:
+    deps.gateway.session = None  # 断线期间不换链接
     loop = state.loop
     stable = event.at - state.stable_since if state.stable_since is not None else timedelta(0)
     if stable >= STABLE_RESET:
@@ -360,6 +377,7 @@ def _identify_reason(state: SessionState, event: IdentifyRequested) -> str:
 async def _on_retry(
     deps: Deps, account: AccountRow, state: SessionState, event: RetryNeeded
 ) -> SessionState:
+    deps.gateway.session = None
     _log_failure(event.failure)
     written, stops = await _write_failure(deps, account, event.failure)
     if not written or stops:
@@ -658,6 +676,7 @@ async def run_session(
             task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await asyncio.gather(*tasks, return_exceptions=True)
+        deps.gateway.session = None  # 先清空再关，换链接不会碰到正在关闭的会话
         await client.close()
         await _drain_messages(deps, state, queue)
         await _close_coverage(deps, account.id, state.loop.disconnected_at or deps.clock())
