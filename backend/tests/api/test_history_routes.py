@@ -1,6 +1,7 @@
 """spec 0012：建任务和任务列表接口（真实 PostgreSQL）。"""
 
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -8,7 +9,14 @@ from fastapi import FastAPI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from harvester.db.history import (
+    record_history_heartbeat,
+    record_pages,
+    set_history_paused,
+    set_history_waiting,
+)
 from harvester.db.models import AccountChannelAccess, HistoryJob
+from harvester.db.system import record_collector_heartbeat
 from tests.api.conftest import FakeClock, complete_setup, do_login, make_client
 from tests.db.builders import CHANNEL, make_account, seed_channel
 
@@ -127,3 +135,128 @@ async def test_write_requires_origin(
     assert response.status_code == 403
     async with factory() as session:
         assert await session.scalar(select(HistoryJob.id)) is None
+
+
+# ---- 里程碑 2：总开关、设置、状态 ----------------------------------------------------
+
+SETTINGS = {
+    "page_delay_min_s": 3,
+    "page_delay_max_s": 6,
+    "daily_page_limit": 1000,
+    "run_minutes": 15,
+    "rest_minutes": 4,
+    "auto_gap_max_hours": 2,
+}
+
+
+async def test_control_pauses_and_resumes(logged_in: httpx.AsyncClient) -> None:  # covers: AC-8
+    paused = (await logged_in.post("/api/history/control", json={"paused": True})).json()
+    assert paused["paused_reason"] == "manual" and paused["paused_at"] is not None
+
+    resumed = (await logged_in.post("/api/history/control", json={"paused": False})).json()
+    assert resumed["paused_reason"] is None and resumed["paused_at"] is None
+
+
+async def test_manual_pause_keeps_automatic_reason(
+    logged_in: httpx.AsyncClient, factory: Factory
+) -> None:  # covers: AC-8
+    async with factory() as session, session.begin():
+        await set_history_paused(session, "rate_limited")
+
+    body = (await logged_in.post("/api/history/control", json={"paused": True})).json()
+
+    assert body["paused_reason"] == "rate_limited"
+
+
+async def test_settings_round_trip(logged_in: httpx.AsyncClient) -> None:  # covers: AC-19
+    first = (await logged_in.get("/api/history/settings")).json()
+    assert first["page_delay_min_s"] == 2 and first["daily_page_limit"] == 1500
+    assert first["pages_used_24h"] == 0
+
+    saved = await logged_in.put("/api/history/settings", json=SETTINGS)
+    assert saved.status_code == 200
+    assert (await logged_in.get("/api/history/settings")).json() == {
+        **SETTINGS,
+        "pages_used_24h": 0,
+    }
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"page_delay_min_s": 0},
+        {"page_delay_max_s": 121},
+        {"daily_page_limit": 49},
+        {"daily_page_limit": 20001},
+        {"run_minutes": 4},
+        {"rest_minutes": 0},
+        {"auto_gap_max_hours": 73},
+        {"page_delay_min_s": 7},  # 最短间隔大于最长间隔
+    ],
+)
+async def test_settings_out_of_range_is_not_saved(
+    logged_in: httpx.AsyncClient, change: dict[str, int]
+) -> None:  # covers: AC-19
+    response = await logged_in.put("/api/history/settings", json={**SETTINGS, **change})
+
+    assert response.status_code == 422
+    assert (await logged_in.get("/api/history/settings")).json()["page_delay_min_s"] == 2
+
+
+async def test_settings_report_pages_used(logged_in: httpx.AsyncClient, factory: Factory) -> None:
+    async with factory() as session, session.begin():
+        await record_pages(session, 12)
+
+    assert (await logged_in.get("/api/history/settings")).json()["pages_used_24h"] == 12
+
+
+async def test_status_reports_quota_and_waiting(
+    logged_in: httpx.AsyncClient, factory: Factory
+) -> None:  # covers: AC-6, AC-20
+    async with factory() as session, session.begin():
+        await record_collector_heartbeat(session)
+        await record_history_heartbeat(session)
+        await record_pages(session, 1500)
+        await set_history_waiting(session, "rest", datetime.now(UTC) + timedelta(minutes=3))
+
+    body = (await logged_in.get("/api/system/status")).json()["history"]
+
+    assert body["pages_used_24h"] == 1500 and body["quota_resumes_at"] is not None
+    assert body["waiting_reason"] == "rest" and body["stale"] is False
+    assert body["last_seen_at"] is not None
+
+
+async def test_status_ignores_expired_waiting_and_flags_silent_worker(
+    logged_in: httpx.AsyncClient, factory: Factory
+) -> None:  # covers: AC-20
+    async with factory() as session, session.begin():
+        await record_collector_heartbeat(session)
+        await set_history_waiting(session, "quota", datetime.now(UTC) - timedelta(minutes=1))
+
+    body = (await logged_in.get("/api/system/status")).json()["history"]
+
+    assert body["waiting_reason"] is None and body["waiting_until"] is None
+    # 进程心跳正常而历史任务心跳为空：无响应。
+    assert body["last_seen_at"] is None and body["stale"] is True
+
+
+async def test_status_not_stale_when_process_is_down(
+    logged_in: httpx.AsyncClient,
+) -> None:  # covers: AC-20
+    assert (await logged_in.get("/api/system/status")).json()["history"]["stale"] is False
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("POST", "/api/history/control", {"paused": True}),
+        ("GET", "/api/history/settings", None),
+        ("PUT", "/api/history/settings", SETTINGS),
+    ],
+)
+async def test_new_endpoints_require_login(
+    client: httpx.AsyncClient, method: str, path: str, body: dict[str, object] | None
+) -> None:  # covers: AC-22
+    response = await client.request(method, path, json=body)
+
+    assert response.status_code == 401

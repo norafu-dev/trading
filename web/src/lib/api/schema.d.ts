@@ -506,6 +506,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/history/control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Control History
+         * @description 总开关（AC-8）。暂停时已经是自动暂停的原因保留不覆盖；继续时清空原因并唤醒 collector。
+         */
+        post: operations["control_history_api_history_control_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/history/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get History Settings */
+        get: operations["get_history_settings_api_history_settings_get"];
+        /** Put History Settings */
+        put: operations["put_history_settings_api_history_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/system/status": {
         parameters: {
             query?: never;
@@ -699,6 +737,11 @@ export interface components {
             stale: boolean;
             /** Has Account */
             has_account: boolean;
+        };
+        /** ControlIn */
+        ControlIn: {
+            /** Paused */
+            paused: boolean;
         };
         /** CreateJobsIn */
         CreateJobsIn: {
@@ -943,6 +986,38 @@ export interface components {
             /** Next Before Id */
             next_before_id: string | null;
         };
+        /** HistorySettingsIn */
+        HistorySettingsIn: {
+            /** Page Delay Min S */
+            page_delay_min_s: number;
+            /** Page Delay Max S */
+            page_delay_max_s: number;
+            /** Daily Page Limit */
+            daily_page_limit: number;
+            /** Run Minutes */
+            run_minutes: number;
+            /** Rest Minutes */
+            rest_minutes: number;
+            /** Auto Gap Max Hours */
+            auto_gap_max_hours: number;
+        };
+        /** HistorySettingsOut */
+        HistorySettingsOut: {
+            /** Page Delay Min S */
+            page_delay_min_s: number;
+            /** Page Delay Max S */
+            page_delay_max_s: number;
+            /** Daily Page Limit */
+            daily_page_limit: number;
+            /** Run Minutes */
+            run_minutes: number;
+            /** Rest Minutes */
+            rest_minutes: number;
+            /** Auto Gap Max Hours */
+            auto_gap_max_hours: number;
+            /** Pages Used 24H */
+            pages_used_24h: number;
+        };
         /** HistoryStatusCountsOut */
         HistoryStatusCountsOut: {
             /** Pending */
@@ -957,6 +1032,27 @@ export interface components {
             failed: number;
             /** Cancelled */
             cancelled: number;
+        };
+        /** HistoryStatusOut */
+        HistoryStatusOut: {
+            /** Paused Reason */
+            paused_reason: ("manual" | "rate_limited" | "account_risk") | null;
+            /** Paused At */
+            paused_at: string | null;
+            /** Waiting Reason */
+            waiting_reason: ("rest" | "quota") | null;
+            /** Waiting Until */
+            waiting_until: string | null;
+            /** Pages Used 24H */
+            pages_used_24h: number;
+            /** Daily Page Limit */
+            daily_page_limit: number;
+            /** Quota Resumes At */
+            quota_resumes_at: string | null;
+            /** Last Seen At */
+            last_seen_at: string | null;
+            /** Stale */
+            stale: boolean;
         };
         /** LabelUpdate */
         LabelUpdate: {
@@ -1184,6 +1280,7 @@ export interface components {
             collector: components["schemas"]["CollectorStatusOut"];
             backup: components["schemas"]["BackupStatusOut"];
             media: components["schemas"]["MediaWorkerStatusOut"];
+            history: components["schemas"]["HistoryStatusOut"];
         };
         /** ThreadLoadOut */
         ThreadLoadOut: {
@@ -2106,6 +2203,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreateJobsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    control_history_api_history_control_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ControlIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryStatusOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_history_settings_api_history_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistorySettingsOut"];
+                };
+            };
+        };
+    };
+    put_history_settings_api_history_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HistorySettingsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistorySettingsOut"];
                 };
             };
             /** @description Validation Error */

@@ -7,7 +7,7 @@
 import asyncio
 import contextlib
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
 import structlog
@@ -22,11 +22,27 @@ from harvester.collector.history_page import (
     Unavailable,
     Unexpected,
 )
+from harvester.collector.ratelimit_watch import (
+    RATE_LIMIT_WINDOW,
+    RateLimitLog,
+    is_tripped,
+    ratelimit_watch_healthy,
+)
 from harvester.collector.supervisor import GatewayHandle, GatewaySession, is_transient_db_error
 from harvester.db import history as history_db
 from harvester.db.history import ClaimedJob
-from harvester.db.history_ranges import snowflake_floor
-from harvester.db.snapshots import HistoryError, HistoryWaitReason
+from harvester.db.history_ranges import (
+    Pacing,
+    Proceed,
+    QuotaWait,
+    Rest,
+    Wait,
+    next_wait,
+    pacing_idle,
+    pacing_working,
+    snowflake_floor,
+)
+from harvester.db.snapshots import HistoryError, HistoryWaitingReason, HistoryWaitReason
 
 log = structlog.get_logger("harvester.collector.history")
 
@@ -39,6 +55,10 @@ RETRY_BASE = 30.0
 RETRY_MAX = 300.0
 RETRY_LIMIT = 5
 RETRY_COOL_DOWN = timedelta(minutes=5)
+# 历史任务心跳间隔（AC-20）。
+HEARTBEAT_INTERVAL = 30.0
+# 连续被自动补缺口抢先这么多次后，下一次不再让位（AC-10）。
+MAX_PREEMPTIONS = 3
 
 
 @dataclass(frozen=True)
@@ -52,6 +72,9 @@ class HistoryDeps:
     uniform: Callable[[float, float], float]
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
     idle_wait: float = IDLE_WAIT
+    # 429 计数（只来自 `discord.http` 日志钩子，AC-7）。
+    ratelimit: RateLimitLog = field(default_factory=RateLimitLog)
+    heartbeat_interval: float = HEARTBEAT_INTERVAL
 
 
 @dataclass(frozen=True)
@@ -73,10 +96,15 @@ async def _wait_wake(deps: HistoryDeps, seconds: float) -> None:
 
 
 async def _release(
-    deps: HistoryDeps, job: ClaimedJob, reason: str, cool_down: timedelta | None = None
+    deps: HistoryDeps,
+    job: ClaimedJob,
+    reason: str,
+    cool_down: timedelta | None = None,
+    *,
+    preempted: bool = False,
 ) -> None:
     async with deps.factory() as session, session.begin():
-        released = await history_db.release_job(session, job.id, cool_down)
+        released = await history_db.release_job(session, job.id, cool_down, preempted=preempted)
     if released:
         log.info("history.job_released", job_id=job.id, reason=reason)
 
@@ -152,7 +180,9 @@ async def _on_fetched(deps: HistoryDeps, current: Running, page: Fetched) -> Run
         return None
     if committed.status != "running":
         return None
-    return Running(replace(job, cursor_message_id=committed.cursor_message_id, preempted_count=0))
+    # 数据库里的 `preempted_count` 已清零；内存里保留领取时的值，
+    # 连续被抢先 3 次的任务跑完前不再让位。
+    return Running(replace(job, cursor_message_id=committed.cursor_message_id))
 
 
 async def fetch_step(
@@ -201,30 +231,118 @@ async def _claim(deps: HistoryDeps, account_id: int) -> Running | None:
     return Running(job)
 
 
+async def _announce(
+    deps: HistoryDeps, announced: tuple[HistoryWaitingReason, datetime] | None, wait: Wait
+) -> tuple[HistoryWaitingReason, datetime] | None:
+    """历史采集整体休息或等限额时在心跳行写原因和时间，结束时清空；没变化不写（AC-6）。"""
+    target: tuple[HistoryWaitingReason, datetime] | None = None
+    if isinstance(wait, Rest):
+        target = ("rest", wait.until)
+    elif isinstance(wait, QuotaWait):
+        target = ("quota", wait.until)
+    if target == announced:
+        return announced
+    async with deps.factory() as session, session.begin():
+        await history_db.set_history_waiting(
+            session, *(target if target is not None else (None, None))
+        )
+    if target is not None:
+        log.info("history.waiting", wait_reason=target[0], wait_until=target[1])
+    return target
+
+
+async def _pause_for_rate_limit(deps: HistoryDeps, job: ClaimedJob | None, hits: int) -> None:
+    """60 分钟内 429 达到 3 次：总开关自动关闭，任务放回，这次请求不发（AC-7）。"""
+    async with deps.factory() as session, session.begin():
+        await history_db.set_history_paused(session, "rate_limited")
+        if job is not None:
+            await history_db.release_job(session, job.id)
+    log.warning("history.paused_rate_limited", hits=hits)
+
+
+async def _should_yield(deps: HistoryDeps, current: Running) -> bool:
+    """手上不是自动补缺口、还没被抢先满 3 次、而且有可领取的自动补缺口时让位（AC-10）。"""
+    job = current.job
+    if job.origin == "gap_auto" or job.preempted_count >= MAX_PREEMPTIONS:
+        return False
+    async with deps.factory() as session:
+        return await history_db.has_claimable_gap_auto(session)
+
+
+async def check_ratelimit_watch(factory: async_sessionmaker[AsyncSession]) -> bool:
+    """启动时自检：429 日志钩子收不到记录就把总开关关闭，宁可停，也不在保护失效时继续（AC-7）。"""
+    if ratelimit_watch_healthy():
+        return True
+    log.error("history.ratelimit_watch_unhealthy")
+    async with factory() as session, session.begin():
+        await history_db.set_history_paused(session, "rate_limited")
+    return False
+
+
 async def _run(deps: HistoryDeps) -> None:
     # 只有这个循环会把任务改成 running：开头先把上次留下的放回去。
     async with deps.factory() as session, session.begin():
         await history_db.reset_running_on_start(session)
     current: Running | None = None
+    pacing = Pacing()
+    was_paused = False
+    announced: tuple[HistoryWaitingReason, datetime] | None = None
     while True:
         # 先清再读：读完之后才到的通知不会丢。
         deps.wake.clear()
         async with deps.factory() as session:
             settings = await history_db.get_history_settings(session)
+        now = deps.clock()
+        paused = settings.paused_reason is not None
+        if was_paused and not paused:
+            # 「继续」之后重新数 429（不依赖 NOTIFY 是否送到，AC-8）。
+            deps.ratelimit.clear()
+        was_paused = paused
         gateway, account_id = deps.gateway.session, deps.gateway.account_id
-        if settings.paused_reason is not None or gateway is None or account_id is None:
+        if paused or gateway is None or account_id is None:
             if current is not None:
-                reason = "paused" if settings.paused_reason is not None else "offline"
-                await _release(deps, current.job, reason)
+                await _release(deps, current.job, "paused" if paused else "offline")
                 current = None
+            pacing = pacing_idle(pacing, now)
+            announced = await _announce(deps, announced, Proceed())
             await _wait_wake(deps, deps.idle_wait)
             continue
+        async with deps.factory() as session:
+            buckets = await history_db.pages_in_window(session, now)
+        rest = timedelta(minutes=settings.rest_minutes)
+        wait, pacing = next_wait(
+            run=timedelta(minutes=settings.run_minutes),
+            rest=rest,
+            daily_page_limit=settings.daily_page_limit,
+            pacing=pacing,
+            buckets=buckets,
+            now=now,
+        )
+        if not isinstance(wait, Proceed):
+            if current is not None:
+                await _release(deps, current.job, "rest" if isinstance(wait, Rest) else "quota")
+                current = None
+            announced = await _announce(deps, announced, wait)
+            # 分段等：暂停、改设置、新任务都靠唤醒及时生效，到点后重新检查。
+            await _wait_wake(deps, min((wait.until - now).total_seconds(), deps.idle_wait))
+            continue
+        announced = await _announce(deps, announced, wait)
         if current is None:
             current = await _claim(deps, account_id)
             if current is None:
+                pacing = pacing_idle(pacing, now)
                 await _wait_wake(deps, deps.idle_wait)
                 continue
+        pacing = pacing_working(pacing, now, rest)
+        hits = deps.ratelimit.count_since(now - RATE_LIMIT_WINDOW)
+        if is_tripped(deps.ratelimit, now):
+            await _pause_for_rate_limit(deps, current.job, hits)
+            current = None
+            continue
         current = await fetch_step(deps, gateway, account_id, current)
+        if current is not None and await _should_yield(deps, current):
+            await _release(deps, current.job, "preempted", preempted=True)
+            current = None
         # 任务失败之后也等一个正常的页间隔再领下一个（AC-12）。
         await deps.sleep(deps.uniform(settings.page_delay_min_s, settings.page_delay_max_s))
 
@@ -239,6 +357,20 @@ async def run_history_loop(deps: HistoryDeps) -> None:
         except Exception as exc:
             log.error("history.loop_failed", error_type=type(exc).__name__)
             await deps.sleep(ERROR_BACKOFF)
+
+
+async def run_heartbeat_loop(deps: HistoryDeps) -> None:
+    """每 30 秒写一次历史任务心跳；首页据此判断历史采集有没有卡住（AC-20）。"""
+    while True:
+        try:
+            async with deps.factory() as session, session.begin():
+                await history_db.record_history_heartbeat(session)
+            await asyncio.sleep(deps.heartbeat_interval)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.error("history.loop_failed", loop="heartbeat", error_type=type(exc).__name__)
+            await asyncio.sleep(ERROR_BACKOFF)
 
 
 async def release_on_stop(factory: async_sessionmaker[AsyncSession]) -> None:

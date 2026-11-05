@@ -1220,6 +1220,108 @@
         }
       }
     },
+    "/api/history/control": {
+      "post": {
+        "tags": [
+          "history"
+        ],
+        "summary": "Control History",
+        "description": "总开关（AC-8）。暂停时已经是自动暂停的原因保留不覆盖；继续时清空原因并唤醒 collector。",
+        "operationId": "control_history_api_history_control_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryStatusOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history/settings": {
+      "get": {
+        "tags": [
+          "history"
+        ],
+        "summary": "Get History Settings",
+        "operationId": "get_history_settings_api_history_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistorySettingsOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "history"
+        ],
+        "summary": "Put History Settings",
+        "operationId": "put_history_settings_api_history_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HistorySettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistorySettingsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/system/status": {
       "get": {
         "tags": [
@@ -1746,6 +1848,19 @@
           "has_account"
         ],
         "title": "CollectorStatusOut"
+      },
+      "ControlIn": {
+        "properties": {
+          "paused": {
+            "type": "boolean",
+            "title": "Paused"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paused"
+        ],
+        "title": "ControlIn"
       },
       "CreateJobsIn": {
         "properties": {
@@ -2493,6 +2608,111 @@
         ],
         "title": "HistoryJobPageOut"
       },
+      "HistorySettingsIn": {
+        "properties": {
+          "page_delay_min_s": {
+            "type": "integer",
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Page Delay Min S"
+          },
+          "page_delay_max_s": {
+            "type": "integer",
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Page Delay Max S"
+          },
+          "daily_page_limit": {
+            "type": "integer",
+            "maximum": 20000.0,
+            "minimum": 50.0,
+            "title": "Daily Page Limit"
+          },
+          "run_minutes": {
+            "type": "integer",
+            "maximum": 240.0,
+            "minimum": 5.0,
+            "title": "Run Minutes"
+          },
+          "rest_minutes": {
+            "type": "integer",
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Rest Minutes"
+          },
+          "auto_gap_max_hours": {
+            "type": "integer",
+            "maximum": 72.0,
+            "minimum": 0.0,
+            "title": "Auto Gap Max Hours"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_delay_min_s",
+          "page_delay_max_s",
+          "daily_page_limit",
+          "run_minutes",
+          "rest_minutes",
+          "auto_gap_max_hours"
+        ],
+        "title": "HistorySettingsIn"
+      },
+      "HistorySettingsOut": {
+        "properties": {
+          "page_delay_min_s": {
+            "type": "integer",
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Page Delay Min S"
+          },
+          "page_delay_max_s": {
+            "type": "integer",
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Page Delay Max S"
+          },
+          "daily_page_limit": {
+            "type": "integer",
+            "maximum": 20000.0,
+            "minimum": 50.0,
+            "title": "Daily Page Limit"
+          },
+          "run_minutes": {
+            "type": "integer",
+            "maximum": 240.0,
+            "minimum": 5.0,
+            "title": "Run Minutes"
+          },
+          "rest_minutes": {
+            "type": "integer",
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Rest Minutes"
+          },
+          "auto_gap_max_hours": {
+            "type": "integer",
+            "maximum": 72.0,
+            "minimum": 0.0,
+            "title": "Auto Gap Max Hours"
+          },
+          "pages_used_24h": {
+            "type": "integer",
+            "title": "Pages Used 24H"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_delay_min_s",
+          "page_delay_max_s",
+          "daily_page_limit",
+          "run_minutes",
+          "rest_minutes",
+          "auto_gap_max_hours",
+          "pages_used_24h"
+        ],
+        "title": "HistorySettingsOut"
+      },
       "HistoryStatusCountsOut": {
         "properties": {
           "pending": {
@@ -2530,6 +2750,114 @@
           "cancelled"
         ],
         "title": "HistoryStatusCountsOut"
+      },
+      "HistoryStatusOut": {
+        "properties": {
+          "paused_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "manual",
+                  "rate_limited",
+                  "account_risk"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused Reason"
+          },
+          "paused_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused At"
+          },
+          "waiting_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "rest",
+                  "quota"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waiting Reason"
+          },
+          "waiting_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waiting Until"
+          },
+          "pages_used_24h": {
+            "type": "integer",
+            "title": "Pages Used 24H"
+          },
+          "daily_page_limit": {
+            "type": "integer",
+            "title": "Daily Page Limit"
+          },
+          "quota_resumes_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota Resumes At"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paused_reason",
+          "paused_at",
+          "waiting_reason",
+          "waiting_until",
+          "pages_used_24h",
+          "daily_page_limit",
+          "quota_resumes_at",
+          "last_seen_at",
+          "stale"
+        ],
+        "title": "HistoryStatusOut"
       },
       "LabelUpdate": {
         "properties": {
@@ -3249,13 +3577,17 @@
           },
           "media": {
             "$ref": "#/components/schemas/MediaWorkerStatusOut"
+          },
+          "history": {
+            "$ref": "#/components/schemas/HistoryStatusOut"
           }
         },
         "type": "object",
         "required": [
           "collector",
           "backup",
-          "media"
+          "media",
+          "history"
         ],
         "title": "SystemStatusOut"
       },

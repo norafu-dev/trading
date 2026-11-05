@@ -1,12 +1,14 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import { guildChannelsKey, type ManagedChannel } from "@/components/channels/use-guild-channels";
 import { CHANNELS_POLL_INTERVAL_MS, useGuilds } from "@/components/channels/use-guilds";
+import { SYSTEM_STATUS_KEY, useSystemStatus } from "@/components/system/use-system-status";
 import { api } from "@/lib/api/client";
-import { toApiError } from "@/lib/api/errors";
+import { toApiError, toUiError } from "@/lib/api/errors";
 import { HISTORY_KEY } from "@/lib/events/event-stream";
 
-import type { CreateJobsResult } from "./describe-history";
+import type { CreateJobsResult, HistorySettings, SettingsValues } from "./describe-history";
 
 export const HISTORY_JOBS_KEY = [...HISTORY_KEY, "jobs", "active"] as const;
 
@@ -91,4 +93,65 @@ export function useSelectableChannels(enabled: boolean) {
     isError: guilds.isError || channelQueries.some((q) => q.isError),
     error: guilds.error ?? channelQueries.find((q) => q.error)?.error ?? null,
   };
+}
+
+export const HISTORY_SETTINGS_KEY = [...HISTORY_KEY, "settings"] as const;
+
+/** 总开关、整体等待和用量都在系统状态里；历史事件和 30 秒轮询会刷新它。 */
+export function useHistoryStatus() {
+  const system = useSystemStatus();
+  return { ...system, data: system.data?.history };
+}
+
+export function useHistoryControl() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (paused: boolean) => {
+      const { data, error, response } = await api.POST("/api/history/control", {
+        body: { paused },
+      });
+      if (!data) throw toApiError(response.status, error);
+      return data;
+    },
+    onError: (error) => {
+      const { title, detail } = toUiError(error);
+      toast.error(title, { description: detail });
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: HISTORY_KEY });
+      void queryClient.invalidateQueries({ queryKey: SYSTEM_STATUS_KEY });
+    },
+  });
+}
+
+export function useHistorySettings() {
+  return useQuery({
+    queryKey: HISTORY_SETTINGS_KEY,
+    queryFn: async () => {
+      const { data, error, response } = await api.GET("/api/history/settings");
+      if (!data) throw toApiError(response.status, error);
+      return data;
+    },
+    refetchInterval: HISTORY_POLL_INTERVAL_MS,
+  });
+}
+
+export function useSaveHistorySettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: SettingsValues) => {
+      const { data, error, response } = await api.PUT("/api/history/settings", { body });
+      if (!data) throw toApiError(response.status, error);
+      return data;
+    },
+    onSuccess: (data: HistorySettings) => {
+      queryClient.setQueryData(HISTORY_SETTINGS_KEY, data);
+      toast.success("已保存，几秒内生效");
+    },
+    onError: (error) => {
+      const { title, detail } = toUiError(error);
+      toast.error(title, { description: detail });
+    },
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: SYSTEM_STATUS_KEY }),
+  });
 }

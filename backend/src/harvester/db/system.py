@@ -11,13 +11,22 @@ from sqlalchemy import exists, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from harvester.db import history as history_db
 from harvester.db.account import COLLECTOR_STALE_AFTER
+from harvester.db.history_ranges import quota_resumes_at
 from harvester.db.models import BackupRun, CollectorHeartbeat, DiscordAccount, Media
-from harvester.db.snapshots import BackupError, BackupStatus
+from harvester.db.snapshots import (
+    BackupError,
+    BackupStatus,
+    HistoryPausedReason,
+    HistoryWaitingReason,
+)
 
 BACKUP_OVERDUE_AFTER = timedelta(hours=48)
 # 进程心跳正常而下载任务心跳超过这么久没更新，就算无响应（spec 0011 AC-22）。
 MEDIA_WORKER_STALE_AFTER = timedelta(seconds=180)
+# 历史任务心跳同理（spec 0012 AC-20）。
+HISTORY_WORKER_STALE_AFTER = timedelta(seconds=180)
 
 
 @dataclass(frozen=True)
@@ -53,10 +62,24 @@ class MediaState:
 
 
 @dataclass(frozen=True)
+class HistoryState:
+    paused_reason: HistoryPausedReason | None
+    paused_at: datetime | None
+    waiting_reason: HistoryWaitingReason | None
+    waiting_until: datetime | None
+    pages_used_24h: int
+    daily_page_limit: int
+    quota_resumes_at: datetime | None
+    last_seen_at: datetime | None
+    stale: bool
+
+
+@dataclass(frozen=True)
 class SystemStatus:
     collector: CollectorState
     backup: BackupState
     media: MediaState
+    history: HistoryState
 
 
 def is_process_stale(last_seen_at: datetime | None, db_now: datetime, *, has_account: bool) -> bool:
@@ -75,6 +98,15 @@ def is_media_worker_stale(
     return media_seen_at is None or db_now - media_seen_at > MEDIA_WORKER_STALE_AFTER
 
 
+def is_history_worker_stale(
+    history_seen_at: datetime | None, db_now: datetime, *, process_alive: bool
+) -> bool:
+    """只有 collector 进程本身正常时才报历史任务无响应（AC-20）。"""
+    if not process_alive:
+        return False
+    return history_seen_at is None or db_now - history_seen_at > HISTORY_WORKER_STALE_AFTER
+
+
 def is_backup_overdue(
     *, has_runs: bool, last_success_at: datetime | None, db_now: datetime
 ) -> bool:
@@ -91,6 +123,41 @@ async def record_collector_heartbeat(session: AsyncSession) -> None:
         .on_conflict_do_update(
             index_elements=[CollectorHeartbeat.id], set_={"last_seen_at": func.now()}
         )
+    )
+
+
+async def get_history_state(session: AsyncSession) -> HistoryState:
+    """历史采集的总开关、整体等待、用量和心跳（AC-6、AC-19、AC-20），时间用数据库时钟。"""
+    db_now: datetime = (await session.execute(select(func.now()))).scalar_one()
+    settings = await history_db.get_history_settings(session)
+    buckets = await history_db.pages_in_window(session, db_now)
+    beat = (
+        await session.execute(
+            select(
+                CollectorHeartbeat.last_seen_at,
+                CollectorHeartbeat.history_worker_seen_at,
+                CollectorHeartbeat.history_waiting_reason,
+                CollectorHeartbeat.history_waiting_until,
+            )
+        )
+    ).one_or_none()
+    process_seen, history_seen, waiting_reason, waiting_until = beat or (None, None, None, None)
+    has_account = bool(await session.scalar(select(exists(select(DiscordAccount.id)))))
+    process_alive = process_seen is not None and not is_process_stale(
+        process_seen, db_now, has_account=has_account
+    )
+    waiting = waiting_until is not None and waiting_until > db_now
+    used = sum(pages for _, pages in buckets)
+    return HistoryState(
+        paused_reason=settings.paused_reason,
+        paused_at=settings.paused_at,
+        waiting_reason=waiting_reason if waiting else None,
+        waiting_until=waiting_until if waiting else None,
+        pages_used_24h=used,
+        daily_page_limit=settings.daily_page_limit,
+        quota_resumes_at=quota_resumes_at(buckets, settings.daily_page_limit),
+        last_seen_at=history_seen,
+        stale=is_history_worker_stale(history_seen, db_now, process_alive=process_alive),
     )
 
 
@@ -154,6 +221,7 @@ async def get_system_status(session: AsyncSession) -> SystemStatus:
             ),
             paused_until=paused_until if paused_until and paused_until > db_now else None,
         ),
+        history=await get_history_state(session),
     )
 
 

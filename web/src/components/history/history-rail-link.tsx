@@ -5,9 +5,14 @@ import Link from "next/link";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-// 图标栏的「历史采集」入口（spec 0012）。限速自动暂停时的红点在下一个里程碑加上。
+import { isRateLimitedPause, RATE_LIMITED_LABEL } from "./describe-history";
+import { useHistoryStatus } from "./use-history";
+
+// 图标栏的「历史采集」入口：因限速自动暂停时右上角显示红点，等你手动继续（spec 0012 AC-7）。
 export function HistoryRailLink() {
-  const label = "历史采集";
+  const { data } = useHistoryStatus();
+  const limited = isRateLimitedPause(data);
+  const label = limited ? RATE_LIMITED_LABEL : "历史采集";
   return (
     <Tooltip>
       <TooltipTrigger
@@ -20,6 +25,12 @@ export function HistoryRailLink() {
         }
       >
         <HistoryIcon aria-hidden className="size-5" strokeWidth={1.75} />
+        {limited ? (
+          <span
+            aria-hidden
+            className="absolute top-1 right-1 size-2.5 rounded-full bg-destructive ring-2 ring-rail"
+          />
+        ) : null}
       </TooltipTrigger>
       <TooltipContent side="right">{label}</TooltipContent>
     </Tooltip>

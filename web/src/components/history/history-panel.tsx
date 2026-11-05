@@ -26,8 +26,9 @@ import {
   STATUS_LABELS,
   WAIT_LABELS,
 } from "./describe-history";
+import { HistoryStatusBar } from "./history-status-bar";
 import { NewJobDialog } from "./new-job-dialog";
-import { useActiveHistoryJobs } from "./use-history";
+import { useActiveHistoryJobs, useHistoryStatus } from "./use-history";
 
 const STATUS_VARIANT: Readonly<
   Record<JobStatus, "default" | "secondary" | "destructive" | "outline">
@@ -124,6 +125,7 @@ function BatchCard({
 // 「历史采集」页（spec 0012 AC-1、AC-14）：新建任务和进行中的任务，按批次分组。
 export function HistoryPanel() {
   const jobs = useActiveHistoryJobs();
+  const status = useHistoryStatus();
   const [dialogOpen, setDialogOpen] = useState(false);
   const time = useMemo(
     () => createTimeFormat(Intl.DateTimeFormat().resolvedOptions().timeZone),
@@ -185,6 +187,8 @@ export function HistoryPanel() {
             新建任务
           </Button>
         </header>
+
+        {status.data ? <HistoryStatusBar status={status.data} time={time} /> : null}
 
         <section aria-labelledby="history-active-title" className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-2">

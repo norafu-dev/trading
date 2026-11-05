@@ -10,6 +10,17 @@ export const SYSTEM_STATUS: SystemStatusData = {
     stale: false,
     paused_until: null,
   },
+  history: {
+    paused_reason: null,
+    paused_at: null,
+    waiting_reason: null,
+    waiting_until: null,
+    pages_used_24h: 0,
+    daily_page_limit: 1500,
+    quota_resumes_at: null,
+    last_seen_at: "2026-11-01T10:00:00Z",
+    stale: false,
+  },
 };
 
 export function systemStatusResponse(data: SystemStatusData = SYSTEM_STATUS) {

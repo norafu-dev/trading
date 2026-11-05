@@ -4,17 +4,21 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, status
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, model_validator
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from harvester.api.errors import ApiError
 from harvester.db import SessionFactoryDep
 from harvester.db import history as history_store
+from harvester.db import system as system_db
 from harvester.db.history import HistoryBatchRow, HistoryJobRow, InvalidRange, SkipReason
 from harvester.db.history_ranges import progress
 from harvester.db.snapshots import (
     HistoryError,
     HistoryJobStatus,
     HistoryOrigin,
+    HistoryPausedReason,
+    HistoryWaitingReason,
     HistoryWaitReason,
     snowflake_time,
 )
@@ -108,6 +112,55 @@ class CreateJobsIn(BaseModel):
     # 为空表示现在；晚于现在时按现在算。
     range_end: datetime | None = None
     refetch: bool = False
+
+
+class HistoryStatusOut(BaseModel):
+    paused_reason: HistoryPausedReason | None
+    paused_at: datetime | None
+    waiting_reason: HistoryWaitingReason | None
+    waiting_until: datetime | None
+    pages_used_24h: int
+    daily_page_limit: int
+    quota_resumes_at: datetime | None
+    last_seen_at: datetime | None
+    stale: bool
+
+
+class HistorySettingsIn(BaseModel):
+    page_delay_min_s: int = Field(ge=1, le=120)
+    page_delay_max_s: int = Field(ge=1, le=120)
+    daily_page_limit: int = Field(ge=50, le=20000)
+    run_minutes: int = Field(ge=5, le=240)
+    rest_minutes: int = Field(ge=1, le=120)
+    auto_gap_max_hours: int = Field(ge=0, le=72)
+
+    @model_validator(mode="after")
+    def _min_not_above_max(self) -> "HistorySettingsIn":
+        if self.page_delay_min_s > self.page_delay_max_s:
+            raise ValueError("最短间隔不能大于最长间隔")
+        return self
+
+
+class HistorySettingsOut(HistorySettingsIn):
+    pages_used_24h: int
+
+
+class ControlIn(BaseModel):
+    paused: bool
+
+
+def status_out(state: system_db.HistoryState) -> HistoryStatusOut:
+    return HistoryStatusOut(
+        paused_reason=state.paused_reason,
+        paused_at=state.paused_at,
+        waiting_reason=state.waiting_reason,
+        waiting_until=state.waiting_until,
+        pages_used_24h=state.pages_used_24h,
+        daily_page_limit=state.daily_page_limit,
+        quota_resumes_at=state.quota_resumes_at,
+        last_seen_at=state.last_seen_at,
+        stale=state.stale,
+    )
 
 
 def job_out(row: HistoryJobRow) -> HistoryJobOut:
@@ -209,3 +262,45 @@ async def create_history_jobs(body: CreateJobsIn, factory: SessionFactoryDep) ->
             ),
         ],
     )
+
+
+@history_router.post("/control")
+async def control_history(body: ControlIn, factory: SessionFactoryDep) -> HistoryStatusOut:
+    """总开关（AC-8）。暂停时已经是自动暂停的原因保留不覆盖；继续时清空原因并唤醒 collector。"""
+    async with factory() as session, session.begin():
+        if body.paused:
+            await history_store.set_history_paused(session, "manual")
+        else:
+            await history_store.resume_history(session)
+    async with factory() as session:
+        return status_out(await system_db.get_history_state(session))
+
+
+async def _settings_out(session: AsyncSession) -> HistorySettingsOut:
+    row = await history_store.get_history_settings(session)
+    state = await system_db.get_history_state(session)
+    return HistorySettingsOut(
+        page_delay_min_s=row.page_delay_min_s,
+        page_delay_max_s=row.page_delay_max_s,
+        daily_page_limit=row.daily_page_limit,
+        run_minutes=row.run_minutes,
+        rest_minutes=row.rest_minutes,
+        auto_gap_max_hours=row.auto_gap_max_hours,
+        pages_used_24h=state.pages_used_24h,
+    )
+
+
+@history_router.get("/settings")
+async def get_history_settings(factory: SessionFactoryDep) -> HistorySettingsOut:
+    async with factory() as session:
+        return await _settings_out(session)
+
+
+@history_router.put("/settings")
+async def put_history_settings(
+    body: HistorySettingsIn, factory: SessionFactoryDep
+) -> HistorySettingsOut:
+    async with factory() as session, session.begin():
+        await history_store.update_history_settings(session, **body.model_dump())
+    async with factory() as session:
+        return await _settings_out(session)

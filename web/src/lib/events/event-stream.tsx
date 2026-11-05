@@ -3,6 +3,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 
+import { SYSTEM_STATUS_KEY } from "@/components/system/use-system-status";
 import { AUTH_STATE_KEY } from "@/lib/auth/use-auth-state";
 
 export const DISCORD_ACCOUNT_KEY = ["discord-account"] as const;
@@ -73,6 +74,8 @@ export function EventStreamProvider({ children }: Readonly<{ children: ReactNode
       historyTimer = setTimeout(() => {
         historyTimer = null;
         void queryClient.invalidateQueries({ queryKey: HISTORY_KEY });
+        // 总开关、休息和用量在系统状态里，红点和首页一起刷新（AC-7、AC-20）。
+        void queryClient.invalidateQueries({ queryKey: SYSTEM_STATUS_KEY });
       }, HISTORY_COALESCE_MS);
     };
     let opened = false;

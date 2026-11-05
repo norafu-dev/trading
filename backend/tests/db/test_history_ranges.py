@@ -3,10 +3,18 @@
 from datetime import UTC, datetime, timedelta
 
 from harvester.db.history_ranges import (
+    Pacing,
+    Proceed,
+    QuotaWait,
+    Rest,
+    next_wait,
+    pacing_idle,
+    pacing_working,
     page_cursor,
     page_reached_end,
     partial_coverage_start,
     progress,
+    quota_resumes_at,
     snowflake_floor,
 )
 from harvester.db.snapshots import DISCORD_EPOCH, snowflake_time
@@ -59,3 +67,85 @@ def test_progress() -> None:
     assert progress(start, end, end - timedelta(hours=4), done=False) == 0.4
     assert progress(start, end, None, done=True) == 1.0
     assert progress(start, end, start - timedelta(hours=1), done=False) == 1.0
+
+
+# ---- 节奏和限额（AC-5） --------------------------------------------------------------
+
+H = datetime(2026, 3, 1, tzinfo=UTC)
+MIN = timedelta(minutes=1)
+
+
+def test_quota_resumes_at_is_none_below_limit() -> None:
+    assert quota_resumes_at([(H, 40), (H + timedelta(hours=1), 9)], 50) is None
+
+
+def test_quota_resumes_when_earliest_bucket_frees_enough() -> None:
+    buckets = [(H, 30), (H + timedelta(hours=1), 25)]
+    assert quota_resumes_at(buckets, 50) == H + timedelta(hours=25)
+
+
+def test_quota_resumes_at_next_bucket_when_first_is_not_enough() -> None:
+    buckets = [(H, 5), (H + timedelta(hours=1), 5), (H + timedelta(hours=2), 60)]
+    # 减掉前两桶后还剩 60，仍不低于 50，要等到第三桶也滑出窗口。
+    assert quota_resumes_at(buckets, 50) == H + timedelta(hours=2) + timedelta(hours=25)
+
+
+def test_quota_resumes_ignores_input_order() -> None:
+    buckets = [(H + timedelta(hours=1), 25), (H, 30)]
+    assert quota_resumes_at(buckets, 50) == H + timedelta(hours=25)
+
+
+def wait_for(pacing: Pacing, now: datetime, *, buckets=(), limit: int = 1500):
+    return next_wait(
+        run=20 * MIN,
+        rest=5 * MIN,
+        daily_page_limit=limit,
+        pacing=pacing,
+        buckets=buckets,
+        now=now,
+    )
+
+
+def test_proceeds_before_run_time_is_reached() -> None:
+    wait, _ = wait_for(Pacing(ran=19 * MIN), H)
+    assert wait == Proceed()
+
+
+def test_rests_when_run_time_is_reached_and_keeps_rest_end() -> None:
+    wait, pacing = wait_for(Pacing(ran=20 * MIN, last_active=H), H)
+    assert wait == Rest(H + 5 * MIN)
+    # 再次检查不会把休息顺延。
+    again, _ = wait_for(pacing, H + 2 * MIN)
+    assert again == Rest(H + 5 * MIN)
+
+
+def test_rest_over_clears_the_running_total() -> None:
+    _, pacing = wait_for(Pacing(ran=20 * MIN), H)
+    wait, after = wait_for(pacing, H + 5 * MIN)
+    assert wait == Proceed()
+    assert after == Pacing()
+
+
+def test_waits_for_quota_when_window_is_full() -> None:
+    buckets = [(H - timedelta(hours=3), 1500)]
+    wait, _ = wait_for(Pacing(), H, buckets=buckets)
+    assert wait == QuotaWait(H - timedelta(hours=3) + timedelta(hours=25))
+
+
+def test_pacing_accumulates_only_while_working() -> None:
+    pacing = pacing_working(Pacing(), H, 5 * MIN)
+    pacing = pacing_working(pacing, H + 3 * MIN, 5 * MIN)
+    assert pacing.ran == 3 * MIN
+    # 空闲的时间不累计。
+    pacing = pacing_idle(pacing, H + 4 * MIN)
+    pacing = pacing_working(pacing, H + 7 * MIN, 5 * MIN)
+    assert pacing.ran == 3 * MIN
+
+
+def test_idle_longer_than_rest_counts_as_rested() -> None:
+    pacing = pacing_working(Pacing(), H, 5 * MIN)
+    pacing = pacing_working(pacing, H + 19 * MIN, 5 * MIN)
+    pacing = pacing_idle(pacing, H + 19 * MIN)
+    assert pacing_working(pacing, H + 24 * MIN, 5 * MIN).ran == timedelta(0)
+    short = pacing_working(pacing, H + 23 * MIN, 5 * MIN)
+    assert short.ran == 19 * MIN

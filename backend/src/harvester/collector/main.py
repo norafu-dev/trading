@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from harvester.collector import history_worker, media_worker
 from harvester.collector.discord_client import new_client
+from harvester.collector.ratelimit_watch import RateLimitLog, install_ratelimit_watch
 from harvester.collector.supervisor import Deps, GatewayHandle, run_supervisor
 from harvester.collector.wake_guard import WakeGuard, watch_sleep
 from harvester.config import (
@@ -179,12 +180,18 @@ async def run() -> int:
             clock=_utc_now,
             gateway=gateway,
         )
+        # 429 只从 `discord.http` 的警告日志里数；
+        # 钩子收不到记录时先把历史采集关掉（spec 0012 AC-7）。
+        ratelimit = RateLimitLog()
+        install_ratelimit_watch(ratelimit, _utc_now)
+        await history_worker.check_ratelimit_watch(factory)
         history_deps = history_worker.HistoryDeps(
             factory=factory,
             gateway=gateway,
             wake=history_wake,
             clock=_utc_now,
             uniform=random.uniform,
+            ratelimit=ratelimit,
         )
         supervisor = asyncio.create_task(
             run_supervisor(
@@ -213,6 +220,9 @@ async def run() -> int:
             # 历史任务同样不放进 waiters：出错只记日志、自己从头再来（spec 0012）。
             asyncio.create_task(
                 history_worker.run_history_loop(history_deps), name="history-worker"
+            ),
+            asyncio.create_task(
+                history_worker.run_heartbeat_loop(history_deps), name="history-beat"
             ),
         )
         stop_wait = asyncio.create_task(stop.wait(), name="stop-wait")

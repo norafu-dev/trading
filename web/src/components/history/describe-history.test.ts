@@ -3,15 +3,20 @@ import { describe, expect, it } from "vitest";
 import {
   batchStatusSummary,
   checkRange,
+  checkSettings,
   countChannels,
   describeCreate,
   filterGuilds,
   groupByBatch,
   type HistoryJob,
+  type HistoryStatus,
+  isRateLimitedPause,
   localInputToIso,
   percent,
   presetInputs,
+  type SettingsInput,
   splitByCollect,
+  statusNotices,
   toLocalInput,
 } from "./describe-history";
 
@@ -153,5 +158,149 @@ describe("频道选择", () => {
     expect(filterGuilds(guilds, "SIGNALS")[0]?.channels).toHaveLength(2);
     expect(filterGuilds(guilds, "  ")).toBe(guilds);
     expect(filterGuilds(guilds, "zzz")).toEqual([]);
+  });
+});
+
+// ---- 总开关、节奏设置 -----------------------------------------------------------------
+
+const fullTime = (iso: string) => `完整(${iso})`;
+const STATUS: HistoryStatus = {
+  paused_reason: null,
+  paused_at: null,
+  waiting_reason: null,
+  waiting_until: null,
+  pages_used_24h: 10,
+  daily_page_limit: 1500,
+  quota_resumes_at: null,
+  last_seen_at: "2026-11-05T10:00:00Z",
+  stale: false,
+};
+
+describe("statusNotices", () => {
+  it("正常运行时没有提示", () => {
+    expect(statusNotices(STATUS, fullTime)).toEqual([]);
+  });
+
+  // covers: spec 0012 AC-8
+  it("三种暂停原因各有文字和暂停时间，只有手动暂停不标红", () => {
+    const at = "2026-11-05T09:00:00Z";
+    const manual = statusNotices({ ...STATUS, paused_reason: "manual", paused_at: at }, fullTime);
+    expect(manual).toEqual([{ key: "paused", tone: "info", text: `你手动暂停（完整(${at})）` }]);
+    const limited = statusNotices(
+      { ...STATUS, paused_reason: "rate_limited", paused_at: at },
+      fullTime,
+    );
+    expect(limited[0]).toMatchObject({ tone: "error", text: `因限速自动暂停（完整(${at})）` });
+    const risk = statusNotices(
+      { ...STATUS, paused_reason: "account_risk", paused_at: at },
+      fullTime,
+    );
+    expect(risk[0]?.text).toContain("账号可能有风险，已自动暂停");
+  });
+
+  // covers: spec 0012 AC-6
+  it("休息中和额度用完都说明最早继续的时间", () => {
+    const rest = statusNotices(
+      { ...STATUS, waiting_reason: "rest", waiting_until: "2026-11-05T10:05:00Z" },
+      fullTime,
+    );
+    expect(rest[0]?.text).toBe("休息中，完整(2026-11-05T10:05:00Z) 继续");
+    const quota = statusNotices(
+      { ...STATUS, waiting_reason: "quota", waiting_until: "2026-11-06T01:00:00Z" },
+      fullTime,
+    );
+    expect(quota[0]?.text).toBe("今日额度已用完，最早 完整(2026-11-06T01:00:00Z) 继续");
+  });
+
+  it("用量到了上限但还没进入等待时，也用预计继续时间提示额度用完", () => {
+    const notices = statusNotices(
+      { ...STATUS, pages_used_24h: 1500, quota_resumes_at: "2026-11-06T01:00:00Z" },
+      fullTime,
+    );
+    expect(notices[0]?.text).toContain("今日额度已用完");
+  });
+
+  // covers: spec 0012 AC-20
+  it("历史任务无响应时标红", () => {
+    expect(statusNotices({ ...STATUS, stale: true }, fullTime)[0]).toMatchObject({
+      key: "stale",
+      tone: "error",
+    });
+  });
+});
+
+describe("isRateLimitedPause", () => {
+  // covers: spec 0012 AC-7
+  it("只有限速自动暂停才亮红点", () => {
+    expect(isRateLimitedPause({ ...STATUS, paused_reason: "rate_limited" })).toBe(true);
+    expect(isRateLimitedPause({ ...STATUS, paused_reason: "manual" })).toBe(false);
+    expect(isRateLimitedPause({ ...STATUS, paused_reason: "account_risk" })).toBe(false);
+    expect(isRateLimitedPause(undefined)).toBe(false);
+  });
+});
+
+describe("checkSettings", () => {
+  const OK: SettingsInput = {
+    page_delay_min_s: "2",
+    page_delay_max_s: "4",
+    daily_page_limit: "1500",
+    run_minutes: "20",
+    rest_minutes: "5",
+    auto_gap_max_hours: "6",
+  };
+
+  // covers: spec 0012 AC-19
+  it("范围内的整数通过", () => {
+    expect(checkSettings(OK)).toEqual({
+      ok: true,
+      values: {
+        page_delay_min_s: 2,
+        page_delay_max_s: 4,
+        daily_page_limit: 1500,
+        run_minutes: 20,
+        rest_minutes: 5,
+        auto_gap_max_hours: 6,
+      },
+    });
+  });
+
+  // covers: spec 0012 AC-19
+  it("边界值通过，自动补缺口填 0 表示关闭", () => {
+    const check = checkSettings({
+      page_delay_min_s: "1",
+      page_delay_max_s: "120",
+      daily_page_limit: "20000",
+      run_minutes: "5",
+      rest_minutes: "120",
+      auto_gap_max_hours: "0",
+    });
+    expect(check.ok).toBe(true);
+  });
+
+  // covers: spec 0012 AC-19
+  it.each([
+    ["page_delay_min_s", "0"],
+    ["page_delay_max_s", "121"],
+    ["daily_page_limit", "49"],
+    ["daily_page_limit", "20001"],
+    ["run_minutes", "4"],
+    ["rest_minutes", "0"],
+    ["auto_gap_max_hours", "73"],
+    ["run_minutes", "abc"],
+    ["rest_minutes", "1.5"],
+    ["daily_page_limit", ""],
+  ] as const)("%s 填 %s 时不通过并说明范围", (key, value) => {
+    const check = checkSettings({ ...OK, [key]: value });
+    expect(check.ok).toBe(false);
+    if (!check.ok) expect(check.errors[key]).toMatch(/请输入 \d+ 到 \d+ 之间的整数/);
+  });
+
+  // covers: spec 0012 AC-19
+  it("最短间隔大于最长间隔时不通过", () => {
+    const check = checkSettings({ ...OK, page_delay_min_s: "9", page_delay_max_s: "4" });
+    expect(check).toEqual({
+      ok: false,
+      errors: { page_delay_min_s: "最短间隔不能大于最长间隔" },
+    });
   });
 });

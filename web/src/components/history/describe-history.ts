@@ -180,3 +180,100 @@ export function splitByCollect<C extends PickerChannel>(
 export function countChannels(guilds: readonly PickerGuild<PickerChannel>[]): number {
   return guilds.reduce((sum, g) => sum + g.channels.length, 0);
 }
+
+// ---- 总开关、节奏设置（spec 0012 AC-6、AC-8、AC-19） ----------------------------------
+
+export type HistoryStatus = components["schemas"]["HistoryStatusOut"];
+export type HistorySettings = components["schemas"]["HistorySettingsOut"];
+export type PausedReason = NonNullable<HistoryStatus["paused_reason"]>;
+
+export const PAUSED_LABELS: Readonly<Record<PausedReason, string>> = {
+  manual: "你手动暂停",
+  rate_limited: "因限速自动暂停",
+  account_risk: "账号可能有风险，已自动暂停",
+};
+
+/** 图标栏红点的 `aria-label`（AC-7）。 */
+export const RATE_LIMITED_LABEL = "历史采集已因限速暂停";
+
+export type TimeText = (iso: string) => string;
+export type Notice = Readonly<{ key: string; tone: "info" | "error"; text: string }>;
+
+/** 是不是因为限速自动暂停（红点和页面顶部提示用）。 */
+export function isRateLimitedPause(status: HistoryStatus | undefined): boolean {
+  return status?.paused_reason === "rate_limited";
+}
+
+/** 总开关暂停的文字：原因加上暂停时间。 */
+export function pausedText(status: HistoryStatus, fullTime: TimeText): string | null {
+  if (status.paused_reason === null) return null;
+  const label = PAUSED_LABELS[status.paused_reason];
+  return status.paused_at ? `${label}（${fullTime(status.paused_at)}）` : label;
+}
+
+/** 整体休息或等限额的文字：原因加上最早可能继续的时间（AC-6）。 */
+export function waitingText(status: HistoryStatus, fullTime: TimeText): string | null {
+  if (status.waiting_reason === "rest" && status.waiting_until) {
+    return `休息中，${fullTime(status.waiting_until)} 继续`;
+  }
+  const quotaAt =
+    status.waiting_reason === "quota" ? status.waiting_until : status.quota_resumes_at;
+  return quotaAt ? `今日额度已用完，最早 ${fullTime(quotaAt)} 继续` : null;
+}
+
+/** 历史页顶部状态条要显示的提示，按重要程度排。 */
+export function statusNotices(status: HistoryStatus, fullTime: TimeText): readonly Notice[] {
+  const notices: Notice[] = [];
+  const paused = pausedText(status, fullTime);
+  if (paused) {
+    notices.push({
+      key: "paused",
+      tone: status.paused_reason === "manual" ? "info" : "error",
+      text: paused,
+    });
+  }
+  const waiting = waitingText(status, fullTime);
+  if (waiting && !paused) notices.push({ key: "waiting", tone: "info", text: waiting });
+  if (status.stale) {
+    notices.push({ key: "stale", tone: "error", text: "历史采集任务无响应，请检查 collector" });
+  }
+  return notices;
+}
+
+export const SETTING_FIELDS = [
+  { key: "page_delay_min_s", label: "每页最短间隔（秒）", min: 1, max: 120 },
+  { key: "page_delay_max_s", label: "每页最长间隔（秒）", min: 1, max: 120 },
+  { key: "daily_page_limit", label: "每 24 小时页数上限", min: 50, max: 20000 },
+  { key: "run_minutes", label: "连续抓取多久后休息（分钟）", min: 5, max: 240 },
+  { key: "rest_minutes", label: "每次休息多久（分钟）", min: 1, max: 120 },
+  { key: "auto_gap_max_hours", label: "自动补缺口的时长上限（小时，0 表示关闭）", min: 0, max: 72 },
+] as const;
+
+export type SettingKey = (typeof SETTING_FIELDS)[number]["key"];
+export type SettingsInput = Readonly<Record<SettingKey, string>>;
+export type SettingsValues = Readonly<Record<SettingKey, number>>;
+export type SettingsCheck =
+  | Readonly<{ ok: true; values: SettingsValues }>
+  | Readonly<{ ok: false; errors: Readonly<Partial<Record<SettingKey, string>>> }>;
+
+/** 六个数值都是范围内的整数，最短间隔不大于最长间隔；不通过时不保存并说明（AC-19）。 */
+export function checkSettings(input: SettingsInput): SettingsCheck {
+  const values: Partial<Record<SettingKey, number>> = {};
+  const errors: Partial<Record<SettingKey, string>> = {};
+  for (const { key, min, max } of SETTING_FIELDS) {
+    const text = input[key].trim();
+    const value = Number(text);
+    if (!/^\d+$/.test(text) || value < min || value > max) {
+      errors[key] = `请输入 ${min} 到 ${max} 之间的整数`;
+    } else {
+      values[key] = value;
+    }
+  }
+  const lo = values.page_delay_min_s;
+  const hi = values.page_delay_max_s;
+  if (lo !== undefined && hi !== undefined && lo > hi) {
+    errors.page_delay_min_s = "最短间隔不能大于最长间隔";
+  }
+  if (Object.keys(errors).length > 0) return { ok: false, errors };
+  return { ok: true, values: values as SettingsValues };
+}

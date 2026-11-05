@@ -11,11 +11,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal
 
-from sqlalchemy import RowMapping, exists, func, select, text, update
+from sqlalchemy import RowMapping, exists, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import Range, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from harvester.db.history_ranges import (
+    QUOTA_WINDOW,
     page_cursor,
     page_reached_end,
     partial_coverage_start,
@@ -41,6 +42,7 @@ from harvester.db.snapshots import (
     HistoryJobStatus,
     HistoryOrigin,
     HistoryPausedReason,
+    HistoryWaitingReason,
     HistoryWaitReason,
     MessageSnapshot,
     snowflake_time,
@@ -428,11 +430,16 @@ async def fail_job(session: AsyncSession, job_id: int, error: HistoryError) -> b
 
 
 async def release_job(
-    session: AsyncSession, job_id: int, cool_down: timedelta | None = None
+    session: AsyncSession,
+    job_id: int,
+    cool_down: timedelta | None = None,
+    *,
+    preempted: bool = False,
 ) -> bool:
     """`running` → `pending`，断点保留（AC-10）。返回 False 表示这一行已经不是 `running`。
 
     `cool_down` 给了时写 `not_before = now() + cool_down`，用数据库时钟，和领取时比较的是同一个。
+    `preempted` 为真表示让位给自动补缺口，`preempted_count` 加 1。
     """
     channel_id = await session.scalar(
         update(HistoryJob)
@@ -442,6 +449,9 @@ async def release_job(
             wait_reason=None,
             wait_until=None,
             not_before=None if cool_down is None else func.now() + cool_down,
+            preempted_count=HistoryJob.preempted_count + 1
+            if preempted
+            else HistoryJob.preempted_count,
             updated_at=func.now(),
         )
         .returning(HistoryJob.channel_id)
@@ -529,6 +539,90 @@ async def set_history_paused(session: AsyncSession, reason: HistoryPausedReason)
         .values(paused_reason=reason, paused_at=func.now(), updated_at=func.now())
     )
     await notify_history_changed(session)
+
+
+async def resume_history(session: AsyncSession) -> None:
+    """「继续」：清空暂停原因和时间，并唤醒 collector（AC-8）。"""
+    await session.execute(
+        update(HistorySettings)
+        .where(HistorySettings.id == 1)
+        .values(paused_reason=None, paused_at=None, updated_at=func.now())
+    )
+    await notify_history_changed(session)
+
+
+async def update_history_settings(
+    session: AsyncSession,
+    *,
+    page_delay_min_s: int,
+    page_delay_max_s: int,
+    daily_page_limit: int,
+    run_minutes: int,
+    rest_minutes: int,
+    auto_gap_max_hours: int,
+) -> HistorySettingsRow:
+    """六个数值一起保存；范围检查在接口层，数据库约束兜底（AC-19）。"""
+    await session.execute(
+        update(HistorySettings)
+        .where(HistorySettings.id == 1)
+        .values(
+            page_delay_min_s=page_delay_min_s,
+            page_delay_max_s=page_delay_max_s,
+            daily_page_limit=daily_page_limit,
+            run_minutes=run_minutes,
+            rest_minutes=rest_minutes,
+            auto_gap_max_hours=auto_gap_max_hours,
+            updated_at=func.now(),
+        )
+    )
+    await notify_history_changed(session)
+    return await get_history_settings(session)
+
+
+async def pages_in_window(session: AsyncSession, now: datetime) -> tuple[tuple[datetime, int], ...]:
+    """滚动 24 小时窗口里的限额桶，按小时从早到晚（AC-5）。"""
+    rows = await session.execute(
+        select(HistoryPageHour.hour, HistoryPageHour.pages)
+        .where(HistoryPageHour.hour > now - QUOTA_WINDOW)
+        .order_by(HistoryPageHour.hour)
+    )
+    return tuple((hour, pages) for hour, pages in rows.all())
+
+
+async def has_claimable_gap_auto(session: AsyncSession) -> bool:
+    """有没有可以领取的 `gap_auto` 任务：用来判断要不要让位（AC-10）。"""
+    return bool(
+        await session.scalar(
+            select(
+                exists().where(
+                    HistoryJob.status == "pending",
+                    HistoryJob.origin == "gap_auto",
+                    or_(HistoryJob.not_before.is_(None), HistoryJob.not_before <= func.now()),
+                )
+            )
+        )
+    )
+
+
+async def set_history_waiting(
+    session: AsyncSession, reason: HistoryWaitingReason | None, until: datetime | None
+) -> None:
+    """历史采集整体休息或等限额时写入，结束时清空（AC-6）。"""
+    await session.execute(
+        update(CollectorHeartbeat)
+        .where(CollectorHeartbeat.id)
+        .values(history_waiting_reason=reason, history_waiting_until=until)
+    )
+    await notify_history_changed(session)
+
+
+async def record_history_heartbeat(session: AsyncSession) -> None:
+    """历史任务心跳；进程心跳那一行还没建出来时什么也不写（AC-20）。"""
+    await session.execute(
+        update(CollectorHeartbeat)
+        .where(CollectorHeartbeat.id)
+        .values(history_worker_seen_at=func.now())
+    )
 
 
 # ---- 列表 ---------------------------------------------------------------------------
