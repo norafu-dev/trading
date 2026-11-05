@@ -237,12 +237,12 @@ spec [0011](../specs/0011-attachment-media-storage/index.md)
 spec [0013](../specs/0013-message-search-filter/index.md)
 
 - [x] Design it (spec): `/architect 消息搜索与筛选`
-- [ ] Build it: `/develop 消息搜索与筛选`
+- [x] Build it: `/develop 消息搜索与筛选`
   - [x] 打通细线：迁移和 `search_text` 写入、最简关键词搜索接口、`/search` 页和图标栏入口，AC-1, AC-5, AC-6, AC-12, AC-20, AC-21
   - [x] 筛选和完整语法：前后端解析和共用用例、错误 `fields`、服务器频道作者时间筛选、选择器和作者联想、网址同步，AC-2 到 AC-4, AC-7 到 AC-11, AC-26
   - [x] 跳到上下文：`around` 取法、频道页以某条为中心的双向加载和高亮、回到最新，AC-17 到 AC-19
   - [x] 补建、总数和体验收口：后台补建、总数和进度接口、超时、高亮、快照刷新、各状态和窄屏，AC-13 到 AC-16, AC-22 到 AC-25
-  - [ ] 测试和检查：集成测试（含固定计划的 `EXPLAIN`）、前端测试、更新 spec 0001 和 0002，AC-1 到 AC-26
+  - [x] 测试和检查：集成测试（含固定计划的 `EXPLAIN`）、前端测试、更新 spec 0001 和 0002，AC-1 到 AC-26
 - [ ] Verify it: `/check verify 消息搜索与筛选`
 
 ## Slice 6: 导出

@@ -95,8 +95,8 @@ export function SearchPage() {
   const change = (patch: Partial<SearchFilters>) => go({ ...filters, ...patch });
 
   const apiQuery = useResolvedQuery(filters, refreshToken);
-  const results = useSearchResults(apiQuery, valid);
-  const count = useSearchCount(apiQuery, valid);
+  const results = useSearchResults(apiQuery, valid, refreshToken);
+  const count = useSearchCount(apiQuery, valid, refreshToken);
   const hits = results.data?.pages.flatMap((p) => p.items) ?? [];
   const resolver = useMemo(() => {
     const users = new Map(

@@ -60,9 +60,10 @@ export function useResolvedQuery(filters: SearchFilters, refreshToken: number): 
   );
 }
 
-export function useSearchResults(query: ApiQuery, enabled: boolean) {
+// `refreshToken` 放进查询键：条件没变（没有相对时间）时，「刷新」也要强制从第一页重取（AC-15）。
+export function useSearchResults(query: ApiQuery, enabled: boolean, refreshToken: number) {
   return useInfiniteQuery({
-    queryKey: ["search", "messages", query],
+    queryKey: ["search", "messages", query, refreshToken],
     enabled,
     // 快照：不随窗口聚焦或时间重新取，只在「刷新」或条件变化时取（AC-15）。
     staleTime: Number.POSITIVE_INFINITY,
@@ -80,9 +81,9 @@ export function useSearchResults(query: ApiQuery, enabled: boolean) {
   });
 }
 
-export function useSearchCount(query: ApiQuery, enabled: boolean) {
+export function useSearchCount(query: ApiQuery, enabled: boolean, refreshToken: number) {
   return useQuery({
-    queryKey: ["search", "count", query],
+    queryKey: ["search", "count", query, refreshToken],
     enabled,
     staleTime: Number.POSITIVE_INFINITY,
     refetchOnWindowFocus: false,

@@ -123,3 +123,13 @@ async def do_login(
     return await client.post(
         "/api/auth/login", json={"password": password, "totp_code": code_for(secret, clock())}
     )
+
+
+@pytest.fixture
+async def logged_in(
+    app: FastAPI, factory: async_sessionmaker[AsyncSession], clock: FakeClock
+) -> AsyncIterator[httpx.AsyncClient]:
+    async with make_client(app) as client:
+        secret = await complete_setup(client, factory, clock)
+        assert (await do_login(client, secret, clock)).status_code == 204
+        yield client

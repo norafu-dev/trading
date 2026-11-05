@@ -1,19 +1,16 @@
 """spec 0013：搜索接口、写入 search_text、固定计划（真实 PostgreSQL）。"""
 
 import json
-from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
 import pytest
-from fastapi import FastAPI
 from sqlalchemy import text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from harvester.db.ingest import ingest_message, mark_messages_deleted
 from harvester.db.search import SearchFilters, search_ids_statement
-from tests.api.conftest import FakeClock, complete_setup, do_login, make_client
 from tests.db.builders import (
     CHANNEL,
     MESSAGE_ID,
@@ -25,16 +22,6 @@ from tests.db.builders import (
 
 Factory = async_sessionmaker[AsyncSession]
 SEARCH = "/api/search"
-
-
-@pytest.fixture
-async def logged_in(
-    app: FastAPI, factory: Factory, clock: FakeClock
-) -> AsyncIterator[httpx.AsyncClient]:
-    async with make_client(app) as client:
-        secret = await complete_setup(client, factory, clock)
-        assert (await do_login(client, secret, clock)).status_code == 204
-        yield client
 
 
 async def put(factory: Factory, index: int, content: str, **changes: Any) -> int:

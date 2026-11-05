@@ -197,7 +197,7 @@ Reasoning and options: see [rationale.md](rationale.md).
 
 - `history_job`（第 10 项建）：`id` identity、`batch_id` uuid、`channel_id` → `channel`、`account_id` → `discord_account`（`SET NULL`）、`range_start`、`range_end`（timestamptz，`CHECK (range_start < range_end)`）、`status`、`cursor_message_id`（断点，可空）、`fetched_count`（默认 0）、`error`、`created_at`、`started_at`、`finished_at`、`updated_at`。索引：`(id) WHERE status = 'pending'`、`channel_id`、`batch_id`。
 - `attachment` 补字段（第 12 项）：存储位置、下载状态、下载时间。
-- 搜索索引（第 13 项决定）。
+- 搜索索引：已由 [spec 0013](../0013-message-search-filter/index.md) 落地，`message.search_text` 加 `harvester_bigrams` 的 GIN 索引。
 - `keyword`（第 15 项建）：`id` identity、`pattern` text（`CHECK (length(pattern) BETWEEN 1 AND 200)`）、`match_type` text 默认 `contains`（`CHECK (match_type IN ('contains'))`，以后加 `regex`）、`enabled` boolean、`created_at`；唯一索引 (`lower(pattern)`, `match_type`)。匹配时不区分大小写，匹配范围包括 `content` 和 `forwarded` 的文字。
 - `keyword_hit`（第 15 项建）：`keyword_id` → `keyword`（`CASCADE`）、`message_id` → `message`、`matched_at`、`read_at`（可空）；主键 (`keyword_id`, `message_id`)，部分索引 `WHERE read_at IS NULL`。
 - `message_change`（AI 功能建）：`seq` identity 主键、`message_id` → `message`、`kind`（`created` / `edited` / `deleted`）、`version`、`occurred_at`。和消息的写入在同一个事务里追加，只追加不修改。下游程序记住自己处理到的 `seq`。
@@ -387,7 +387,7 @@ message         1 ─ N message_change       （AI 功能）
 
 把 `message_revision` 放进第一次迁移，是在「迁移分批建」上的一个例外：第 10 项补采遇到被改过的消息就要写旧版本（AC-6），而第 10 项排在第 11 项前面；先建这张空表，几乎没有代价。
 
-后续迁移由下面这些功能负责：第 10 项 `history_job`；第 12 项附件的存储字段；第 13 项搜索索引；第 15 项 `keyword`、`keyword_hit`；AI 功能 `message_change` 和向量列。每次都只新增，不修改或删除已有的列。
+后续迁移由下面这些功能负责：第 10 项 `history_job`；第 12 项附件的存储字段；第 13 项搜索索引（已按 [spec 0013](../0013-message-search-filter/index.md) 落地）；第 15 项 `keyword`、`keyword_hit`；AI 功能 `message_change` 和向量列。每次都只新增，不修改或删除已有的列。
 
 ## Consequences
 
