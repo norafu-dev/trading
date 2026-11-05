@@ -14,6 +14,7 @@ import { buildRows, type Row } from "./build-rows";
 import { DayDivider } from "./day-divider";
 import { JumpToLatestButton } from "./jump-to-latest-button";
 import { MessageRow } from "./message-row";
+import { NewerLoader } from "./newer-loader";
 import { OlderLoader } from "./older-loader";
 import type { MessageListProps } from "./types";
 import { useMessageScroll } from "./use-message-scroll";
@@ -22,6 +23,8 @@ import { useMessageScroll } from "./use-message-scroll";
 const GROUP_START_ESTIMATE = 72;
 const FOLLOW_UP_ESTIMATE = 28;
 const DAY_ESTIMATE = 40;
+
+function noop() {}
 
 function estimateFor(row: Row | undefined): number {
   if (!row || row.kind === "day") return DAY_ESTIMATE;
@@ -61,6 +64,13 @@ function VirtualMessageList({
   olderError,
   onReachTop,
   onRetry,
+  centerId = null,
+  hasNewer = false,
+  isLoadingNewer = false,
+  newerError,
+  onReachBottom,
+  onRetryNewer,
+  onJumpLatest,
   parser,
 }: MessageListProps & Readonly<{ parser: ParserStatus }>) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -88,11 +98,17 @@ function VirtualMessageList({
     isLoadingOlder,
     hasOlderError: olderError !== undefined,
     onReachTop,
+    centerId,
+    hasNewer,
+    isLoadingNewer,
+    hasNewerError: newerError !== undefined,
+    onReachBottom: onReachBottom ?? noop,
   });
 
   return (
     <div className="relative h-full">
       <OlderLoader isLoading={isLoadingOlder} error={olderError} onRetry={onRetry} />
+      <NewerLoader isLoading={isLoadingNewer} error={newerError} onRetry={onRetryNewer} />
       <div
         ref={scrollRef}
         onScroll={scroll.onScroll}
@@ -136,6 +152,7 @@ function VirtualMessageList({
                     now={now}
                     resolver={resolver}
                     parser={parser}
+                    highlighted={row.key === scroll.highlightId}
                   />
                 </div>
               );
@@ -143,8 +160,11 @@ function VirtualMessageList({
           </div>
         </div>
       </div>
-      {scroll.ready && !scroll.atBottom ? (
-        <JumpToLatestButton newCount={scroll.newCount} onClick={scroll.jumpToLatest} />
+      {scroll.ready && (hasNewer || !scroll.atBottom) ? (
+        <JumpToLatestButton
+          newCount={scroll.newCount}
+          onClick={hasNewer && onJumpLatest ? onJumpLatest : scroll.jumpToLatest}
+        />
       ) : null}
     </div>
   );

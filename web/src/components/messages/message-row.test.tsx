@@ -49,15 +49,31 @@ function embed(overrides: Partial<EmbedView> = {}): EmbedView {
 }
 
 // 解析器传 failed，正文按纯文本显示，不需要加载 WASM
-function renderRow(overrides: Partial<MessageView> = {}, groupStart = true) {
+function renderRow(overrides: Partial<MessageView> = {}, groupStart = true, highlighted = false) {
   const msg = message(overrides);
   const row: MessageRowItem = { kind: "message", key: msg.id, message: msg, groupStart };
   return render(
-    <MessageRow row={row} format={format} now={NOW} resolver={resolver} parser="failed" />,
+    <MessageRow
+      row={row}
+      format={format}
+      now={NOW}
+      resolver={resolver}
+      parser="failed"
+      highlighted={highlighted}
+    />,
   );
 }
 
 describe("MessageRow", () => {
+  // covers: spec 0013 AC-17
+  it("highlighted 时背景高亮，否则没有", () => {
+    const { unmount } = renderRow({}, true, true);
+    expect(screen.getByRole("article").className).toContain("bg-primary/15");
+    unmount();
+    renderRow();
+    expect(screen.getByRole("article").className).not.toContain("bg-primary/15");
+  });
+
   // covers: spec 0008 AC-20
   it("回复显示引用行，摘要是纯文字；原消息没采集和已删除各有说明", () => {
     const { unmount } = renderRow({

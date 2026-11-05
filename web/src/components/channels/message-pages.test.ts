@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  aroundFrom,
   chunk,
   flatten,
   hasGap,
+  hasNewerPages,
   type MessagesData,
   type MessagesPage,
   mergeIntoPages,
@@ -94,5 +96,40 @@ describe("planChanged", () => {
 describe("chunk", () => {
   it("按大小切开", () => {
     expect(chunk([1, 2, 3], 2)).toEqual([[1, 2], [3]]);
+  });
+});
+
+// covers: spec 0013 AC-19
+describe("hasNewerPages", () => {
+  const aroundPage = (has_newer: boolean): MessagesPage => ({
+    messages: [row("10")],
+    has_more: false,
+    has_newer,
+    users: [],
+    channels: [],
+  });
+
+  it("普通加载永远是 false，哪怕 has_more 为真", () => {
+    expect(hasNewerPages(pageFrom({ ...aroundPage(true), has_more: true, has_newer: null }))).toBe(
+      false,
+    );
+  });
+
+  it("around 取的页看 has_newer", () => {
+    expect(hasNewerPages(aroundFrom(aroundPage(true), "10"))).toBe(true);
+    expect(hasNewerPages(aroundFrom(aroundPage(false), "10"))).toBe(false);
+  });
+
+  it("最新的一页是 after 取的，看它的 has_more", () => {
+    const base = aroundFrom(aroundPage(true), "10");
+    const newer = { ...aroundPage(false), messages: [row("11")], has_more: true };
+    const data: MessagesData = {
+      pages: [newer, ...base.pages],
+      pageParams: [{ after: "10" }, ...base.pageParams],
+    };
+    expect(hasNewerPages(data)).toBe(true);
+    expect(hasNewerPages({ ...data, pages: [{ ...newer, has_more: false }, ...base.pages] })).toBe(
+      false,
+    );
   });
 });

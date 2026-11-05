@@ -11,6 +11,8 @@ const NEAR_BOTTOM_PX = 80;
 // 插入旧消息后，锚点连续这么多帧不动才算稳定；最多校正这么多帧（约半秒）。
 const SETTLE_FRAMES = 3;
 const MAX_RESTORE_FRAMES = 30;
+// 跳到上下文后，目标消息的背景高亮持续这么久，之后淡出（spec 0013 AC-17）。
+export const HIGHLIGHT_MS = 2000;
 
 type ScrollAnchor = Readonly<{ key: string; offset: number }>;
 
@@ -24,6 +26,13 @@ type Params = Readonly<{
   isLoadingOlder: boolean;
   hasOlderError: boolean;
   onReachTop: () => void;
+  /** 第一次定位时要居中的消息 ID；没有就停在底部（spec 0013 AC-17）。 */
+  centerId: string | null;
+  /** 还没加载到最新消息：不贴底，滚到底部附近时向下加载（AC-19）。 */
+  hasNewer: boolean;
+  isLoadingNewer: boolean;
+  hasNewerError: boolean;
+  onReachBottom: () => void;
 }>;
 
 export type MessageScroll = Readonly<{
@@ -33,6 +42,8 @@ export type MessageScroll = Readonly<{
   newCount: number;
   onScroll: () => void;
   jumpToLatest: () => void;
+  /** 正在高亮的消息 ID（跳到上下文的目标，约 2 秒后变回 null）。 */
+  highlightId: string | null;
 }>;
 
 function distanceFromBottom(element: HTMLElement): number {
@@ -79,6 +90,9 @@ export function useMessageScroll(params: Params): MessageScroll {
   // 没有「加载更早」那样的显式触发点，就用这个锚点把你正在看的那条放回原位。
   const liveAnchorRef = useRef<ScrollAnchor | null>(null);
   const requestedRef = useRef(false);
+  const requestedNewerRef = useRef(false);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const highlightTimer = useRef<number | null>(null);
   const restoringRef = useRef(false);
   // 事件回调里要读最新的 props，又不想因此反复重建回调。
   const latest = useRef(params);
@@ -128,9 +142,82 @@ export function useMessageScroll(params: Params): MessageScroll {
     onReachTop();
   }, [captureAnchor]);
 
-  // 初次定位：先滚到最后一行，等下一帧行高测量完再滚一次，确保真的在底部。
+  const startHighlight = useCallback((id: string) => {
+    if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
+    setHighlightId(id);
+    highlightTimer.current = window.setTimeout(() => {
+      highlightTimer.current = null;
+      setHighlightId(null);
+    }, HIGHLIGHT_MS);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
+    },
+    [],
+  );
+
+  const maybeRequestNewer = useCallback(() => {
+    const container = latest.current.scrollRef.current;
+    const { hasNewer, isLoadingNewer, hasNewerError, onReachBottom } = latest.current;
+    if (!container || requestedNewerRef.current || !hasNewer || isLoadingNewer || hasNewerError)
+      return;
+    if (distanceFromBottom(container) > container.clientHeight) return;
+    requestedNewerRef.current = true;
+    onReachBottom();
+  }, []);
+
+  // 初次定位：有中心消息就把它滚到视口正中，没有就先滚到最后一行，
+  // 等下一帧行高测量完再滚一次，确保真的在底部。
   useLayoutEffect(() => {
     if (ready || lastIndex < 0) return;
+    const centerKey = latest.current.centerId;
+    const centerIndex =
+      centerKey === null ? -1 : latest.current.rows.findIndex((row) => row.key === centerKey);
+    if (centerKey !== null && centerIndex >= 0) {
+      // 行高是边滚边测量的，所以每帧按 DOM 实测位置把目标行校正到正中，直到连续几帧不再动。
+      restoringRef.current = true;
+      let frame = 0;
+      let stableFrames = 0;
+      let handle = 0;
+      const settle = () => {
+        const container = latest.current.scrollRef.current;
+        const row = container?.querySelector<HTMLElement>(`[data-key="${CSS.escape(centerKey)}"]`);
+        if (container && row) {
+          const box = container.getBoundingClientRect();
+          const rect = row.getBoundingClientRect();
+          const delta = rect.top + rect.height / 2 - (box.top + box.height / 2);
+          const before = container.scrollTop;
+          if (Math.abs(delta) >= 1) container.scrollTop += delta;
+          // 已经到头（比如目标是最后一条）滚不动了，也算稳定。
+          if (Math.abs(delta) < 1 || container.scrollTop === before) stableFrames += 1;
+          else stableFrames = 0;
+        } else {
+          const index = latest.current.rows.findIndex((r) => r.key === centerKey);
+          if (index >= 0) latest.current.virtualizer.scrollToIndex(index, { align: "center" });
+          stableFrames = 0;
+        }
+        frame += 1;
+        if (stableFrames < SETTLE_FRAMES && frame < MAX_RESTORE_FRAMES) {
+          handle = requestAnimationFrame(settle);
+          return;
+        }
+        restoringRef.current = false;
+        const done = latest.current.scrollRef.current;
+        markAtBottom(
+          !latest.current.hasNewer && done !== null && distanceFromBottom(done) <= NEAR_BOTTOM_PX,
+        );
+        setReady(true);
+        startHighlight(centerKey);
+      };
+      virtualizer.scrollToIndex(centerIndex, { align: "center" });
+      handle = requestAnimationFrame(settle);
+      return () => {
+        cancelAnimationFrame(handle);
+        restoringRef.current = false;
+      };
+    }
     scrollToEnd();
     let second = 0;
     const first = requestAnimationFrame(() => {
@@ -144,7 +231,7 @@ export function useMessageScroll(params: Params): MessageScroll {
       cancelAnimationFrame(first);
       cancelAnimationFrame(second);
     };
-  }, [ready, lastIndex, scrollToEnd, markAtBottom]);
+  }, [ready, lastIndex, scrollToEnd, markAtBottom, startHighlight, virtualizer]);
 
   // 贴底时，末尾来了新消息或任一行高变化，都滚到底。
   // biome-ignore lint/correctness/useExhaustiveDependencies: maxId 和 totalSize 变化就是触发条件
@@ -210,10 +297,41 @@ export function useMessageScroll(params: Params): MessageScroll {
     maybeRequestOlder,
   ]);
 
+  // 向下加载的请求结束后允许下一次触发；加载完还停在底部附近时继续往下加载。
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 这些值变化时都要重新检查是否该触发
+  useEffect(() => {
+    if (params.isLoadingNewer) return;
+    requestedNewerRef.current = false;
+    if (ready) maybeRequestNewer();
+  }, [
+    params.isLoadingNewer,
+    params.hasNewer,
+    params.hasNewerError,
+    rows.length,
+    ready,
+    maybeRequestNewer,
+  ]);
+
+  // 一路向下加载到最新之后恢复普通行为：如果这时就在底部，开始贴底（AC-19）。
+  const hadNewerRef = useRef(params.hasNewer);
+  useEffect(() => {
+    const hadNewer = hadNewerRef.current;
+    hadNewerRef.current = params.hasNewer;
+    const container = scrollRef.current;
+    if (
+      hadNewer &&
+      !params.hasNewer &&
+      container &&
+      distanceFromBottom(container) <= NEAR_BOTTOM_PX
+    )
+      markAtBottom(true);
+  }, [params.hasNewer, scrollRef, markAtBottom]);
+
   const onScroll = useCallback(() => {
     const container = latest.current.scrollRef.current;
     if (!container) return;
-    const bottom = distanceFromBottom(container) <= NEAR_BOTTOM_PX;
+    // 还没加载到最新消息时，滚到底部附近不算「在底部」：不贴底，也不当作已读（AC-19）。
+    const bottom = distanceFromBottom(container) <= NEAR_BOTTOM_PX && !latest.current.hasNewer;
     if (bottom !== atBottomRef.current || bottom) markAtBottom(bottom);
     if (requestedRef.current) captureAnchor();
     else {
@@ -222,7 +340,8 @@ export function useMessageScroll(params: Params): MessageScroll {
         : anchorFromVirtualizer(latest.current.virtualizer, container.scrollTop);
       maybeRequestOlder();
     }
-  }, [markAtBottom, maybeRequestOlder, captureAnchor]);
+    maybeRequestNewer();
+  }, [markAtBottom, maybeRequestOlder, maybeRequestNewer, captureAnchor]);
 
   const jumpToLatest = useCallback(() => {
     markAtBottom(true);
@@ -236,5 +355,6 @@ export function useMessageScroll(params: Params): MessageScroll {
     newCount: atBottom ? 0 : countNewMessages(messages, lastSeenMaxId),
     onScroll,
     jumpToLatest,
+    highlightId,
   };
 }

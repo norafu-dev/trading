@@ -5,7 +5,8 @@ import { compareIds, mergeMessages } from "@/components/messages/merge-messages"
 import type { components } from "@/lib/api/schema";
 
 export type MessagesPage = components["schemas"]["MessagesOut"];
-export type PageParam = string | null;
+// null 是最新一页，字符串是 `before` 游标；`around` 和 `after` 只出现在「以某条为中心」的加载里（spec 0013）。
+export type PageParam = string | null | Readonly<{ around: string }> | Readonly<{ after: string }>;
 export type MessagesData = InfiniteData<MessagesPage, PageParam>;
 type Named = components["schemas"]["NamedRefOut"];
 
@@ -13,6 +14,21 @@ export const pageFrom = (page: MessagesPage): MessagesData => ({
   pages: [page],
   pageParams: [null],
 });
+
+// 以某条为中心加载的第一页：之后向新翻页时新的页会插在它前面。
+export const aroundFrom = (page: MessagesPage, messageId: string): MessagesData => ({
+  pages: [page],
+  pageParams: [{ around: messageId }],
+});
+
+// 还没加载到最新消息吗？最新的一页（pages[0]）如果是 around 取的，看 `has_newer`；
+// 如果是 after 取的，`has_more` 就表示更新的还有。普通加载（最新一页或 before 翻页）永远是 false（AC-19）。
+export function hasNewerPages(data: MessagesData): boolean {
+  const first = data.pages[0];
+  const param = data.pageParams[0];
+  if (!first || typeof param !== "object" || param === null) return false;
+  return "around" in param ? first.has_newer === true : first.has_more;
+}
 
 // 旧的页在前，拼成从旧到新的一条列表。
 export function flatten(data: MessagesData): readonly MessagesPage["messages"][number][] {

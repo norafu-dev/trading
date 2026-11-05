@@ -92,4 +92,12 @@ export type MessageListProps = Readonly<{
   status: "loading" | "ready" | "empty" | "error"; // 只描述首次加载
   error?: UiError; // status 为 error 时必有
   onRetry?: () => void; // 首次加载和旧消息加载共用
+  // 跳到上下文（spec 0013）：都是可选的，不传时和普通消息列表完全一样。
+  centerId?: string | null; // 第一次定位时居中并高亮的消息
+  hasNewer?: boolean; // 还没加载到最新消息：不贴底，滚到底部附近向下加载
+  isLoadingNewer?: boolean;
+  newerError?: UiError; // 向下加载失败，只在底部显示
+  onReachBottom?: () => void;
+  onRetryNewer?: () => void;
+  onJumpLatest?: () => void; // 还没加载到最新时，「回到最新」重新加载最新一页
 }>;

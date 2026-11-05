@@ -137,4 +137,34 @@ describe("MessageList", () => {
     await user.click(screen.getByRole("button", { name: "重试" }));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
+
+  // covers: spec 0013 AC-19
+  it("还没加载到最新时显示「回到最新」，点击走 onJumpLatest", async () => {
+    const user = userEvent.setup();
+    const onJumpLatest = vi.fn();
+    render(<MessageList {...props({ messages: [sample], hasNewer: true, onJumpLatest })} />);
+    await screen.findByRole("log", { name: "消息" });
+    await user.click(await screen.findByRole("button", { name: /回到最新/ }));
+    expect(onJumpLatest).toHaveBeenCalledTimes(1);
+  });
+
+  // covers: spec 0013 AC-19
+  it("向下加载时底部转圈，失败时底部出现重试，列表仍在", async () => {
+    const user = userEvent.setup();
+    const onRetryNewer = vi.fn();
+    const { rerender } = render(
+      <MessageList {...props({ messages: [sample], hasNewer: true, isLoadingNewer: true })} />,
+    );
+    expect(screen.getByText("正在加载更新的消息")).toBeInTheDocument();
+
+    rerender(
+      <MessageList
+        {...props({ messages: [sample], hasNewer: true, newerError: serverError, onRetryNewer })}
+      />,
+    );
+    expect(screen.getByText("服务器出错了，更新的消息没加载出来")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "重试" }));
+    expect(onRetryNewer).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("log", { name: "消息" })).toBeInTheDocument();
+  });
 });

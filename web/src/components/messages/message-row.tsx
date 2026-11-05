@@ -22,6 +22,8 @@ type MessageRowProps = Readonly<{
   now: Date;
   resolver: MentionResolver;
   parser: ParserStatus;
+  /** 跳到上下文的目标：背景高亮，之后淡出（spec 0013 AC-17）。 */
+  highlighted?: boolean;
 }>;
 
 // 组首上方的引用行。摘要是第三方内容，只当纯文字显示，不解析 markdown。
@@ -50,6 +52,7 @@ export const MessageRow = memo(function MessageRow({
   now,
   resolver,
   parser,
+  highlighted = false,
 }: MessageRowProps) {
   const { message, groupStart } = row;
   const fullTime = format.fullTime(message.createdAt);
@@ -77,8 +80,8 @@ export const MessageRow = memo(function MessageRow({
     <article
       aria-label={`${message.authorName}，${fullTime}`}
       className={cn(
-        "group/message relative px-4 hover:bg-muted/70",
-        "py-0.5",
+        "group/message relative px-4 py-0.5 transition-colors duration-700 motion-reduce:transition-none",
+        highlighted ? "bg-primary/15" : "hover:bg-muted/70",
         message.deleted && "opacity-60",
       )}
     >
