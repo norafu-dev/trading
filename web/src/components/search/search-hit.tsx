@@ -20,6 +20,8 @@ type SearchHitProps = Readonly<{
   now: Date;
   resolver: MentionResolver;
   parser: ParserStatus;
+  /** 命中词（不含排除词），用来高亮（AC-13）。 */
+  highlightTerms: readonly string[];
 }>;
 
 function ChannelMarks({ hit }: Readonly<{ hit: SearchHitData }>) {
@@ -41,6 +43,7 @@ export const SearchHit = memo(function SearchHit({
   now,
   resolver,
   parser,
+  highlightTerms,
 }: SearchHitProps) {
   const message = useMemo(() => toMessageView(hit.message), [hit.message]);
   const row = useMemo(
@@ -50,7 +53,7 @@ export const SearchHit = memo(function SearchHit({
   const { channel, guild } = hit;
   const where = channel.parent ? `${channel.parent.name} › ${channel.name}` : channel.name;
   return (
-    <li className="border-b py-2">
+    <div className="border-b py-2">
       <div className="flex flex-wrap items-center gap-2 px-4 pb-1 text-[13px] text-muted-foreground">
         <span className="font-semibold">{guild.name}</span>
         <span aria-hidden>›</span>
@@ -64,7 +67,14 @@ export const SearchHit = memo(function SearchHit({
           <ArrowUpRightIcon aria-hidden className="size-3.5" />
         </Link>
       </div>
-      <MessageRow row={row} format={format} now={now} resolver={resolver} parser={parser} />
-    </li>
+      <MessageRow
+        row={row}
+        format={format}
+        now={now}
+        resolver={resolver}
+        parser={parser}
+        highlightTerms={highlightTerms}
+      />
+    </div>
   );
 });

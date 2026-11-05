@@ -1,6 +1,7 @@
 import { DownloadIcon, PaperclipIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { HighlightedText } from "@/components/search/highlighted-text";
 import { formatBytes } from "@/lib/format/bytes";
 
 type AttachmentChipProps = Readonly<{
@@ -10,10 +11,17 @@ type AttachmentChipProps = Readonly<{
   href?: string;
   // 状态文字和重试按钮等。
   children?: ReactNode;
+  highlightTerms?: readonly string[];
 }>;
 
 // 附件小标签：回形针、文件名、大小，已保存的点一下就下载（spec 0011 AC-15）。
-export function AttachmentChip({ filename, sizeBytes, href, children }: AttachmentChipProps) {
+export function AttachmentChip({
+  filename,
+  sizeBytes,
+  href,
+  children,
+  highlightTerms,
+}: AttachmentChipProps) {
   const body = (
     <>
       {href ? (
@@ -21,7 +29,9 @@ export function AttachmentChip({ filename, sizeBytes, href, children }: Attachme
       ) : (
         <PaperclipIcon aria-hidden strokeWidth={1.75} className="size-3.5 shrink-0" />
       )}
-      <span className="truncate font-medium">{filename}</span>
+      <span className="truncate font-medium">
+        <HighlightedText text={filename} terms={highlightTerms} />
+      </span>
       {sizeBytes !== undefined && sizeBytes !== null ? (
         <span className="shrink-0 text-muted-foreground">{formatBytes(sizeBytes)}</span>
       ) : null}

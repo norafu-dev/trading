@@ -40,6 +40,7 @@
   --color-rail: var(--rail);
   --color-rail-foreground: var(--rail-foreground);
   --color-mention: var(--mention);
+  --color-highlight: var(--highlight);
   --color-link: var(--link);
   --color-warning: var(--warning);
   --color-avatar-1: var(--avatar-1);
@@ -114,6 +115,7 @@
   --rail: #163300;
   --rail-foreground: #ffffff;
   --mention: rgb(159 232 112 / 0.28);
+  --highlight: rgb(237 200 67 / 0.45);
   --link: #2f5711;
   --warning: #edc843;
   --avatar-1: #cdefb5;
@@ -149,6 +151,7 @@
     --rail: #0b0d0a;
     --rail-foreground: #e8ebe6;
     --mention: rgb(159 232 112 / 0.16);
+    --highlight: rgb(237 200 67 / 0.32);
     --link: #b7f08f;
     --warning: #edc843;
     --avatar-1: #2f4a1f;

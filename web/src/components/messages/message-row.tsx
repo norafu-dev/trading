@@ -24,6 +24,8 @@ type MessageRowProps = Readonly<{
   parser: ParserStatus;
   /** 跳到上下文的目标：背景高亮，之后淡出（spec 0013 AC-17）。 */
   highlighted?: boolean;
+  /** 搜索命中词（spec 0013 AC-13）。 */
+  highlightTerms?: readonly string[];
 }>;
 
 // 组首上方的引用行。摘要是第三方内容，只当纯文字显示，不解析 markdown。
@@ -53,10 +55,11 @@ export const MessageRow = memo(function MessageRow({
   resolver,
   parser,
   highlighted = false,
+  highlightTerms,
 }: MessageRowProps) {
   const { message, groupStart } = row;
   const fullTime = format.fullTime(message.createdAt);
-  const contentProps = { parser, resolver, now, format };
+  const contentProps = { parser, resolver, now, format, highlightTerms };
   const marks =
     message.editedAt || message.deleted ? (
       <>
@@ -137,6 +140,7 @@ export const MessageRow = memo(function MessageRow({
                   filename={attachment.filename}
                   sizeBytes={attachment.sizeBytes}
                   media={attachment.media}
+                  highlightTerms={highlightTerms}
                 />
               ))}
             </div>

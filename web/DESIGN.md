@@ -41,6 +41,7 @@ Tailwind 自带的调色板已经清空，只有下面这些颜色能生成类�
 | `ring`                                        | 全局 `:focus-visible`                | 焦点环                                                   |
 | `rail` / `rail-foreground`                    | `bg-rail`                            | 服务器图标栏                                             |
 | `mention`                                     | `bg-mention`                         | 提及的高亮底色（半透明）                                 |
+| `highlight`                                   | `bg-highlight`                       | 搜索命中词的底色（半透明黄），和提及的绿色区分           |
 | `link`                                        | `text-link`                          | 消息和 embed 里的链接文字                                |
 | `warning`                                     | `bg-warning`                         | 以后的提醒类状态（暂未使用）                             |
 | `avatar-1` … `avatar-6` / `avatar-foreground` | `bg-avatar-3`                        | 没有头像时的首字底色，由 `fallbackColorFor(id)` 选       |

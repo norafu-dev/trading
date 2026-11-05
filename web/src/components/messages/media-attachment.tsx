@@ -11,14 +11,28 @@ type MediaAttachmentProps = Readonly<{
   sizeBytes?: number | null;
   // 没有 media 行（上线前的转发等）时按原来的文件条显示。
   media: MediaView | null;
+  highlightTerms?: readonly string[];
 }>;
 
 // 一个附件按保存状态显示（spec 0011 AC-15）。前端不再从 Discord 原链接加载任何附件。
-export function MediaAttachment({ filename, sizeBytes, media }: MediaAttachmentProps) {
-  if (!media) return <AttachmentChip filename={filename} sizeBytes={sizeBytes} />;
+export function MediaAttachment({
+  filename,
+  sizeBytes,
+  media,
+  highlightTerms,
+}: MediaAttachmentProps) {
+  if (!media) {
+    return (
+      <AttachmentChip filename={filename} sizeBytes={sizeBytes} highlightTerms={highlightTerms} />
+    );
+  }
   if (media.status !== "stored") {
     return (
-      <AttachmentChip filename={filename} sizeBytes={sizeBytes ?? media.sizeBytes}>
+      <AttachmentChip
+        filename={filename}
+        sizeBytes={sizeBytes ?? media.sizeBytes}
+        highlightTerms={highlightTerms}
+      >
         <MediaStatusText status={media.status} />
         {media.status === "failed" || media.status === "gone" ? (
           <RetryMediaButton mediaId={media.id} />
@@ -39,6 +53,7 @@ export function MediaAttachment({ filename, sizeBytes, media }: MediaAttachmentP
           filename={filename}
           sizeBytes={media.sizeBytes ?? sizeBytes}
           href={mediaUrl(media.id, { download: true })}
+          highlightTerms={highlightTerms}
         />
       );
   }

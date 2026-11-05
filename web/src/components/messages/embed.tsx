@@ -1,7 +1,9 @@
 "use client";
 
 import { cn } from "cn";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
+
+import { HighlightedText } from "@/components/search/highlighted-text";
 
 import { MessageContent } from "@/lib/discord-markdown/MessageContent";
 import type { ParserStatus } from "@/lib/discord-markdown/use-markdown-parser";
@@ -19,6 +21,7 @@ type EmbedProps = Readonly<{
   resolver: MentionResolver;
   now: Date;
   format: TimeFormat;
+  highlightTerms?: readonly string[];
 }>;
 
 function colorHex(color: number): string {
@@ -60,7 +63,7 @@ function MaybeLink({
   href,
   className,
   children,
-}: Readonly<{ href: string | null; className: string; children: string }>) {
+}: Readonly<{ href: string | null; className: string; children: ReactNode }>) {
   const url = safeUrl(href);
   if (!url) return <span className={className}>{children}</span>;
   return (
@@ -78,8 +81,8 @@ function MaybeLink({
 
 // embed 卡片（AC-11）：左边色带，作者、标题、描述、字段、大图、右上角缩略图、页脚。
 // 图片用固定尺寸的框，加载前后行高不变。
-export function Embed({ embed, parser, resolver, now, format }: EmbedProps) {
-  const contentProps = { parser, resolver, now, format };
+export function Embed({ embed, parser, resolver, now, format, highlightTerms }: EmbedProps) {
+  const contentProps = { parser, resolver, now, format, highlightTerms };
   const footer = [
     embed.footerText,
     embed.timestamp ? format.messageTime(embed.timestamp, now) : null,
@@ -102,7 +105,7 @@ export function Embed({ embed, parser, resolver, now, format }: EmbedProps) {
             href={embed.url}
             className={cn("font-semibold", safeUrl(embed.url) && "text-link")}
           >
-            {embed.title}
+            <HighlightedText text={embed.title} terms={highlightTerms} />
           </MaybeLink>
         ) : null}
         {embed.description ? (

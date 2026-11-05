@@ -14,10 +14,12 @@ type ForwardedBlockProps = Readonly<{
   resolver: MentionResolver;
   now: Date;
   format: TimeFormat;
+  highlightTerms?: readonly string[];
 }>;
 
 // 转发的消息：带「转发」标签的引用块，里面是被转发的文字、embed 和附件。
 export function ForwardedBlock({ forwarded, ...contentProps }: ForwardedBlockProps) {
+  const { highlightTerms } = contentProps;
   return (
     <div className="mt-1 flex flex-col gap-1 border-l-4 border-border pl-3">
       <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
@@ -32,8 +34,13 @@ export function ForwardedBlock({ forwarded, ...contentProps }: ForwardedBlockPro
       {forwarded.attachments.length > 0 ? (
         <div className="flex flex-wrap items-start gap-1.5">
           {forwarded.attachments.map((attachment, index) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: 同名文件可能重复
-            <MediaAttachment key={index} filename={attachment.filename} media={attachment.media} />
+            <MediaAttachment
+              // biome-ignore lint/suspicious/noArrayIndexKey: 同名文件可能重复
+              key={index}
+              filename={attachment.filename}
+              media={attachment.media}
+              highlightTerms={highlightTerms}
+            />
           ))}
         </div>
       ) : null}

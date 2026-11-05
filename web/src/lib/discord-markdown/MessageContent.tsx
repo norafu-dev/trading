@@ -3,6 +3,7 @@
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 
 import type { MentionResolver } from "@/components/messages/types";
+import { HighlightedText } from "@/components/search/highlighted-text";
 import type { TimeFormat } from "@/lib/format/time";
 
 import { parseMarkdown } from "./parser";
@@ -15,14 +16,20 @@ type MessageContentProps = Readonly<{
   resolver: MentionResolver;
   now: Date;
   format: TimeFormat;
+  /** 搜索命中词（spec 0013 AC-13）；没有时和不搜索时完全一样。 */
+  highlightTerms?: readonly string[];
   /** 跟在正文末尾的内容，例如「（已编辑）」。 */
   suffix?: ReactNode;
 }>;
 
-function PlainText({ content, suffix }: Readonly<{ content: string; suffix?: ReactNode }>) {
+function PlainText({
+  content,
+  suffix,
+  highlightTerms,
+}: Readonly<{ content: string; suffix?: ReactNode; highlightTerms?: readonly string[] }>) {
   return (
     <div className="whitespace-pre-wrap">
-      {content}
+      <HighlightedText text={content} terms={highlightTerms} />
       {suffix}
     </div>
   );
@@ -36,6 +43,7 @@ export function MessageContent({
   resolver,
   now,
   format,
+  highlightTerms,
   suffix,
 }: MessageContentProps) {
   const [revealed, setRevealed] = useState<ReadonlySet<number>>(() => new Set());
@@ -49,9 +57,11 @@ export function MessageContent({
   );
 
   if (!content) return suffix ? <div>{suffix}</div> : null;
-  if (parsed === null || !parsed.ok) return <PlainText content={content} suffix={suffix} />;
+  if (parsed === null || !parsed.ok) {
+    return <PlainText content={content} suffix={suffix} highlightTerms={highlightTerms} />;
+  }
 
-  const ctx: RenderContext = { resolver, now, format, revealed, reveal };
+  const ctx: RenderContext = { resolver, now, format, revealed, reveal, highlightTerms };
   // 最后一块是段落时，把 suffix 接在它的末尾，和正文在同一行。
   const blocks = parsed.blocks;
   const last = blocks.at(-1);
@@ -73,7 +83,7 @@ export function MessageContent({
         </>
       );
   } catch {
-    return <PlainText content={content} suffix={suffix} />;
+    return <PlainText content={content} suffix={suffix} highlightTerms={highlightTerms} />;
   }
   return <div className="[overflow-wrap:anywhere]">{rendered}</div>;
 }
