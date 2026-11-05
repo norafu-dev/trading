@@ -24,7 +24,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import INET, JSONB, TSTZRANGE, UUID, Range
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, deferred, mapped_column
 
 from harvester.db.base import Base
 from harvester.db.snapshots import (
@@ -197,6 +197,8 @@ class Message(Base):
     delete_source: Mapped[DeleteSource | None] = mapped_column(Text)
     source: Mapped[MessageSource] = mapped_column(Text)
     ingested_at: Mapped[datetime] = _now()
+    # 小写的搜索文字（spec 0013）。NULL 表示还没补建；deferred 让现有的 select(Message) 不读它。
+    search_text: Mapped[str | None] = deferred(mapped_column(Text))
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -218,6 +220,19 @@ class Message(Base):
 Index("ix_message_channel_id_id", Message.channel_id, Message.id.desc())
 Index("ix_message_author_id_id", Message.author_id, Message.id.desc())
 Index("ix_message_guild_id_id", Message.guild_id, Message.id.desc())
+# 搜索（spec 0013）：二元切片的 GIN 表达式索引，查询必须写成同一个表达式才用得上。
+# 数据量大以后重建要用 CREATE INDEX CONCURRENTLY。
+Index(
+    "ix_message_search_bigrams",
+    func.harvester_bigrams(Message.search_text),
+    postgresql_using="gin",
+)
+# 补建取批次和数剩余条数用；补完后几乎是空的。
+Index(
+    "ix_message_search_pending",
+    Message.id.desc(),
+    postgresql_where=text("search_text IS NULL"),
+)
 
 
 class MessageRevision(Base):

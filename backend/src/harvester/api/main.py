@@ -10,6 +10,7 @@ from harvester.api.errors import register_error_handlers
 from harvester.api.middleware import origin_check
 from harvester.api.notifications import Broadcaster, listen_forever
 from harvester.api.routes import router
+from harvester.api.search_backfill import run_search_backfill
 from harvester.config import (
     ApiSettings,
     CryptoSettings,
@@ -19,7 +20,7 @@ from harvester.config import (
     is_local_origin,
     load_media_settings,
 )
-from harvester.db import get_engine
+from harvester.db import get_engine, get_sessionmaker
 from harvester.media.storage import MediaStore, R2Store, build_local_store, build_r2_client
 
 
@@ -28,12 +29,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     broadcaster = Broadcaster()
     app.state.broadcaster = broadcaster
     listener = asyncio.create_task(listen_forever(broadcaster), name="pg-listen")
+    backfill = asyncio.create_task(run_search_backfill(get_sessionmaker()), name="search-backfill")
     try:
         yield
     finally:
-        listener.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await listener
+        for task in (listener, backfill):
+            task.cancel()
+        for task in (listener, backfill):
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         await get_engine().dispose()
 
 

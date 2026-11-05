@@ -16,6 +16,7 @@ from harvester.db.coverage_plan import BannerReason
 from harvester.db.messages import (
     BIGINT_MAX,
     After,
+    Around,
     AttachmentRow,
     Before,
     ByIds,
@@ -66,12 +67,17 @@ class ChannelNotFoundError(ApiError):
         super().__init__(status.HTTP_404_NOT_FOUND, "channel_not_found", "频道不存在")
 
 
+class MessageNotFoundError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(status.HTTP_404_NOT_FOUND, "message_not_found", "消息不存在")
+
+
 class ConflictingCursorsError(ApiError):
     def __init__(self) -> None:
         super().__init__(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             "validation_error",
-            "before、after、ids 只能用一个",
+            "before、after、ids、around 只能用一个",
         )
 
 
@@ -152,6 +158,8 @@ class NamedRefOut(BaseModel):
 class MessagesOut(BaseModel):
     messages: list[MessageOut]
     has_more: bool
+    # 只有 around 取法才有值：更新的消息还有没有；其他取法为 null。
+    has_newer: bool | None = None
     users: list[NamedRefOut]
     channels: list[NamedRefOut]
 
@@ -241,7 +249,7 @@ def _forwarded_out(row: MessageRow) -> ForwardedOut | None:
     )
 
 
-def _message_out(row: MessageRow) -> MessageOut:
+def message_out(row: MessageRow) -> MessageOut:
     return MessageOut(
         id=str(row.id),
         channel_id=str(row.channel_id),
@@ -260,13 +268,17 @@ def _message_out(row: MessageRow) -> MessageOut:
     )
 
 
-def _named(rows: tuple[NamedRef, ...]) -> list[NamedRefOut]:
+def named_out(rows: tuple[NamedRef, ...]) -> list[NamedRefOut]:
     return [NamedRefOut(id=str(r.id), name=r.name) for r in rows]
 
 
-def _selector(before: str | None, after: str | None, ids: str | None, limit: int) -> PageSelector:
-    if sum(value is not None for value in (before, after, ids)) > 1:
+def _selector(
+    before: str | None, after: str | None, ids: str | None, around: str | None, limit: int
+) -> PageSelector:
+    if sum(value is not None for value in (before, after, ids, around)) > 1:
         raise ConflictingCursorsError
+    if around is not None:
+        return Around(int(around))
     if before is not None:
         return Before(int(before), limit)
     if after is not None:
@@ -299,18 +311,22 @@ async def list_messages(
     before: QueryId | None = None,
     after: QueryId | None = None,
     ids: QueryIds | None = None,
+    around: QueryId | None = None,
     limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
 ) -> MessagesOut:
-    selector = _selector(before, after, ids, limit)
+    selector = _selector(before, after, ids, around, limit)
     async with factory() as session:
         page = await message_store.get_message_page(session, int(channel_id), selector)
     if page == "channel_not_found":
         raise ChannelNotFoundError
+    if page == "message_not_found":
+        raise MessageNotFoundError
     return MessagesOut(
-        messages=[_message_out(m) for m in page.messages],
+        messages=[message_out(m) for m in page.messages],
         has_more=page.has_more,
-        users=_named(page.users),
-        channels=_named(page.channels),
+        has_newer=page.has_newer,
+        users=named_out(page.users),
+        channels=named_out(page.channels),
     )
 
 

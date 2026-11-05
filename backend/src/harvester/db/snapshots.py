@@ -273,3 +273,13 @@ def classify_update(
     if embeds_differ:
         return RefreshEmbeds()
     return NoWrite("unchanged")
+
+
+def snowflake_floor(moment: datetime) -> int:
+    """`snowflake_time` 的反函数：这个时刻之前的所有 ID 都小于返回值（整数运算，截到毫秒）。
+
+    早于 Discord 纪元按纪元算；超出 bigint 的按上限算。
+    """
+    delta = moment - DISCORD_EPOCH
+    millis = delta.days * 86_400_000 + delta.seconds * 1000 + delta.microseconds // 1000
+    return min(max(millis, 0) << 22, 2**63 - 1)

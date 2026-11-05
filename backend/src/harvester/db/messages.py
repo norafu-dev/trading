@@ -8,7 +8,7 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from sqlalchemy import exists, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -67,7 +67,16 @@ class ByIds:
     message_ids: tuple[int, ...]
 
 
-PageSelector = Latest | Before | After | ByIds
+@dataclass(frozen=True)
+class Around:
+    """以某条为中心：前后各 AROUND_SIDE 条（搜索结果跳到上下文，spec 0013）。"""
+
+    message_id: int
+
+
+AROUND_SIDE = 25
+
+PageSelector = Latest | Before | After | ByIds | Around
 
 
 @dataclass(frozen=True)
@@ -138,6 +147,8 @@ class MessagePage:
     has_more: bool
     users: tuple[NamedRef, ...]
     channels: tuple[NamedRef, ...]
+    # 只有 around 取法才有值：更新的消息还有没有。
+    has_newer: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -202,27 +213,32 @@ def extract_mentions(texts: Iterable[str]) -> tuple[frozenset[int], frozenset[in
     )
 
 
-def _page_statement(channel_id: int, selector: PageSelector):
+def _message_select():
+    """频道页和搜索共用的消息列；作者头像来自 discord_user。"""
     author = aliased(DiscordUser)
-    stmt = (
-        select(
-            Message.id,
-            Message.channel_id,
-            Message.author_id,
-            Message.author_display_name,
-            author.avatar_hash,
-            Message.created_at,
-            Message.content,
-            Message.embeds,
-            Message.forwarded,
-            Message.reply_to_id,
-            Message.version,
-            Message.edited_at,
-            Message.deleted_at,
-        )
-        .join(author, author.id == Message.author_id)
-        .where(Message.channel_id == channel_id)
-    )
+    return select(
+        Message.id,
+        Message.channel_id,
+        Message.author_id,
+        Message.author_display_name,
+        author.avatar_hash,
+        Message.created_at,
+        Message.content,
+        Message.embeds,
+        Message.forwarded,
+        Message.reply_to_id,
+        Message.version,
+        Message.edited_at,
+        Message.deleted_at,
+    ).join(author, author.id == Message.author_id)
+
+
+def messages_by_ids_statement(message_ids: Sequence[int]):
+    return _message_select().where(Message.id.in_(message_ids))
+
+
+def _page_statement(channel_id: int, selector: PageSelector):
+    stmt = _message_select().where(Message.channel_id == channel_id)
     match selector:
         case Latest(limit=limit):
             return stmt.order_by(Message.id.desc()).limit(limit + 1)
@@ -232,10 +248,12 @@ def _page_statement(channel_id: int, selector: PageSelector):
             return stmt.where(Message.id > message_id).order_by(Message.id.asc()).limit(limit + 1)
         case ByIds(message_ids=message_ids):
             return stmt.where(Message.id.in_(message_ids)).order_by(Message.id.asc())
+        case Around(message_id=message_id):
+            return stmt.where(Message.id == message_id)
 
 
 def _limit_of(selector: PageSelector) -> int | None:
-    return None if isinstance(selector, ByIds) else selector.limit
+    return None if isinstance(selector, ByIds | Around) else selector.limit
 
 
 async def _attachments_by_message(
@@ -350,7 +368,7 @@ async def _replies_by_id(
     }
 
 
-async def _resolve_names(
+async def resolve_names(
     session: AsyncSession, messages: Sequence[MessageRow]
 ) -> tuple[tuple[NamedRef, ...], tuple[NamedRef, ...]]:
     user_ids, channel_ids = extract_mentions(t for m in messages for t in _message_texts(m))
@@ -371,19 +389,8 @@ async def _resolve_names(
     return users, channels
 
 
-async def get_message_page(
-    session: AsyncSession, channel_id: int, selector: PageSelector
-) -> MessagePage | Literal["channel_not_found"]:
-    """按 ID 从旧到新返回一页消息，已删除的也在内。"""
-    if await session.scalar(select(Channel.id).where(Channel.id == channel_id)) is None:
-        return "channel_not_found"
-    rows = list(await session.execute(_page_statement(channel_id, selector)))
-    limit = _limit_of(selector)
-    has_more = limit is not None and len(rows) > limit
-    kept = rows[:limit] if limit is not None else rows
-    # 多查的一行用来判断 has_more；往旧的方向查是倒序的，翻回从旧到新。
-    ordered = kept if isinstance(selector, After | ByIds) else list(reversed(kept))
-
+async def hydrate_messages(session: AsyncSession, ordered: Sequence[Any]) -> tuple[MessageRow, ...]:
+    """把 `_message_select` 查出的行补上附件、媒体、回复摘要，保持传入的顺序。"""
     ids = [r.id for r in ordered]
     attachments = await _attachments_by_message(session, ids)
     media = await media_by_message(session, ids)
@@ -399,7 +406,7 @@ async def get_message_page(
             return None
         return replies.get(reply_id, ReplyMissing(reply_id))
 
-    messages = tuple(
+    return tuple(
         MessageRow(
             id=r.id,
             channel_id=r.channel_id,
@@ -418,8 +425,49 @@ async def get_message_page(
         )
         for r in ordered
     )
-    users, channels = await _resolve_names(session, messages)
+
+
+async def get_message_page(
+    session: AsyncSession, channel_id: int, selector: PageSelector
+) -> MessagePage | Literal["channel_not_found", "message_not_found"]:
+    """按 ID 从旧到新返回一页消息，已删除的也在内。"""
+    if await session.scalar(select(Channel.id).where(Channel.id == channel_id)) is None:
+        return "channel_not_found"
+    if isinstance(selector, Around):
+        return await _get_around_page(session, channel_id, selector.message_id)
+    rows = list(await session.execute(_page_statement(channel_id, selector)))
+    limit = _limit_of(selector)
+    has_more = limit is not None and len(rows) > limit
+    kept = rows[:limit] if limit is not None else rows
+    # 多查的一行用来判断 has_more；往旧的方向查是倒序的，翻回从旧到新。
+    ordered = kept if isinstance(selector, After | ByIds) else list(reversed(kept))
+
+    messages = await hydrate_messages(session, ordered)
+    users, channels = await resolve_names(session, messages)
     return MessagePage(messages, has_more, users, channels)
+
+
+async def _get_around_page(
+    session: AsyncSession, channel_id: int, message_id: int
+) -> MessagePage | Literal["message_not_found"]:
+    """目标之前 25 条、目标本身、之后 25 条；两边各多取一条判断还有没有。"""
+    target = list(await session.execute(_page_statement(channel_id, Around(message_id))))
+    if not target:
+        return "message_not_found"
+    older = list(
+        await session.execute(_page_statement(channel_id, Before(message_id, AROUND_SIDE)))
+    )
+    newer = list(await session.execute(_page_statement(channel_id, After(message_id, AROUND_SIDE))))
+    ordered = [*reversed(older[:AROUND_SIDE]), *target, *newer[:AROUND_SIDE]]
+    messages = await hydrate_messages(session, ordered)
+    users, channels = await resolve_names(session, messages)
+    return MessagePage(
+        messages,
+        has_more=len(older) > AROUND_SIDE,
+        users=users,
+        channels=channels,
+        has_newer=len(newer) > AROUND_SIDE,
+    )
 
 
 async def get_channel_detail(session: AsyncSession, channel_id: int) -> ChannelDetail | None:

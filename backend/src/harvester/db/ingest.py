@@ -23,6 +23,7 @@ from harvester.db.models import (
     Message,
     MessageRevision,
 )
+from harvester.db.search_index import refresh_search_text
 from harvester.db.snapshots import (
     STORED_MESSAGE_TYPES,
     AttachmentSnapshot,
@@ -288,12 +289,15 @@ async def ingest_message(
             if snap.attachments_known:
                 await _sync_attachments(session, snap.id, snap.attachments, removed_at=None)
             await sync_media_for_message(session, snap, embeds)
+            # 这条路径提前返回，不经过末尾的 flush，搜索文字要单独接上（spec 0013 AC-20）。
+            await refresh_search_text(session, snap.id)
             return "inserted"
         stored = await _lock_message(session, snap.id)
         if stored is None:  # The conflicting insert committed, so the row must be there now.
             raise RuntimeError(f"message {snap.id} vanished after an insert conflict")
 
     outcome: IngestResult
+    content_changed = False
     match classify_update(stored, snap.content, embeds, snap.edited_at, received_at):
         case NoWrite(outcome="deleted" | "stale" as skipped):
             return skipped
@@ -320,11 +324,13 @@ async def ingest_message(
                 )
             )
             outcome = "edited"
+            content_changed = True
         case RefreshEmbeds():
             await session.execute(
                 update(Message).where(Message.id == snap.id).values(embeds=embeds)
             )
             outcome = "embeds_refreshed"
+            content_changed = True
         case BumpEditedAt():
             await session.execute(
                 update(Message).where(Message.id == snap.id).values(edited_at=snap.edited_at)
@@ -336,6 +342,9 @@ async def ingest_message(
             session, snap.id, snap.attachments, removed_at=snap.edited_at or received_at
         )
     await sync_media_for_message(session, snap, embeds)
+    if content_changed or snap.attachments_known:
+        await session.flush()
+        await refresh_search_text(session, snap.id)
     await session.flush()
     return outcome
 

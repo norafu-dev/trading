@@ -21,6 +21,7 @@ from harvester.api.history_routes import history_router
 from harvester.api.media_routes import media_router
 from harvester.api.message_routes import message_router
 from harvester.api.notifications import Broadcaster
+from harvester.api.search_routes import search_router
 from harvester.api.system_routes import system_router
 from harvester.db import SessionDep, SessionFactoryDep
 
@@ -36,6 +37,7 @@ router.include_router(channel_router)
 router.include_router(message_router)
 router.include_router(media_router)
 router.include_router(history_router)
+router.include_router(search_router)
 router.include_router(system_router)
 
 

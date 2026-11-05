@@ -25,7 +25,7 @@ _这些都是让构建保持有序的建议，不是硬性要求。不合适的�
 | 10  | 按时间段采集历史消息 | Slice 2    | in-progress |
 | 11  | 编辑与删除留痕       | Slice 3    | planned     |
 | 12  | 附件与图片保存       | Slice 4    | in-progress |
-| 13  | 消息搜索与筛选       | Slice 5    | planned     |
+| 13  | 消息搜索与筛选       | Slice 5    | in-progress |
 | 14  | 导出                 | Slice 6    | planned     |
 | 15  | 关键词提醒           | Slice 7    | planned     |
 | 16  | 睡眠登录保护和日志文件 | Slice 1    | in-progress |
@@ -230,12 +230,20 @@ spec [0011](../specs/0011-attachment-media-storage/index.md)
 
 ## Slice 5: 搜索与筛选
 
-### 13. 消息搜索与筛选 · needs a decision
+### 13. 消息搜索与筛选 · in-progress
 
 在已采集的消息里按关键词、频道、作者、时间范围查找。
 **Done when:** 关键词搜索在大量消息里也很快返回；能叠加频道、作者、时间筛选；结果能跳到上下文。
+spec [0013](../specs/0013-message-search-filter/index.md)
 
-- [ ] Design it (spec): `/architect 消息搜索与筛选`
+- [x] Design it (spec): `/architect 消息搜索与筛选`
+- [ ] Build it: `/develop 消息搜索与筛选`
+  - [ ] 打通细线：迁移和 `search_text` 写入、最简关键词搜索接口、`/search` 页和图标栏入口，AC-1, AC-5, AC-6, AC-12, AC-20, AC-21
+  - [ ] 筛选和完整语法：前后端解析和共用用例、错误 `fields`、服务器频道作者时间筛选、选择器和作者联想、网址同步，AC-2 到 AC-4, AC-7 到 AC-11, AC-26
+  - [ ] 跳到上下文：`around` 取法、频道页以某条为中心的双向加载和高亮、回到最新，AC-17 到 AC-19
+  - [ ] 补建、总数和体验收口：后台补建、总数和进度接口、超时、高亮、快照刷新、各状态和窄屏，AC-13 到 AC-16, AC-22 到 AC-25
+  - [ ] 测试和检查：集成测试（含固定计划的 `EXPLAIN`）、前端测试、更新 spec 0001 和 0002，AC-1 到 AC-26
+- [ ] Verify it: `/check verify 消息搜索与筛选`
 
 ## Slice 6: 导出
 

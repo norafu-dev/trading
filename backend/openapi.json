@@ -750,6 +750,23 @@
             }
           },
           {
+            "name": "around",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]{1,19}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Around"
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "required": false,
@@ -1604,6 +1621,400 @@
         }
       }
     },
+    "/api/search/messages": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search Messages",
+        "operationId": "search_messages_api_search_messages_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "guild",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Guild"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Channel"
+            }
+          },
+          {
+            "name": "author",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Author"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchMessagesOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search/count": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search Count",
+        "operationId": "search_count_api_search_count_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "guild",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Guild"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Channel"
+            }
+          },
+          {
+            "name": "author",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Author"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchCountOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search/status": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search Status",
+        "operationId": "search_status_api_search_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchStatusOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search/channels": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search Channels",
+        "operationId": "search_channels_api_search_channels_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PickerOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search/authors": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search Authors",
+        "description": "`q`（1 到 50 字符）和 `ids`（最多 20 个）二选一。",
+        "operationId": "search_authors_api_search_authors_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ids"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/system/status": {
       "get": {
         "tags": [
@@ -1779,6 +2190,64 @@
           "state"
         ],
         "title": "AuthState"
+      },
+      "AuthorOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "global_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Global Name"
+          },
+          "avatar_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "global_name",
+          "avatar_hash"
+        ],
+        "title": "AuthorOut"
+      },
+      "AuthorsOut": {
+        "properties": {
+          "authors": {
+            "items": {
+              "$ref": "#/components/schemas/AuthorOut"
+            },
+            "type": "array",
+            "title": "Authors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "authors"
+        ],
+        "title": "AuthorsOut"
       },
       "BackupRunOut": {
         "properties": {
@@ -3754,6 +4223,17 @@
             "type": "boolean",
             "title": "Has More"
           },
+          "has_newer": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Newer"
+          },
           "users": {
             "items": {
               "$ref": "#/components/schemas/NamedRefOut"
@@ -3795,6 +4275,110 @@
           "name"
         ],
         "title": "NamedRefOut"
+      },
+      "PickerChannelOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "type": {
+            "type": "integer",
+            "title": "Type"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "category_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "collect_enabled": {
+            "type": "boolean",
+            "title": "Collect Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "type",
+          "parent_id",
+          "category_name",
+          "status",
+          "collect_enabled"
+        ],
+        "title": "PickerChannelOut"
+      },
+      "PickerGuildOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/PickerChannelOut"
+            },
+            "type": "array",
+            "title": "Channels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status",
+          "channels"
+        ],
+        "title": "PickerGuildOut"
+      },
+      "PickerOut": {
+        "properties": {
+          "guilds": {
+            "items": {
+              "$ref": "#/components/schemas/PickerGuildOut"
+            },
+            "type": "array",
+            "title": "Guilds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "guilds"
+        ],
+        "title": "PickerOut"
       },
       "ReplyOut": {
         "properties": {
@@ -3859,6 +4443,188 @@
           "requeued"
         ],
         "title": "RequeuedOut"
+      },
+      "SearchChannelOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "type": {
+            "type": "integer",
+            "title": "Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "collect_enabled": {
+            "type": "boolean",
+            "title": "Collect Enabled"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchParentOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "type",
+          "status",
+          "collect_enabled",
+          "parent"
+        ],
+        "title": "SearchChannelOut"
+      },
+      "SearchCountOut": {
+        "properties": {
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count"
+          },
+          "capped": {
+            "type": "boolean",
+            "title": "Capped"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count",
+          "capped"
+        ],
+        "title": "SearchCountOut"
+      },
+      "SearchGuildOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "SearchGuildOut"
+      },
+      "SearchHitOut": {
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/MessageOut"
+          },
+          "guild": {
+            "$ref": "#/components/schemas/SearchGuildOut"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/SearchChannelOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message",
+          "guild",
+          "channel"
+        ],
+        "title": "SearchHitOut"
+      },
+      "SearchMessagesOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHitOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Before"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/NamedRefOut"
+            },
+            "type": "array",
+            "title": "Users"
+          },
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/NamedRefOut"
+            },
+            "type": "array",
+            "title": "Channels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "next_before",
+          "users",
+          "channels"
+        ],
+        "title": "SearchMessagesOut"
+      },
+      "SearchParentOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "SearchParentOut"
+      },
+      "SearchStatusOut": {
+        "properties": {
+          "index_pending": {
+            "type": "integer",
+            "title": "Index Pending"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index_pending"
+        ],
+        "title": "SearchStatusOut"
       },
       "SetupBeginBody": {
         "properties": {
