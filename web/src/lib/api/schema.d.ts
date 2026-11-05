@@ -506,6 +506,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/history/jobs/{job_id}/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Act On History Job
+         * @description 暂停、继续、取消、重试一个任务；状态不符合返回 409（AC-9）。
+         */
+        post: operations["act_on_history_job_api_history_jobs__job_id___action__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/history/batches/{batch_id}/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Act On History Batch
+         * @description 整批暂停、继续、取消，只作用于状态符合的行，返回实际改了几行（AC-9）。
+         */
+        post: operations["act_on_history_batch_api_history_batches__batch_id___action__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/history/control": {
         parameters: {
             query?: never;
@@ -663,6 +703,11 @@ export interface components {
             last_success_at: string | null;
             /** Overdue */
             overdue: boolean;
+        };
+        /** BatchChangedOut */
+        BatchChangedOut: {
+            /** Changed */
+            changed: number;
         };
         /** CategoryCollectOut */
         CategoryCollectOut: {
@@ -2203,6 +2248,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreateJobsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    act_on_history_job_api_history_jobs__job_id___action__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+                action: "pause" | "resume" | "cancel" | "retry";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryJobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    act_on_history_batch_api_history_batches__batch_id___action__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+                action: "pause" | "resume" | "cancel";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchChangedOut"];
                 };
             };
             /** @description Validation Error */

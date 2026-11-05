@@ -139,6 +139,7 @@ async def test_write_requires_origin(
 
 # ---- 里程碑 2：总开关、设置、状态 ----------------------------------------------------
 
+UUID_ZERO = "00000000-0000-0000-0000-000000000000"
 SETTINGS = {
     "page_delay_min_s": 3,
     "page_delay_max_s": 6,
@@ -252,6 +253,8 @@ async def test_status_not_stale_when_process_is_down(
         ("POST", "/api/history/control", {"paused": True}),
         ("GET", "/api/history/settings", None),
         ("PUT", "/api/history/settings", SETTINGS),
+        ("POST", "/api/history/jobs/1/pause", None),
+        ("POST", f"/api/history/batches/{UUID_ZERO}/pause", None),
     ],
 )
 async def test_new_endpoints_require_login(
@@ -260,3 +263,79 @@ async def test_new_endpoints_require_login(
     response = await client.request(method, path, json=body)
 
     assert response.status_code == 401
+
+
+# ---- 里程碑 3：任务操作 -------------------------------------------------------------
+
+
+async def make_job(client: httpx.AsyncClient) -> dict[str, str]:
+    created = await client.post("/api/history/jobs", json=BODY)
+    return created.json()["jobs"][0]
+
+
+async def test_job_actions_follow_the_state_table(
+    logged_in: httpx.AsyncClient, readable: None
+) -> None:  # covers: AC-9
+    job = await make_job(logged_in)
+    url = f"/api/history/jobs/{job['id']}"
+
+    paused = await logged_in.post(f"{url}/pause")
+    assert paused.status_code == 200 and paused.json()["status"] == "paused"
+    again = await logged_in.post(f"{url}/pause")
+    assert again.status_code == 409 and again.json()["error"]["code"] == "invalid_transition"
+    assert (await logged_in.post(f"{url}/retry")).status_code == 409
+    assert (await logged_in.post(f"{url}/resume")).json()["status"] == "pending"
+    cancelled = (await logged_in.post(f"{url}/cancel")).json()
+    assert cancelled["status"] == "cancelled" and cancelled["finished_at"] is not None
+
+
+async def test_job_action_errors(logged_in: httpx.AsyncClient, readable: None) -> None:
+    missing = await logged_in.post("/api/history/jobs/999999/pause")
+    assert missing.status_code == 404 and missing.json()["error"]["code"] == "job_not_found"
+    huge = await logged_in.post("/api/history/jobs/9999999999999999999/pause")
+    assert huge.status_code == 404
+    job = await make_job(logged_in)
+    assert (await logged_in.post(f"/api/history/jobs/{job['id']}/explode")).status_code == 422
+
+
+async def test_batch_actions_report_changed_rows(
+    logged_in: httpx.AsyncClient, readable: None
+) -> None:  # covers: AC-9
+    created = (await logged_in.post("/api/history/jobs", json=BODY)).json()
+    url = f"/api/history/batches/{created['batch_id']}"
+
+    assert (await logged_in.post(f"{url}/pause")).json() == {"changed": 1}
+    assert (await logged_in.post(f"{url}/pause")).json() == {"changed": 0}
+    assert (await logged_in.post(f"{url}/resume")).json() == {"changed": 1}
+    assert (await logged_in.post(f"{url}/cancel")).json() == {"changed": 1}
+    missing = await logged_in.post(f"/api/history/batches/{UUID_ZERO}/cancel")
+    assert missing.status_code == 404 and missing.json()["error"]["code"] == "batch_not_found"
+    assert (await logged_in.post("/api/history/batches/not-a-uuid/cancel")).status_code == 422
+    assert (await logged_in.post(f"{url}/retry")).status_code == 422
+
+
+async def test_job_actions_require_origin(
+    logged_in: httpx.AsyncClient, readable: None, factory: Factory
+) -> None:  # covers: AC-22
+    job = await make_job(logged_in)
+
+    response = await logged_in.post(
+        f"/api/history/jobs/{job['id']}/cancel", headers={"Origin": "https://evil.example"}
+    )
+
+    assert response.status_code == 403
+    async with factory() as session:
+        assert await session.scalar(select(HistoryJob.status)) == "pending"
+
+
+async def test_finished_view_pages_and_includes_cancelled(
+    logged_in: httpx.AsyncClient, readable: None
+) -> None:  # covers: AC-14
+    first = await make_job(logged_in)
+    await logged_in.post(f"/api/history/jobs/{first['id']}/cancel")
+
+    page = (await logged_in.get("/api/history/jobs", params={"view": "finished"})).json()
+    active = (await logged_in.get("/api/history/jobs")).json()
+
+    assert [j["id"] for j in page["jobs"]] == [first["id"]]
+    assert active["jobs"] == []

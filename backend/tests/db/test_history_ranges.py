@@ -15,6 +15,7 @@ from harvester.db.history_ranges import (
     partial_coverage_start,
     progress,
     quota_resumes_at,
+    reconcile_interval,
     snowflake_floor,
 )
 from harvester.db.snapshots import DISCORD_EPOCH, snowflake_time
@@ -149,3 +150,22 @@ def test_idle_longer_than_rest_counts_as_rested() -> None:
     assert pacing_working(pacing, H + 24 * MIN, 5 * MIN).ran == timedelta(0)
     short = pacing_working(pacing, H + 23 * MIN, 5 * MIN)
     assert short.ran == 19 * MIN
+
+
+def test_reconcile_interval_middle_page_stops_at_oldest_returned() -> None:
+    before = snowflake_floor(T)
+    ids = (before - 5, before - 9, before - 12)
+
+    assert reconcile_interval(before, ids, 100, T - timedelta(hours=1)) == (before - 12, before)
+
+
+def test_reconcile_interval_last_and_empty_page_go_down_to_range_start() -> None:
+    start = T - timedelta(hours=1)
+    before = snowflake_floor(T)
+    short = (before - 5,)
+
+    assert reconcile_interval(before, short, 1, start) == (snowflake_floor(start), before)
+    assert reconcile_interval(before, (), 0, start) == (snowflake_floor(start), before)
+    # 满 100 条但其中有早于起点的：也是到底。
+    older = (before - 5, snowflake_floor(start) - 1)
+    assert reconcile_interval(before, older, 100, start) == (snowflake_floor(start), before)

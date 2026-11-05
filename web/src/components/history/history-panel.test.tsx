@@ -113,13 +113,30 @@ const CHANNELS = {
   ],
 };
 
-function serve(page: HistoryJobPage, channels: typeof CHANNELS = CHANNELS) {
-  get.mockImplementation((path: string) => {
-    if (path === "/api/history/jobs") return Promise.resolve({ data: page, ...jsonResponse(200) });
-    if (path === "/api/discord/guilds")
-      return Promise.resolve({ data: GUILDS, ...jsonResponse(200) });
-    return Promise.resolve({ data: channels, ...jsonResponse(200) });
-  });
+const NO_JOBS: HistoryJobPage = { jobs: [], batches: [], next_before_id: null };
+
+function serve(
+  page: HistoryJobPage,
+  channels: typeof CHANNELS = CHANNELS,
+  finished: readonly HistoryJobPage[] = [NO_JOBS],
+) {
+  const finishedCalls: Array<Record<string, unknown>> = [];
+  get.mockImplementation(
+    (path: string, options?: { params?: { query?: Record<string, unknown> } }) => {
+      const query = options?.params?.query ?? {};
+      if (path === "/api/history/jobs" && query.view === "finished") {
+        finishedCalls.push(query);
+        const data = finished[Math.min(finishedCalls.length - 1, finished.length - 1)];
+        return Promise.resolve({ data, ...jsonResponse(200) });
+      }
+      if (path === "/api/history/jobs")
+        return Promise.resolve({ data: page, ...jsonResponse(200) });
+      if (path === "/api/discord/guilds")
+        return Promise.resolve({ data: GUILDS, ...jsonResponse(200) });
+      return Promise.resolve({ data: channels, ...jsonResponse(200) });
+    },
+  );
+  return finishedCalls;
 }
 
 describe("HistoryPanel", () => {
@@ -241,5 +258,85 @@ describe("HistoryPanel", () => {
       "true",
     );
     expect(within(dialog).getByText("quiet")).toBeInTheDocument();
+  });
+
+  // covers: spec 0012 AC-9
+  it("每个任务按状态显示能点的操作，点击后调用接口", async () => {
+    serve(PAGE);
+    post.mockResolvedValue({ data: JOB, ...jsonResponse(200) });
+    const user = userEvent.setup();
+    renderWithQuery(<HistoryPanel />);
+
+    await screen.findByRole("progressbar", { name: "#alerts 进度" });
+    expect(screen.getByRole("button", { name: "暂停：#alerts" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重试：#news" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "继续：#alerts" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "重试：#news" }));
+
+    expect(post).toHaveBeenCalledWith("/api/history/jobs/{job_id}/{action}", {
+      params: { path: { job_id: "2", action: "retry" } },
+    });
+  });
+
+  // covers: spec 0012 AC-9
+  it("整批操作只列有符合行的，点击后调用批次接口", async () => {
+    serve(PAGE);
+    post.mockResolvedValue({ data: { changed: 1 }, ...jsonResponse(200) });
+    const user = userEvent.setup();
+    renderWithQuery(<HistoryPanel />);
+
+    await screen.findByRole("progressbar", { name: "#alerts 进度" });
+    expect(screen.getByRole("button", { name: "整批暂停" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "整批继续" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "整批取消" }));
+
+    expect(post).toHaveBeenCalledWith("/api/history/batches/{batch_id}/{action}", {
+      params: { path: { batch_id: "b1", action: "cancel" } },
+    });
+  });
+
+  // covers: spec 0012 AC-14
+  it("已结束列表默认最近 7 天，分页加载，可以切到全部", async () => {
+    const done = (id: string, name: string): HistoryJob => ({
+      ...JOB,
+      id,
+      batch_id: `f${id}`,
+      channel_name: name,
+      status: "done",
+      progress: 1,
+      wait_reason: null,
+      wait_until: null,
+      finished_at: "2026-01-04T00:00:00Z",
+    });
+    const batch = (id: string) => ({
+      batch_id: `f${id}`,
+      channel_count: 1,
+      fetched_count: 5,
+      status_counts: { pending: 0, running: 0, paused: 0, done: 1, failed: 0, cancelled: 0 },
+    });
+    const calls = serve(NO_JOBS, CHANNELS, [
+      { jobs: [done("10", "first")], batches: [batch("10")], next_before_id: "10" },
+      { jobs: [done("9", "second")], batches: [batch("9")], next_before_id: null },
+      NO_JOBS,
+    ]);
+    const user = userEvent.setup();
+    renderWithQuery(<HistoryPanel />);
+
+    expect(await screen.findByRole("progressbar", { name: "#first 进度" })).toBeInTheDocument();
+    expect(calls[0]).toMatchObject({ view: "finished", since_days: 7 });
+    expect(screen.queryByRole("button", { name: /暂停|取消|重试/ })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "加载更多" }));
+
+    expect(await screen.findByRole("progressbar", { name: "#second 进度" })).toBeInTheDocument();
+    expect(calls[1]).toMatchObject({ before_id: "10" });
+    expect(screen.queryByRole("button", { name: "加载更多" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "全部（保留 30 天）" }));
+
+    expect(await screen.findByText("全部（保留 30 天）内没有结束的任务")).toBeInTheDocument();
+    expect(calls.at(-1)).toMatchObject({ since_days: 30 });
   });
 });

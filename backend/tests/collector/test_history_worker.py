@@ -649,3 +649,41 @@ async def test_heartbeat_loop_writes_history_seen_at(factory: Factory, account_i
         await until(beat)
     finally:
         await stop(task)
+
+
+async def test_paused_job_gets_no_further_request(factory: Factory, account_id: int) -> None:
+    fake = FakeHistory(spread(h(1), 250))
+    await new_job(factory, h(0), h(10))
+    deps = make_deps(factory, fake, account_id)
+    async with factory() as session, session.begin():
+        job = await history_db.claim_next_job(session, account_id)
+    assert job is not None
+    current = await fetch_step(deps, cast(GatewaySession, fake), account_id, Running(job))
+    assert current is not None and len(fake.calls) == 1
+    async with factory() as session, session.begin():
+        await history_db.transition_job(session, job.id, "pause")
+
+    assert await fetch_step(deps, cast(GatewaySession, fake), account_id, current) is None
+    assert len(fake.calls) == 1
+    assert (await job_row(factory)).status == "paused"
+
+
+async def test_cleanup_loop_deletes_old_rows_then_sleeps(factory: Factory, account_id: int) -> None:
+    from harvester.collector.history_worker import CLEANUP_INTERVAL, run_cleanup_loop
+
+    async with factory() as session, session.begin():
+        session.add(HistoryPageHour(hour=h(0), pages=5))
+    slept: list[float] = []
+
+    async def stop_after_sleep(seconds: float) -> None:
+        slept.append(seconds)
+        raise asyncio.CancelledError
+
+    deps = replace(make_deps(factory, None, account_id), sleep=stop_after_sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_cleanup_loop(deps)
+
+    assert slept == [CLEANUP_INTERVAL]
+    async with factory() as session:
+        assert await session.scalar(select(HistoryPageHour.hour)) is None

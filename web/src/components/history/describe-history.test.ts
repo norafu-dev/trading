@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  batchActions,
   batchStatusSummary,
   checkRange,
   checkSettings,
@@ -11,6 +12,7 @@ import {
   type HistoryJob,
   type HistoryStatus,
   isRateLimitedPause,
+  jobActions,
   localInputToIso,
   percent,
   presetInputs,
@@ -302,5 +304,30 @@ describe("checkSettings", () => {
       ok: false,
       errors: { page_delay_min_s: "最短间隔不能大于最长间隔" },
     });
+  });
+});
+
+describe("任务操作", () => {
+  it("每个状态只给服务端允许的操作", () => {
+    expect(jobActions("pending")).toEqual(["pause", "cancel"]);
+    expect(jobActions("running")).toEqual(["pause", "cancel"]);
+    expect(jobActions("paused")).toEqual(["resume", "cancel"]);
+    expect(jobActions("failed")).toEqual(["retry", "cancel"]);
+    expect(jobActions("done")).toEqual([]);
+    expect(jobActions("cancelled")).toEqual([]);
+  });
+
+  it("整批操作只列至少有一行符合的，没有重试", () => {
+    const counts = { pending: 0, running: 0, paused: 0, done: 0, failed: 0, cancelled: 0 };
+    const batch = (patch: Partial<typeof counts>) => ({
+      batch_id: "b",
+      channel_count: 1,
+      fetched_count: 0,
+      status_counts: { ...counts, ...patch },
+    });
+    expect(batchActions(batch({ running: 1 }))).toEqual(["pause", "cancel"]);
+    expect(batchActions(batch({ paused: 2 }))).toEqual(["resume", "cancel"]);
+    expect(batchActions(batch({ failed: 1 }))).toEqual(["cancel"]);
+    expect(batchActions(batch({ done: 3, cancelled: 1 }))).toEqual([]);
   });
 });

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal
 
-from sqlalchemy import RowMapping, exists, func, or_, select, text, update
+from sqlalchemy import ColumnElement, RowMapping, delete, exists, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import Range, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,9 +20,10 @@ from harvester.db.history_ranges import (
     page_cursor,
     page_reached_end,
     partial_coverage_start,
+    reconcile_interval,
     snowflake_floor,
 )
-from harvester.db.ingest import ingest_message
+from harvester.db.ingest import ingest_message, mark_messages_deleted
 from harvester.db.models import (
     AccountChannelAccess,
     Channel,
@@ -333,6 +334,31 @@ async def record_pages(session: AsyncSession, pages: int) -> None:
     )
 
 
+async def _reconcile_page(
+    session: AsyncSession, job: ClaimedJob, returned_ids: tuple[int, ...], raw_count: int
+) -> None:
+    """整段重抓：这一页的 ID 区间里，库里有、这一页没返回、还没删除的消息标成已删除（AC-13）。
+
+    时间是这一页提交时的数据库时钟（`mark_messages_deleted` 的 `at`）。
+    """
+    before_id = job.cursor_message_id or snowflake_floor(job.range_end)
+    low, high = reconcile_interval(before_id, returned_ids, raw_count, job.range_start)
+    if low >= high:
+        return
+    stmt = select(Message.id).where(
+        Message.channel_id == job.channel_id,
+        Message.id >= low,
+        Message.id < high,
+        Message.deleted_at.is_(None),
+    )
+    if returned_ids:
+        stmt = stmt.where(Message.id.not_in(returned_ids))
+    missing = tuple(await session.scalars(stmt))
+    if missing:
+        at: datetime = await session.scalar(select(func.now()))  # pyright: ignore[reportAssignmentType]
+        await mark_messages_deleted(session, missing, at, "reconciled")
+
+
 @dataclass(frozen=True)
 class PageCommitted:
     """`status` 是提交后任务行的状态；`cursor_message_id` 是新的断点。"""
@@ -370,6 +396,8 @@ async def commit_page(
 
     if status in FINISHED_STATUSES:
         return PageCommitted(status=status, cursor_message_id=job.cursor_message_id, ingested=0)
+    if job.refetch:
+        await _reconcile_page(session, job, returned_ids, raw_count)
 
     new_cursor = page_cursor(returned_ids, job.range_start)
     if new_cursor is not None and job.cursor_message_id is not None:
@@ -498,6 +526,177 @@ async def reset_running_on_start(session: AsyncSession) -> int:
     if released:
         await notify_history_changed(session)
     return released
+
+
+# ---- 任务操作（api 侧，AC-9、AC-11） -------------------------------------------------
+
+JobAction = Literal["pause", "resume", "cancel", "retry"]
+BatchAction = Literal["pause", "resume", "cancel"]
+
+# 每个操作允许从哪些状态出发，以及目标状态。
+_TRANSITIONS: Mapping[JobAction, tuple[tuple[HistoryJobStatus, ...], HistoryJobStatus]] = {
+    "pause": (("pending", "running"), "paused"),
+    "resume": (("paused",), "pending"),
+    "cancel": (("pending", "running", "paused", "failed"), "cancelled"),
+    "retry": (("failed",), "pending"),
+}
+
+
+@dataclass(frozen=True)
+class JobNotFound:
+    pass
+
+
+@dataclass(frozen=True)
+class BatchNotFound:
+    pass
+
+
+@dataclass(frozen=True)
+class InvalidTransition:
+    """任务当前的状态不能做这个操作。"""
+
+    current: HistoryJobStatus
+
+
+@dataclass(frozen=True)
+class Transitioned:
+    job_id: int
+
+
+def _transition_values(action: JobAction) -> dict[str, object]:
+    target = _TRANSITIONS[action][1]
+    values: dict[str, object] = {
+        "status": target,
+        "wait_reason": None,
+        "wait_until": None,
+        "updated_at": func.now(),
+    }
+    if action == "cancel":
+        # 失败的任务被取消时，`error` 只允许出现在 `failed` 上，要一起清掉。
+        values |= {"finished_at": func.now(), "error": None}
+    elif action == "retry":
+        values |= {"error": None, "finished_at": None}
+    return values
+
+
+async def _apply_transition(
+    session: AsyncSession, rows: Sequence[RowMapping], action: JobAction
+) -> int:
+    """调用方已经 `FOR UPDATE` 锁住了这些行，并确认状态都符合。
+
+    取消一个有断点、还没结束的任务时，在同一个事务里写部分覆盖段（AC-11）；
+    `failed` 变成 `cancelled` 失败时已经写过，不再写。
+    """
+    if not rows:
+        return 0
+    values = _transition_values(action)
+    await session.execute(
+        update(HistoryJob).where(HistoryJob.id.in_([r["id"] for r in rows])).values(values)
+    )
+    for row in rows:
+        if (
+            action == "cancel"
+            and row["status"] != "failed"
+            and row["cursor_message_id"] is not None
+        ):
+            await _add_history_coverage(
+                session,
+                row["channel_id"],
+                partial_coverage_start(row["cursor_message_id"]),
+                row["range_end"],
+            )
+        await notify_history_changed(session, row["id"], row["channel_id"])
+    return len(rows)
+
+
+def _lock_rows(*where: ColumnElement[bool]):
+    return (
+        select(
+            HistoryJob.id,
+            HistoryJob.channel_id,
+            HistoryJob.status,
+            HistoryJob.cursor_message_id,
+            HistoryJob.range_end,
+        )
+        .where(*where)
+        .order_by(HistoryJob.id)
+        .with_for_update()
+    )
+
+
+async def transition_job(
+    session: AsyncSession, job_id: int, action: JobAction
+) -> Transitioned | JobNotFound | InvalidTransition:
+    """单个任务的暂停、继续、取消、重试；先锁住行，和 collector 的写入互相串行。"""
+    row = (await session.execute(_lock_rows(HistoryJob.id == job_id))).mappings().one_or_none()
+    if row is None:
+        return JobNotFound()
+    if row["status"] not in _TRANSITIONS[action][0]:
+        return InvalidTransition(row["status"])
+    await _apply_transition(session, [row], action)
+    return Transitioned(job_id)
+
+
+async def transition_batch(
+    session: AsyncSession, batch_id: uuid.UUID, action: BatchAction
+) -> int | BatchNotFound:
+    """整批操作只作用于状态符合的行，返回实际改了几行；整批加锁按 `id` 排序（AC-9）。"""
+    exists_ = await session.scalar(select(exists().where(HistoryJob.batch_id == batch_id)))
+    if not exists_:
+        return BatchNotFound()
+    rows = (
+        (
+            await session.execute(
+                _lock_rows(
+                    HistoryJob.batch_id == batch_id,
+                    HistoryJob.status.in_(_TRANSITIONS[action][0]),
+                )
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return await _apply_transition(session, rows, action)
+
+
+# ---- 清理（AC-21） ------------------------------------------------------------------
+
+JOB_RETENTION = timedelta(days=30)
+PAGE_HOUR_RETENTION = timedelta(hours=48)
+
+
+@dataclass(frozen=True)
+class CleanupResult:
+    jobs: int
+    page_hours: int
+
+
+async def cleanup_history(session: AsyncSession) -> CleanupResult:
+    """删除结束 30 天以上的任务行和 48 小时以前的限额计数行；覆盖段和消息不删。"""
+    jobs = await session.scalars(
+        delete(HistoryJob)
+        .where(
+            HistoryJob.status.in_(FINISHED_STATUSES),
+            HistoryJob.finished_at < func.now() - JOB_RETENTION,
+        )
+        .returning(HistoryJob.id)
+    )
+    hours = await session.scalars(
+        delete(HistoryPageHour)
+        .where(HistoryPageHour.hour < func.now() - PAGE_HOUR_RETENTION)
+        .returning(HistoryPageHour.hour)
+    )
+    return CleanupResult(jobs=len(jobs.all()), page_hours=len(hours.all()))
+
+
+async def job_is_running(session: AsyncSession, job_id: int) -> bool:
+    """每页请求之前再看一眼：api 暂停或取消之后不再发请求（AC-9）。"""
+    return bool(
+        await session.scalar(
+            select(exists().where(HistoryJob.id == job_id, HistoryJob.status == "running"))
+        )
+    )
 
 
 # ---- 设置和总开关 -------------------------------------------------------------------

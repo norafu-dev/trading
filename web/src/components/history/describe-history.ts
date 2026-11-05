@@ -19,6 +19,50 @@ export const STATUS_LABELS: Readonly<Record<JobStatus, string>> = {
   cancelled: "已取消",
 };
 
+// ---- 任务操作（spec 0012 AC-9） ---------------------------------------------------------
+
+export type JobAction = "pause" | "resume" | "cancel" | "retry";
+export type BatchAction = Exclude<JobAction, "retry">;
+
+export const ACTION_LABELS: Readonly<Record<JobAction, string>> = {
+  pause: "暂停",
+  resume: "继续",
+  cancel: "取消",
+  retry: "重试",
+};
+
+const JOB_ACTIONS: Readonly<Record<JobStatus, readonly JobAction[]>> = {
+  pending: ["pause", "cancel"],
+  running: ["pause", "cancel"],
+  paused: ["resume", "cancel"],
+  failed: ["retry", "cancel"],
+  done: [],
+  cancelled: [],
+};
+
+/** 这个状态下能点的操作，和服务端的状态表一致。 */
+export function jobActions(status: JobStatus): readonly JobAction[] {
+  return JOB_ACTIONS[status];
+}
+
+/** 整批能点的操作：只列至少有一行符合的；服务端只改状态符合的行。 */
+export function batchActions(batch: HistoryBatch): readonly BatchAction[] {
+  const c = batch.status_counts;
+  const actions: BatchAction[] = [];
+  if (c.pending + c.running > 0) actions.push("pause");
+  if (c.paused > 0) actions.push("resume");
+  if (c.pending + c.running + c.paused + c.failed > 0) actions.push("cancel");
+  return actions;
+}
+
+/** 「已结束」列表的时间范围：默认最近 7 天，也可以看保留期内（30 天）的全部。 */
+export type FinishedRange = "week" | "all";
+export const FINISHED_RANGE_DAYS: Readonly<Record<FinishedRange, number>> = { week: 7, all: 30 };
+export const FINISHED_RANGE_LABELS: Readonly<Record<FinishedRange, string>> = {
+  week: "最近 7 天",
+  all: "全部（保留 30 天）",
+};
+
 export const ORIGIN_LABELS: Readonly<Record<HistoryJob["origin"], string>> = {
   manual: "手动",
   gap_manual: "一键补缺口",

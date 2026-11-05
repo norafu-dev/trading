@@ -57,6 +57,8 @@ RETRY_LIMIT = 5
 RETRY_COOL_DOWN = timedelta(minutes=5)
 # 历史任务心跳间隔（AC-20）。
 HEARTBEAT_INTERVAL = 30.0
+# 清理循环的间隔（AC-21）。
+CLEANUP_INTERVAL = 3600.0
 # 连续被自动补缺口抢先这么多次后，下一次不再让位（AC-10）。
 MAX_PREEMPTIONS = 3
 
@@ -191,6 +193,9 @@ async def fetch_step(
     """抓一页并处理结果；返回 None 表示放下了这个任务（完成、失败、放回或被 api 改了状态）。"""
     job = current.job
     async with deps.factory() as session:
+        # api 刚暂停或取消的任务不再发请求（AC-9）。
+        if not await history_db.job_is_running(session, job.id):
+            return None
         readable = await history_db.channel_readable(session, account_id, job.channel_id)
     if not readable:
         await _fail(deps, job, "no_access")
@@ -371,6 +376,21 @@ async def run_heartbeat_loop(deps: HistoryDeps) -> None:
         except Exception as exc:
             log.error("history.loop_failed", loop="heartbeat", error_type=type(exc).__name__)
             await asyncio.sleep(ERROR_BACKOFF)
+
+
+async def run_cleanup_loop(deps: HistoryDeps) -> None:
+    """每小时清理一次：结束 30 天以上的任务行和 48 小时以前的限额计数行（AC-21）。"""
+    while True:
+        try:
+            async with deps.factory() as session, session.begin():
+                result = await history_db.cleanup_history(session)
+            log.info("history.cleanup", jobs=result.jobs, page_hours=result.page_hours)
+            await deps.sleep(CLEANUP_INTERVAL)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.error("history.loop_failed", loop="cleanup", error_type=type(exc).__name__)
+            await deps.sleep(ERROR_BACKOFF)
 
 
 async def release_on_stop(factory: async_sessionmaker[AsyncSession]) -> None:

@@ -1,7 +1,15 @@
 "use client";
 
 import { cn } from "cn";
-import { HistoryIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
+import {
+  BanIcon,
+  HistoryIcon,
+  PauseIcon,
+  PlayIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  RotateCwIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
@@ -15,12 +23,19 @@ import { toUiError } from "@/lib/api/errors";
 import { createTimeFormat, type TimeFormat } from "@/lib/format/time";
 
 import {
+  ACTION_LABELS,
+  type BatchAction,
+  batchActions,
   batchStatusSummary,
   ERROR_LABELS,
+  FINISHED_RANGE_LABELS,
+  type FinishedRange,
   groupByBatch,
   type HistoryBatch,
   type HistoryJob,
+  type JobAction,
   type JobStatus,
+  jobActions,
   ORIGIN_LABELS,
   percent,
   STATUS_LABELS,
@@ -28,7 +43,13 @@ import {
 } from "./describe-history";
 import { HistoryStatusBar } from "./history-status-bar";
 import { NewJobDialog } from "./new-job-dialog";
-import { useActiveHistoryJobs, useHistoryStatus } from "./use-history";
+import {
+  useActiveHistoryJobs,
+  useBatchAction,
+  useFinishedHistoryJobs,
+  useHistoryStatus,
+  useJobAction,
+} from "./use-history";
 
 const STATUS_VARIANT: Readonly<
   Record<JobStatus, "default" | "secondary" | "destructive" | "outline">
@@ -41,7 +62,44 @@ const STATUS_VARIANT: Readonly<
   cancelled: "outline",
 };
 
-function JobRow({ job, time }: Readonly<{ job: HistoryJob; time: TimeFormat }>) {
+const ACTION_ICONS: Readonly<Record<JobAction, typeof PauseIcon>> = {
+  pause: PauseIcon,
+  resume: PlayIcon,
+  cancel: BanIcon,
+  retry: RotateCwIcon,
+};
+
+function JobActions({ job }: Readonly<{ job: HistoryJob }>) {
+  const act = useJobAction();
+  const actions = jobActions(job.status);
+  if (actions.length === 0) return null;
+  return (
+    <div className="ml-auto flex items-center gap-1">
+      {actions.map((action) => {
+        const Icon = ACTION_ICONS[action];
+        return (
+          <Button
+            key={action}
+            variant="ghost"
+            size="sm"
+            disabled={act.isPending}
+            aria-label={`${ACTION_LABELS[action]}：#${job.channel_name}`}
+            onClick={() => act.mutate({ jobId: job.id, action })}
+          >
+            <Icon data-icon="inline-start" aria-hidden />
+            {ACTION_LABELS[action]}
+          </Button>
+        );
+      })}
+    </div>
+  );
+}
+
+function JobRow({
+  job,
+  time,
+  actions = true,
+}: Readonly<{ job: HistoryJob; time: TimeFormat; actions?: boolean }>) {
   const value = percent(job.progress);
   return (
     <li className="flex flex-col gap-2 px-5 py-4">
@@ -57,6 +115,7 @@ function JobRow({ job, time }: Readonly<{ job: HistoryJob; time: TimeFormat }>) 
           {ORIGIN_LABELS[job.origin]}
           {job.refetch ? " · 整段重抓" : ""}
         </span>
+        {actions ? <JobActions job={job} /> : null}
       </div>
       <p className="text-sm text-muted-foreground">
         {time.fullTime(job.range_start)} 至 {time.fullTime(job.range_end)}
@@ -95,11 +154,37 @@ function JobRow({ job, time }: Readonly<{ job: HistoryJob; time: TimeFormat }>) 
   );
 }
 
+function BatchActions({ batch }: Readonly<{ batch: HistoryBatch }>) {
+  const act = useBatchAction();
+  const actions = batchActions(batch);
+  return (
+    <div className="flex items-center gap-1">
+      {actions.map((action: BatchAction) => (
+        <Button
+          key={action}
+          variant="outline"
+          size="xs"
+          disabled={act.isPending}
+          onClick={() => act.mutate({ batchId: batch.batch_id, action })}
+        >
+          整批{ACTION_LABELS[action]}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 function BatchCard({
   batch,
   jobs,
   time,
-}: Readonly<{ batch: HistoryBatch | undefined; jobs: readonly HistoryJob[]; time: TimeFormat }>) {
+  actions = true,
+}: Readonly<{
+  batch: HistoryBatch | undefined;
+  jobs: readonly HistoryJob[];
+  time: TimeFormat;
+  actions?: boolean;
+}>) {
   const first = jobs[0];
   return (
     <section className="overflow-hidden rounded-lg border border-border bg-card text-card-foreground">
@@ -108,21 +193,101 @@ function BatchCard({
           {first ? `${time.fullTime(first.created_at)} 建的任务` : "任务"}
         </h3>
         {batch ? (
-          <p className="text-xs text-muted-foreground">
-            {batch.channel_count} 个频道 · 共 {batch.fetched_count} 条 · {batchStatusSummary(batch)}
-          </p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <p className="text-xs text-muted-foreground">
+              {batch.channel_count} 个频道 · 共 {batch.fetched_count} 条 ·{" "}
+              {batchStatusSummary(batch)}
+            </p>
+            {actions ? <BatchActions batch={batch} /> : null}
+          </div>
         ) : null}
       </header>
       <ul className="divide-y divide-border">
         {jobs.map((job) => (
-          <JobRow key={job.id} job={job} time={time} />
+          <JobRow key={job.id} job={job} time={time} actions={actions} />
         ))}
       </ul>
     </section>
   );
 }
 
-// 「历史采集」页（spec 0012 AC-1、AC-14）：新建任务和进行中的任务，按批次分组。
+// 「已结束」：默认最近 7 天，分页加载，可以切到保留期内的全部（AC-14）。
+function FinishedSection({ time }: Readonly<{ time: TimeFormat }>) {
+  const [range, setRange] = useState<FinishedRange>("week");
+  const finished = useFinishedHistoryJobs(range);
+  const pages = finished.data?.pages ?? [];
+  const jobs = pages.flatMap((p) => p.jobs);
+  const batches = new Map(pages.flatMap((p) => p.batches).map((b) => [b.batch_id, b]));
+
+  let body: React.ReactNode;
+  if (finished.isPending) {
+    body = (
+      <div className="grid h-24 place-items-center">
+        <Spinner />
+      </div>
+    );
+  } else if (finished.isError) {
+    body = <ErrorBlock error={toUiError(finished.error)} onRetry={() => void finished.refetch()} />;
+  } else if (jobs.length === 0) {
+    body = (
+      <p className="rounded-lg border border-dashed border-border py-6 text-center text-sm text-muted-foreground">
+        {FINISHED_RANGE_LABELS[range]}内没有结束的任务
+      </p>
+    );
+  } else {
+    body = (
+      <div className="flex flex-col gap-4">
+        {groupByBatch(jobs).map((group) => (
+          <BatchCard
+            key={group.batchId}
+            batch={batches.get(group.batchId)}
+            jobs={group.jobs}
+            time={time}
+            actions={false}
+          />
+        ))}
+        {finished.hasNextPage ? (
+          <Button
+            variant="outline"
+            className="self-center"
+            disabled={finished.isFetchingNextPage}
+            onClick={() => void finished.fetchNextPage()}
+          >
+            {finished.isFetchingNextPage ? <Spinner data-icon="inline-start" /> : null}
+            加载更多
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <section aria-labelledby="history-finished-title" className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="history-finished-title" className="text-xl font-semibold">
+          已结束
+        </h2>
+        <fieldset className="flex items-center gap-1">
+          <legend className="sr-only">已结束的时间范围</legend>
+          {(Object.keys(FINISHED_RANGE_LABELS) as FinishedRange[]).map((key) => (
+            <Button
+              key={key}
+              size="sm"
+              variant={range === key ? "secondary" : "ghost"}
+              aria-pressed={range === key}
+              onClick={() => setRange(key)}
+            >
+              {FINISHED_RANGE_LABELS[key]}
+            </Button>
+          ))}
+        </fieldset>
+      </div>
+      {body}
+    </section>
+  );
+}
+
+// 「历史采集」页（spec 0012 AC-1、AC-9、AC-14）：新建任务、进行中的任务和已结束的任务，按批次分组。
 export function HistoryPanel() {
   const jobs = useActiveHistoryJobs();
   const status = useHistoryStatus();
@@ -205,6 +370,8 @@ export function HistoryPanel() {
           </div>
           {body}
         </section>
+
+        <FinishedSection time={time} />
       </div>
       <NewJobDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </div>

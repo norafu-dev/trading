@@ -1,10 +1,11 @@
 """spec 0012 的数据库函数：建任务的范围扣减、领取顺序、提交一页、失败和放回（真实 PostgreSQL）。"""
 
 import asyncio
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -20,7 +21,14 @@ from harvester.db.models import (
     Message,
 )
 from harvester.db.snapshots import MessageSnapshot, snowflake_time
-from tests.db.builders import CHANNEL, make_account, message, seed_channel, seed_other_channel
+from tests.db.builders import (
+    CHANNEL,
+    OTHER_CHANNEL,
+    make_account,
+    message,
+    seed_channel,
+    seed_other_channel,
+)
 
 Factory = async_sessionmaker[AsyncSession]
 DAY = datetime(2026, 1, 1, tzinfo=UTC)
@@ -378,3 +386,242 @@ async def test_list_active_with_batch_totals(factory: Factory, account_id: int) 
     assert [j.status for j in page.jobs] == ["running"]
     (batch,) = page.batches
     assert (batch.channel_count, batch.fetched_count, batch.status_counts["running"]) == (1, 100, 1)
+
+
+# ---- 任务操作（AC-9、AC-11）---------------------------------------------------------
+
+
+async def job_status(factory: Factory, job_id: int) -> str:
+    async with factory() as session:
+        status = await session.scalar(select(HistoryJob.status).where(HistoryJob.id == job_id))
+    assert status is not None
+    return status
+
+
+async def act(factory: Factory, job_id: int, action: history_db.JobAction) -> object:
+    async with factory() as session, session.begin():
+        return await history_db.transition_job(session, job_id, action)
+
+
+async def test_every_legal_transition_works_and_illegal_ones_report_current(
+    factory: Factory, account_id: int
+) -> None:
+    (job_id,) = (await create(factory, h(0), h(10))).job_ids
+
+    assert await act(factory, job_id, "pause") == history_db.Transitioned(job_id)
+    assert await job_status(factory, job_id) == "paused"
+    assert await act(factory, job_id, "pause") == history_db.InvalidTransition("paused")
+    assert await act(factory, job_id, "retry") == history_db.InvalidTransition("paused")
+    assert await act(factory, job_id, "resume") == history_db.Transitioned(job_id)
+    assert await job_status(factory, job_id) == "pending"
+    assert await act(factory, job_id, "resume") == history_db.InvalidTransition("pending")
+    running = await claim(factory, account_id)
+    assert await act(factory, running.id, "pause") == history_db.Transitioned(job_id)
+    assert await act(factory, job_id, "cancel") == history_db.Transitioned(job_id)
+    assert await job_status(factory, job_id) == "cancelled"
+    assert await act(factory, job_id, "cancel") == history_db.InvalidTransition("cancelled")
+    assert await act(factory, 999_999, "pause") == history_db.JobNotFound()
+
+
+async def test_retry_failed_keeps_cursor_and_clears_error(
+    factory: Factory, account_id: int
+) -> None:
+    (job_id,) = (await create(factory, h(0), h(10))).job_ids
+    job = await claim(factory, account_id)
+    await commit(factory, job, [msg_at(h(9), n) for n in range(100)])
+    async with factory() as session, session.begin():
+        await history_db.fail_job(session, job_id, "unexpected")
+
+    assert await act(factory, job_id, "retry") == history_db.Transitioned(job_id)
+
+    async with factory() as session:
+        row = await session.scalar(select(HistoryJob).where(HistoryJob.id == job_id))
+        assert row is not None
+        assert (row.status, row.error, row.finished_at) == ("pending", None, None)
+        assert row.cursor_message_id == snowflake_floor(h(9))
+
+
+async def test_cancel_with_cursor_writes_partial_coverage_once(
+    factory: Factory, account_id: int
+) -> None:
+    (job_id,) = (await create(factory, h(0), h(10))).job_ids
+    job = await claim(factory, account_id)
+    await commit(factory, job, [msg_at(h(9), n) for n in range(100)])
+
+    assert await act(factory, job_id, "cancel") == history_db.Transitioned(job_id)
+
+    async with factory() as session:
+        spans = list(await session.scalars(select(ChannelCoverage.span)))
+        assert [(s.lower, s.upper) for s in spans] == [(h(9) + timedelta(milliseconds=1), h(10))]
+        row = await session.scalar(select(HistoryJob).where(HistoryJob.id == job_id))
+        assert row is not None and row.finished_at is not None
+
+
+async def test_cancel_without_cursor_or_after_failure_writes_no_coverage(
+    factory: Factory, account_id: int
+) -> None:
+    (no_cursor,) = (await create(factory, h(0), h(1))).job_ids
+    assert await act(factory, no_cursor, "cancel") == history_db.Transitioned(no_cursor)
+    (failed,) = (await create(factory, h(20), h(30))).job_ids
+    job = await claim(factory, account_id)
+    await commit(factory, job, [msg_at(h(29), n) for n in range(100)])
+    async with factory() as session, session.begin():
+        await history_db.fail_job(session, failed, "no_access")
+    async with factory() as session:
+        before = len(list(await session.scalars(select(ChannelCoverage.id))))
+
+    assert await act(factory, failed, "cancel") == history_db.Transitioned(failed)
+
+    async with factory() as session:
+        assert len(list(await session.scalars(select(ChannelCoverage.id)))) == before == 1
+
+
+async def test_pause_writes_no_coverage_and_collector_writes_after_pause_are_dropped(
+    factory: Factory, account_id: int
+) -> None:
+    (job_id,) = (await create(factory, h(0), h(10))).job_ids
+    job = await claim(factory, account_id)
+    await act(factory, job_id, "pause")
+
+    async with factory() as session:
+        assert list(await session.scalars(select(ChannelCoverage.id))) == []
+    async with factory() as session, session.begin():
+        assert not await history_db.set_job_wait(session, job.id, "retrying", h(31))
+        assert not await history_db.release_job(session, job.id)
+        assert not await history_db.fail_job(session, job.id, "unexpected")
+    assert await job_status(factory, job_id) == "paused"
+    # 暂停时正在提交的那一页仍然写入、断点更新。
+    committed = await commit(factory, job, [msg_at(h(9), n) for n in range(100)])
+    assert committed.status == "paused" and committed.cursor_message_id == snowflake_floor(h(9))
+
+
+async def test_batch_action_only_changes_matching_rows(factory: Factory, account_id: int) -> None:
+    result = await create(factory, h(0), h(10), ids=(CHANNEL.id,))
+    assert result.batch_id is not None
+    async with factory() as session, session.begin():
+        await seed_other_channel(session)
+        session.add(
+            AccountChannelAccess(account_id=account_id, channel_id=OTHER_CHANNEL.id, can_read=True)
+        )
+    other = await create(factory, h(0), h(10), ids=(OTHER_CHANNEL.id,))
+    assert other.batch_id is not None
+    async with factory() as session, session.begin():
+        await session.execute(
+            update(HistoryJob).where(HistoryJob.batch_id == other.batch_id).values(status="paused")
+        )
+
+    async with factory() as session, session.begin():
+        changed = await history_db.transition_batch(session, result.batch_id, "pause")
+    assert changed == 1
+    async with factory() as session, session.begin():
+        assert await history_db.transition_batch(session, result.batch_id, "pause") == 0
+        assert await history_db.transition_batch(session, other.batch_id, "resume") == 1
+        assert isinstance(
+            await history_db.transition_batch(session, uuid.uuid4(), "cancel"),
+            history_db.BatchNotFound,
+        )
+
+
+# ---- 整段重抓对账（AC-13）-----------------------------------------------------------
+
+
+async def ingest_stored(factory: Factory, *snaps: MessageSnapshot) -> None:
+    from harvester.db.ingest import ingest_message
+
+    async with factory() as session, session.begin():
+        for snap in snaps:
+            await ingest_message(session, snap, "realtime", h(5))
+
+
+async def deleted_ids(factory: Factory) -> dict[int, str | None]:
+    async with factory() as session:
+        rows = await session.execute(
+            select(Message.id, Message.delete_source).where(Message.deleted_at.is_not(None))
+        )
+        return {r.id: r.delete_source for r in rows}
+
+
+async def test_refetch_marks_missing_messages_in_the_page_interval(
+    factory: Factory, account_id: int
+) -> None:
+    ids = [snowflake_floor(h(9)) + n for n in (10, 8, 7)]
+    gone = snowflake_floor(h(9)) + 9
+    outside = snowflake_floor(h(9) + timedelta(seconds=2))  # 比这一页的「之前」位置还新，不动
+    below = snowflake_floor(h(9)) + 3  # 比这一页最旧的一条还旧，下一页才会对账
+    await ingest_stored(
+        factory, message(id=gone), message(id=outside), message(id=below), message(id=ids[2])
+    )
+    await create(factory, h(0), h(9) + timedelta(seconds=1), refetch=True)
+    job = await claim(factory, account_id)
+    before = job.range_end
+
+    snaps = [message(id=i) for i in ids]
+    async with factory() as session, session.begin():
+        await history_db.commit_page(session, job, snaps, tuple(ids), 100, 1, h(30))
+
+    assert before > h(9)
+    assert await deleted_ids(factory) == {gone: "reconciled"}
+
+
+async def test_without_refetch_nothing_is_marked(factory: Factory, account_id: int) -> None:
+    base = snowflake_floor(h(5))
+    await ingest_stored(factory, message(id=base + 5))
+    await create(factory, h(0), h(10))
+    job = await claim(factory, account_id)
+
+    await commit(factory, job, [message(id=base + 9), message(id=base + 1)], raw_count=100)
+
+    assert await deleted_ids(factory) == {}
+
+
+async def test_refetch_last_and_empty_page_reconcile_down_to_range_start(
+    factory: Factory, account_id: int
+) -> None:
+    old = snowflake_floor(h(1))
+    await ingest_stored(factory, message(id=old))
+    await create(factory, h(0), h(10), refetch=True)
+    job = await claim(factory, account_id)
+
+    # 空页：整段 [range_start, range_end) 里库里的消息都没返回。
+    await commit(factory, job, [], raw_count=0)
+
+    assert await deleted_ids(factory) == {old: "reconciled"}
+
+
+# ---- 清理（AC-21）-------------------------------------------------------------------
+
+
+async def test_cleanup_removes_old_finished_jobs_and_old_quota_rows(
+    factory: Factory, account_id: int
+) -> None:
+    async with factory() as session, session.begin():
+        now = await session.scalar(select(func.now()))
+        assert now is not None
+        for status, age in (("done", 31), ("cancelled", 29), ("failed", 40), ("pending", 90)):
+            session.add(
+                HistoryJob(
+                    batch_id=uuid.uuid4(),
+                    channel_id=CHANNEL.id,
+                    origin="manual",
+                    range_start=h(0),
+                    range_end=h(1),
+                    status=status,
+                    error="no_access" if status == "failed" else None,
+                    finished_at=None if status == "pending" else now - timedelta(days=age),
+                )
+            )
+        session.add(HistoryPageHour(hour=now - timedelta(hours=49), pages=3))
+        session.add(HistoryPageHour(hour=now - timedelta(hours=47), pages=4))
+        session.add(
+            ChannelCoverage(channel_id=CHANNEL.id, span=Range(h(0), h(1)), source="history")
+        )
+
+    async with factory() as session, session.begin():
+        result = await history_db.cleanup_history(session)
+
+    assert (result.jobs, result.page_hours) == (2, 1)
+    async with factory() as session:
+        left = set(await session.scalars(select(HistoryJob.status)))
+        assert left == {"cancelled", "pending"}
+        assert len(list(await session.scalars(select(HistoryPageHour.hour)))) == 1
+        assert len(list(await session.scalars(select(ChannelCoverage.id)))) == 1

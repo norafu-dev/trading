@@ -224,6 +224,9 @@ async def run() -> int:
             asyncio.create_task(
                 history_worker.run_heartbeat_loop(history_deps), name="history-beat"
             ),
+            asyncio.create_task(
+                history_worker.run_cleanup_loop(history_deps), name="history-cleanup"
+            ),
         )
         stop_wait = asyncio.create_task(stop.wait(), name="stop-wait")
         lost_wait = asyncio.create_task(lost.wait(), name="lost-wait")

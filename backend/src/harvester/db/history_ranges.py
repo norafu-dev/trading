@@ -35,6 +35,20 @@ def page_reached_end(returned_ids: tuple[int, ...], raw_count: int, range_start:
     return raw_count < PAGE_SIZE or any(i < floor for i in returned_ids)
 
 
+def reconcile_interval(
+    before_id: int, returned_ids: tuple[int, ...], raw_count: int, range_start: datetime
+) -> tuple[int, int]:
+    """整段重抓时这一页要对账的 ID 区间 `[下界, 上界)`（AC-13）。
+
+    上界是这一页请求的「之前」位置；到底的最后一页和空页下界是 `range_start` 对应的 ID，
+    其余页的下界是这一页最旧一条消息的 ID（它自己返回了，不会被误标）。
+    """
+    floor = snowflake_floor(range_start)
+    if page_reached_end(returned_ids, raw_count, range_start) or not returned_ids:
+        return floor, before_id
+    return min(returned_ids), before_id
+
+
 def partial_coverage_start(cursor_message_id: int) -> datetime:
     """取消或失败时覆盖段的起点：断点时间加 1 毫秒，同一毫秒里更小的 ID 还没抓到（AC-11）。"""
     return snowflake_time(cursor_message_id) + ONE_MS

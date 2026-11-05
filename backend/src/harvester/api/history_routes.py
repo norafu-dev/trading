@@ -1,9 +1,10 @@
 """历史采集接口（spec 0012）。api 不连 Discord：只建任务、读进度，由 collector 去抓。"""
 
+import uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Path, Query, status
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,7 +12,17 @@ from harvester.api.errors import ApiError
 from harvester.db import SessionFactoryDep
 from harvester.db import history as history_store
 from harvester.db import system as system_db
-from harvester.db.history import HistoryBatchRow, HistoryJobRow, InvalidRange, SkipReason
+from harvester.db.history import (
+    BatchAction,
+    BatchNotFound,
+    HistoryBatchRow,
+    HistoryJobRow,
+    InvalidRange,
+    InvalidTransition,
+    JobAction,
+    JobNotFound,
+    SkipReason,
+)
 from harvester.db.history_ranges import progress
 from harvester.db.snapshots import (
     HistoryError,
@@ -45,6 +56,23 @@ class TooManyChannelsError(ApiError):
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             "too_many_channels",
             f"每次最多选 {history_store.MAX_CHANNELS_PER_REQUEST} 个频道",
+        )
+
+
+class JobNotFoundError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(status.HTTP_404_NOT_FOUND, "job_not_found", "找不到这个任务")
+
+
+class BatchNotFoundError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(status.HTTP_404_NOT_FOUND, "batch_not_found", "找不到这个批次")
+
+
+class InvalidTransitionError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(
+            status.HTTP_409_CONFLICT, "invalid_transition", "任务现在的状态不能做这个操作"
         )
 
 
@@ -143,6 +171,10 @@ class HistorySettingsIn(BaseModel):
 
 class HistorySettingsOut(HistorySettingsIn):
     pages_used_24h: int
+
+
+class BatchChangedOut(BaseModel):
+    changed: int
 
 
 class ControlIn(BaseModel):
@@ -262,6 +294,47 @@ async def create_history_jobs(body: CreateJobsIn, factory: SessionFactoryDep) ->
             ),
         ],
     )
+
+
+_UUID_PATTERN = r"^[0-9a-fA-F-]{36}$"
+
+
+@history_router.post("/jobs/{job_id}/{action}")
+async def act_on_history_job(
+    job_id: Annotated[str, Path(pattern=r"^[0-9]{1,19}$")],
+    action: JobAction,
+    factory: SessionFactoryDep,
+) -> HistoryJobOut:
+    """暂停、继续、取消、重试一个任务；状态不符合返回 409（AC-9）。"""
+    job = int(job_id)
+    if job > _BIGINT_MAX:
+        raise JobNotFoundError
+    async with factory() as session, session.begin():
+        match await history_store.transition_job(session, job, action):
+            case JobNotFound():
+                raise JobNotFoundError
+            case InvalidTransition():
+                raise InvalidTransitionError
+            case _:
+                row = await history_store.get_job(session, job)
+    if row is None:  # 刚改完就被清理删掉，几乎不可能
+        raise JobNotFoundError
+    return job_out(row)
+
+
+@history_router.post("/batches/{batch_id}/{action}")
+async def act_on_history_batch(
+    batch_id: Annotated[str, Path(pattern=_UUID_PATTERN)],
+    action: BatchAction,
+    factory: SessionFactoryDep,
+) -> BatchChangedOut:
+    """整批暂停、继续、取消，只作用于状态符合的行，返回实际改了几行（AC-9）。"""
+    async with factory() as session, session.begin():
+        match await history_store.transition_batch(session, uuid.UUID(batch_id), action):
+            case BatchNotFound():
+                raise BatchNotFoundError
+            case int() as changed:
+                return BatchChangedOut(changed=changed)
 
 
 @history_router.post("/control")

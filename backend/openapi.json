@@ -1220,6 +1220,123 @@
         }
       }
     },
+    "/api/history/jobs/{job_id}/{action}": {
+      "post": {
+        "tags": [
+          "history"
+        ],
+        "summary": "Act On History Job",
+        "description": "暂停、继续、取消、重试一个任务；状态不符合返回 409（AC-9）。",
+        "operationId": "act_on_history_job_api_history_jobs__job_id___action__post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "pause",
+                "resume",
+                "cancel",
+                "retry"
+              ],
+              "type": "string",
+              "title": "Action"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryJobOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history/batches/{batch_id}/{action}": {
+      "post": {
+        "tags": [
+          "history"
+        ],
+        "summary": "Act On History Batch",
+        "description": "整批暂停、继续、取消，只作用于状态符合的行，返回实际改了几行（AC-9）。",
+        "operationId": "act_on_history_batch_api_history_batches__batch_id___action__post",
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F-]{36}$",
+              "title": "Batch Id"
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "pause",
+                "resume",
+                "cancel"
+              ],
+              "type": "string",
+              "title": "Action"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchChangedOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/history/control": {
       "post": {
         "tags": [
@@ -1613,6 +1730,19 @@
           "overdue"
         ],
         "title": "BackupStatusOut"
+      },
+      "BatchChangedOut": {
+        "properties": {
+          "changed": {
+            "type": "integer",
+            "title": "Changed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "changed"
+        ],
+        "title": "BatchChangedOut"
       },
       "CategoryCollectOut": {
         "properties": {
