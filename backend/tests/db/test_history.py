@@ -2,6 +2,7 @@
 
 import asyncio
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -10,6 +11,7 @@ from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from harvester.db import history as history_db
+from harvester.db import raw
 from harvester.db.history import ClaimedJob, CreateResult, InvalidRange
 from harvester.db.history_ranges import snowflake_floor
 from harvester.db.models import (
@@ -24,6 +26,7 @@ from harvester.db.snapshots import MessageSnapshot, snowflake_time
 from tests.db.builders import (
     CHANNEL,
     OTHER_CHANNEL,
+    get_revisions,
     make_account,
     message,
     seed_channel,
@@ -314,6 +317,53 @@ async def test_realtime_message_stays_single_row(factory: Factory, account_id: i
         assert rows == ["realtime"]
 
 
+async def test_backfill_with_different_content_adds_a_revision(
+    factory: Factory, account_id: int
+) -> None:
+    """AC-4：补采的快照内容不同时按编辑判断表多记一个版本，旧内容不丢，`source` 不变。"""
+    from harvester.db.ingest import ingest_message
+
+    first = msg_at(h(5))
+    async with factory() as session, session.begin():
+        await ingest_message(session, first, "realtime", h(5))
+    await create(factory, h(0), h(10))
+    job = await claim(factory, account_id)
+
+    await commit(factory, job, [replace(first, content="改过了", edited_at=h(6))])
+
+    async with factory() as session:
+        rows = (
+            await session.execute(select(Message.source, Message.content, Message.version))
+        ).all()
+        assert [tuple(r) for r in rows] == [("realtime", "改过了", 2)]
+        revisions = await get_revisions(session, first.id)
+        assert [(r.version, r.content) for r in revisions] == [(1, "m0")]
+
+
+async def test_commit_notifies_history_changed_and_never_new_message(
+    factory: Factory, account_id: int
+) -> None:
+    """AC-3、AC-17：每页提交发一次 `history_changed`，补采的消息不发 `new_message`。"""
+    await create(factory, h(0), h(10))
+    job = await claim(factory, account_id)
+    received: list[str] = []
+
+    def on_notify(_conn: object, _pid: int, channel: str, _payload: object) -> None:
+        received.append(channel)
+
+    conn = await raw.connect()
+    try:
+        await conn.add_listener(raw.HISTORY_CHANGED_CHANNEL, on_notify)
+        await conn.add_listener(raw.NEW_MESSAGE_CHANNEL, on_notify)
+
+        await commit(factory, job, [msg_at(h(5))])
+        await asyncio.sleep(0.1)
+
+        assert received == [raw.HISTORY_CHANGED_CHANNEL]
+    finally:
+        await conn.close()
+
+
 async def test_fail_writes_partial_coverage_except_suspect_empty(
     factory: Factory, account_id: int
 ) -> None:
@@ -518,6 +568,60 @@ async def test_batch_action_only_changes_matching_rows(factory: Factory, account
         assert await history_db.transition_batch(session, other.batch_id, "resume") == 1
         assert isinstance(
             await history_db.transition_batch(session, uuid.uuid4(), "cancel"),
+            history_db.BatchNotFound,
+        )
+
+
+async def test_channel_scoped_action_leaves_the_other_channel_alone(
+    factory: Factory, account_id: int
+) -> None:
+    """AC-9：一个批次里两个频道各两段，按频道暂停只改这个频道的段，`done` 的段不算。"""
+    async with factory() as session, session.begin():
+        await seed_other_channel(session)
+        session.add(
+            AccountChannelAccess(account_id=account_id, channel_id=OTHER_CHANNEL.id, can_read=True)
+        )
+        # 两个频道各留一段已覆盖的时间，建任务时各拆成两段。
+        for channel_id in (CHANNEL.id, OTHER_CHANNEL.id):
+            session.add(
+                ChannelCoverage(channel_id=channel_id, span=Range(h(4), h(6)), source="realtime")
+            )
+    result = await create(factory, h(0), h(10), ids=(CHANNEL.id, OTHER_CHANNEL.id))
+    assert result.batch_id is not None and len(result.job_ids) == 4
+
+    async with factory() as session, session.begin():
+        changed = await history_db.transition_batch(session, result.batch_id, "pause", CHANNEL.id)
+
+    assert changed == 2
+    async with factory() as session:
+        rows = await session.execute(select(HistoryJob.channel_id, HistoryJob.status))
+        by_channel: dict[int, list[str]] = {}
+        for row in rows:
+            by_channel.setdefault(row.channel_id, []).append(row.status)
+        assert sorted(by_channel[CHANNEL.id]) == ["paused", "paused"]
+        assert sorted(by_channel[OTHER_CHANNEL.id]) == ["pending", "pending"]
+
+    # 已经 done 的段不算在内：把另一个频道的两段标成 done，按频道暂停改 0 行。
+    async with factory() as session, session.begin():
+        await session.execute(
+            update(HistoryJob)
+            .where(HistoryJob.channel_id == OTHER_CHANNEL.id)
+            .values(status="done")
+        )
+    async with factory() as session, session.begin():
+        assert (
+            await history_db.transition_batch(session, result.batch_id, "pause", OTHER_CHANNEL.id)
+            == 0
+        )
+
+    # 批次里没有这个频道、批次本身不存在，都是 BatchNotFound。
+    async with factory() as session, session.begin():
+        assert isinstance(
+            await history_db.transition_batch(session, result.batch_id, "cancel", 999),
+            history_db.BatchNotFound,
+        )
+        assert isinstance(
+            await history_db.transition_batch(session, uuid.uuid4(), "cancel", CHANNEL.id),
             history_db.BatchNotFound,
         )
 

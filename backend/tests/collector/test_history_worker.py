@@ -422,6 +422,39 @@ async def test_rests_after_run_minutes_then_continues(factory: Factory, account_
         await stop(task)
 
 
+async def test_settings_change_takes_effect_on_the_next_page(
+    factory: Factory, account_id: int
+) -> None:
+    """AC-19：改了节奏设置不用重启，下一页就用新的间隔（每轮都重读设置）。"""
+    await seed_heartbeat(factory)
+    await set_settings(factory, page_delay_min_s=1, page_delay_max_s=1)
+    fake = FakeHistory(spread(h(1), 600))
+    await new_job(factory, h(0), h(100))
+    clock = FakeClock(h(48))
+    delays: list[tuple[float, float]] = []
+
+    def record(lo: float, hi: float) -> float:
+        delays.append((lo, hi))
+        return lo
+
+    deps = replace(make_deps(factory, fake, account_id, clock=clock), uniform=record)
+    task = asyncio.create_task(history_worker.run_history_loop(deps))
+    try:
+
+        async def used_old() -> bool:
+            return (1.0, 1.0) in delays
+
+        await until(used_old)
+        await set_settings(factory, page_delay_min_s=7, page_delay_max_s=9)
+
+        async def used_new() -> bool:
+            return (7.0, 9.0) in delays
+
+        await until(used_new)
+    finally:
+        await stop(task)
+
+
 async def test_waits_for_quota_and_reports_resume_time(factory: Factory, account_id: int) -> None:
     """AC-5、AC-6：滚动用量到上限后不发请求，等到最早一桶滑出窗口。"""
     await seed_heartbeat(factory)

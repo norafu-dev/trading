@@ -84,6 +84,36 @@ def test_healthy_requires_warning_level_and_enabled_logger(
     assert not ratelimit_watch_healthy()
 
 
+def test_installed_library_still_uses_the_wording_we_match() -> None:
+    """升级 discord.py-self 后措辞变了就在这里失败（spec 0012 Follow-up）。
+
+    库有两个 429 分支：自己等待重试的，和等待时间太长改抛 `RateLimited` 的。两条都要被
+    `RATE_LIMIT_PREFIX` 数到，否则 AC-7 的自动暂停会漏数。
+    """
+    import inspect
+    import re
+
+    import discord.http
+
+    from harvester.collector.ratelimit_watch import RATE_LIMIT_PREFIX
+
+    source = inspect.getsource(discord.http)
+    quoted = [
+        text
+        for text in re.findall(r"'([^'\n]*)'", source)
+        if "rate limited" in text or "rate limit has been hit" in text
+    ]
+    matched = [text for text in quoted if text.startswith(RATE_LIMIT_PREFIX)]
+    # 两条 429 警告都认得出来。
+    assert len(matched) == 2, quoted
+    assert any("Retrying in" in text for text in matched)
+    assert any("too long" in text for text in matched)
+    # 同一次 429 的后续消息不能也被前缀数到。
+    follow_ups = [text for text in quoted if "has been hit" in text]
+    assert len(follow_ups) == 2
+    assert not any(text.startswith(RATE_LIMIT_PREFIX) for text in follow_ups)
+
+
 @pytest.mark.parametrize("level", ["DEBUG", "INFO", "ERROR"])
 def test_real_logging_setup_keeps_the_watch_healthy(level: str) -> None:
     """项目自己的日志配置把 discord 固定在 WARNING，钩子始终收得到 429 警告。"""

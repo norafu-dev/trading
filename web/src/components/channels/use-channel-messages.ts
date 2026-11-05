@@ -26,7 +26,7 @@ const MAX_IDS_PER_REQUEST = 100;
 // 通知丢了、LISTEN 断了或者订阅者队列溢出时，靠这个轮询补上（AC-19）。
 const RECONCILE_INTERVAL_MS = 30_000;
 // 补采每抓一页就发一次通知，合并成 5 秒一次重新取数（spec 0012 AC-17）。
-const HISTORY_COALESCE_MS = 5_000;
+export const HISTORY_COALESCE_MS = 5_000;
 
 type Query = Readonly<{ before?: string; after?: string; ids?: string; limit?: number }>;
 

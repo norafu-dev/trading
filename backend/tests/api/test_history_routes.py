@@ -353,8 +353,15 @@ async def test_channel_scoped_batch_action(logged_in: httpx.AsyncClient, readabl
 
     assert (await logged_in.post(f"{base}/{CHANNEL.id}/pause")).json() == {"changed": 1}
     assert (await logged_in.post(f"{base}/{CHANNEL.id}/pause")).json() == {"changed": 0}
-    missing = await logged_in.post(f"{base}/999/cancel")
-    assert missing.status_code == 404 and missing.json()["error"]["code"] == "batch_not_found"
+    # 批次里没有这个频道、批次本身不存在、频道 ID 超出 bigint，都是 404 batch_not_found。
+    for url in (
+        f"{base}/999/cancel",
+        f"/api/history/batches/{UUID_ZERO}/channels/{CHANNEL.id}/cancel",
+        f"{base}/9999999999999999999/cancel",
+    ):
+        missing = await logged_in.post(url)
+        assert missing.status_code == 404, url
+        assert missing.json()["error"]["code"] == "batch_not_found", url
 
 
 # ---- 里程碑 4：缺口 ----------------------------------------------------------------

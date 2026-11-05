@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventStreamProvider } from "@/lib/events/event-stream";
 
 import type { MessagesPage } from "./message-pages";
-import { useChannelMessages } from "./use-channel-messages";
+import { HISTORY_COALESCE_MS, useChannelMessages } from "./use-channel-messages";
 
 const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("@/lib/api/client", () => ({ api: { GET: get } }));
@@ -229,6 +229,42 @@ describe("useChannelMessages", () => {
 
     await waitFor(() => expect(idsOf(result)).toEqual(["8", "9", "10"]));
     expect(result.current.hasOlder).toBe(false);
+  });
+
+  // covers: spec 0012 AC-17
+  it("history_changed 攒 5 秒合并成一次，补进来的旧消息插到位置上且不跳动", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let round = 0;
+    serve(() => (round++ === 0 ? page(["10"]) : page(["8", "9", "10"])));
+    const { result } = setup();
+    await waitFor(() => expect(idsOf(result)).toEqual(["10"]));
+    const before = get.mock.calls.length;
+
+    emit("history_changed", {});
+    emit("history_changed", {});
+    emit("history_changed", {});
+    await act(() => vi.advanceTimersByTimeAsync(HISTORY_COALESCE_MS - 1));
+    expect(get.mock.calls.length).toBe(before);
+
+    await act(() => vi.advanceTimersByTimeAsync(1));
+
+    await waitFor(() => expect(idsOf(result)).toEqual(["8", "9", "10"]));
+    expect(get.mock.calls.length).toBe(before + 1);
+    expect(result.current.epoch).toBe(0);
+  });
+
+  // covers: spec 0012 AC-17
+  it("别的频道的 history_changed 不取数", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    serve(() => page(["10"]));
+    const { result } = setup();
+    await waitFor(() => expect(idsOf(result)).toEqual(["10"]));
+    const before = get.mock.calls.length;
+
+    emit("history_changed", {}, "999");
+    await act(() => vi.advanceTimersByTimeAsync(HISTORY_COALESCE_MS));
+
+    expect(get.mock.calls.length).toBe(before);
   });
 
   // covers: spec 0008 AC-16

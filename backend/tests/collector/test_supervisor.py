@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import func, insert, select, text, update
+from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.exc import DataError, OperationalError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from structlog.testing import CapturingLogger
@@ -56,6 +57,7 @@ from harvester.db.models import (
     DiscordAccount,
     DiscordLoginAttempt,
     Guild,
+    HistoryJob,
     Message,
 )
 from harvester.db.raw import MESSAGE_CHANGED_CHANNEL, NEW_MESSAGE_CHANNEL
@@ -964,6 +966,65 @@ async def test_full_sync_records_time_and_opens_coverage(harness: Harness) -> No
         synced = await session.scalar(select(DiscordAccount.channels_synced_at))
     assert synced == harness.clock()
     assert (await harness.spans())[0].upper is None  # type: ignore[attr-defined]
+
+
+async def _seed_closed_span(harness: Harness, lower: datetime, upper: datetime) -> None:
+    async with harness.factory() as session, session.begin():
+        session.add(
+            ChannelCoverage(channel_id=CHANNEL.id, span=Range(lower, upper), source="realtime")
+        )
+
+
+async def _gap_jobs(harness: Harness) -> list[tuple[str, datetime, datetime]]:
+    async with harness.factory() as session:
+        rows = await session.execute(
+            select(HistoryJob.origin, HistoryJob.range_start, HistoryJob.range_end)
+        )
+        return [(r.origin, r.range_start, r.range_end) for r in rows]
+
+
+async def test_align_creates_an_auto_gap_job_for_the_adjacent_short_gap(
+    harness: Harness,
+) -> None:
+    # covers: spec 0012 AC-16
+    await add_account(harness)
+    await harness.seed_collecting()
+    at = harness.clock()
+    await _seed_closed_span(harness, at - timedelta(hours=3), at - timedelta(hours=1))
+    harness.start()
+
+    async def job_created() -> bool:
+        return len(await _gap_jobs(harness)) > 0
+
+    await harness.wait_spans(2)
+    await harness.wait_until(job_created)
+
+    assert await _gap_jobs(harness) == [("gap_auto", at - timedelta(hours=1), at)]
+
+
+async def test_auto_gap_failure_keeps_the_realtime_coverage(
+    harness: Harness, captured: CapturingLogger, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-16：补缺口这一步出错只记 warning，实时覆盖段照常打开。"""
+    await add_account(harness)
+    await harness.seed_collecting()
+    at = harness.clock()
+    await _seed_closed_span(harness, at - timedelta(hours=3), at - timedelta(hours=1))
+
+    async def boom(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("gap jobs are down")
+
+    monkeypatch.setattr(supervisor.history_db, "create_gap_jobs", boom)
+    harness.start()
+
+    async def warned() -> bool:
+        return len(_logged(captured, "history.auto_gap_failed")) > 0
+
+    await harness.wait_spans(2)
+    await harness.wait_until(warned)
+
+    assert (await harness.spans())[-1].upper is None  # type: ignore[attr-defined]
+    assert await _gap_jobs(harness) == []
 
 
 async def test_channels_wake_aligns_without_reconnecting(harness: Harness) -> None:

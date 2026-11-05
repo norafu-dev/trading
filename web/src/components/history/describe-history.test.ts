@@ -393,4 +393,67 @@ describe("按频道合并", () => {
       "cancel",
     ]);
   });
+
+  // covers: spec 0012 AC-14
+  it("合并状态按 失败 > 抓取中 > 已暂停 > 排队中 > 已取消 > 已完成 逐级取第一个", () => {
+    const order = ["failed", "running", "paused", "pending", "cancelled", "done"] as const;
+    // 每一轮都带上后面所有的状态，优先级靠前的那个必须胜出。
+    for (const [i, winner] of order.entries()) {
+      const jobs = order.slice(i).map((status, n) => job(`${n}`, { status }));
+      const [group] = groupByChannel(jobs);
+      expect(group?.status).toBe(winner);
+    }
+  });
+
+  // covers: spec 0012 AC-14
+  it("失败段数和第一个原因一起显示，`done` 的段算进 counts", () => {
+    const [group] = groupByChannel([
+      job("1", { status: "done", progress: 1 }),
+      job("2", {
+        range_start: "2026-01-02T00:00:00Z",
+        range_end: "2026-01-03T00:00:00Z",
+        status: "failed",
+        error: "no_access",
+      }),
+      job("3", {
+        range_start: "2026-01-03T00:00:00Z",
+        range_end: "2026-01-04T00:00:00Z",
+        status: "failed",
+        error: "suspect_empty",
+      }),
+    ]);
+    expect(group?.counts).toMatchObject({ done: 1, failed: 2 });
+    expect(group?.error).toBe("no_access");
+    expect(group?.status).toBe("failed");
+  });
+
+  // covers: spec 0012 AC-14
+  it("等待原因和断点只来自 running 那一段；没有在抓的段时为空", () => {
+    const waiting = job("2", {
+      range_start: "2026-01-02T00:00:00Z",
+      range_end: "2026-01-03T00:00:00Z",
+      status: "running",
+      wait_reason: "rate_limited",
+      wait_until: "2026-01-02T01:00:00Z",
+      cursor_at: "2026-01-02T12:00:00Z",
+    });
+    // 暂停的那一段自己也带着等待字段，但合并后不该用它的。
+    const paused = job("1", {
+      status: "paused",
+      wait_reason: "retrying",
+      wait_until: "2026-01-01T05:00:00Z",
+      cursor_at: "2026-01-01T06:00:00Z",
+    });
+
+    const [withRunning] = groupByChannel([paused, waiting]);
+    expect(withRunning?.waiting).toEqual({
+      reason: "rate_limited",
+      until: "2026-01-02T01:00:00Z",
+    });
+    expect(withRunning?.cursorAt).toBe("2026-01-02T12:00:00Z");
+
+    const [noRunning] = groupByChannel([paused]);
+    expect(noRunning?.waiting).toBeNull();
+    expect(noRunning?.cursorAt).toBeNull();
+  });
 });

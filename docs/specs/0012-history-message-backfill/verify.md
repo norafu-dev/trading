@@ -1,7 +1,7 @@
 # Verify: 按时间段采集历史消息 · spec 0012 · updated 2026-11-05
 _Steps derived from spec 0012 acceptance criteria. `/check verify` runs these; `/test` locks the durable ones._
 
-目前覆盖里程碑 1（打通细线）、里程碑 2（节奏和安全）、里程碑 3（操作和失败）和里程碑 4（缺口）。后面的里程碑做完时，在下面追加对应的步骤。
+覆盖里程碑 1（打通细线）、里程碑 2（节奏和安全）、里程碑 3（操作和失败）、里程碑 4（缺口）和里程碑 5（测试和收口）。
 
 ## UI / manual
 - [x] 登录后打开 `/history`，点「新建任务」→ 只列小号能读、没删除、类型能采集的频道；没开实时采集的频道也能选 → AC-1
@@ -80,6 +80,18 @@ _Steps derived from spec 0012 acceptance criteria. `/check verify` runs these; `
 - [ ] 让 `create_gap_jobs` 抛异常（临时改代码或改掉设置表）后重启 collector → 日志有 `history.auto_gap_failed` 警告，实时覆盖段照常打开，采集不受影响 → AC-16
 - [ ] `SELECT preempted_count FROM history_job` 在手动任务被 `gap_auto` 抢先后 → 加 1，抓到一页后清零；连续被抢先 3 次后不再让位 → AC-10
 - [ ] `cd backend && uv run pytest tests/db/test_history_gaps.py tests/api/test_history_routes.py` → 全部通过（缺口段、自动补上限、一键补扣减未完成任务、两个接口的鉴权）→ AC-15, AC-16, AC-22
+
+### 里程碑 5：测试和收口
+- [x] `cd backend && uv run pytest` → 879 项全部通过（spec 的 Critical test scenarios 都有对应测试）→ AC-1 到 AC-22
+- [x] `cd web && pnpm test` → 485 项全部通过 → AC-1, AC-7, AC-9, AC-14, AC-14a, AC-15, AC-17, AC-18, AC-19, AC-20
+- [x] `cd backend && uv run python -m harvester.api.export_openapi` 之后 `git diff --exit-code openapi.json` → 没有改动，导出的接口和仓库里的一致
+- [x] `cd web && pnpm gen:api` 之后 `git diff --exit-code src/lib/api/schema.d.ts` → 没有改动，前端类型和 `backend/openapi.json` 同步
+- [x] `cd backend && uv run pytest tests/collector/test_ratelimit_watch.py::test_installed_library_still_uses_the_wording_we_match` → 通过；升级 `discord.py-self` 后库改了限速警告的措辞，这一项会失败 → AC-7
+- [x] `cd backend && uv run pytest tests/db/test_history.py -k notifies` → 通过：每页提交只发 `history_changed`，不发 `new_message` → AC-3, AC-17
+- [x] `cd backend && uv run pytest tests/collector/test_supervisor.py -k auto_gap` → 通过：对齐后自动建 `gap_auto`，建任务出错时实时覆盖段照常打开 → AC-16
+- [x] `cd backend && uv run pytest tests/collector/test_history_worker.py -k settings_change` → 通过：改了节奏设置下一页就用新值，不用重启 → AC-19
+- [x] `cd backend && uv run ruff check . && uv run ruff format --check . && uv run pyright` → 全部通过
+- [x] `cd web && pnpm lint && pnpm typecheck && pnpm check:contrast && pnpm build` → 全部通过
 
 ## Value sourcing
 - [x] 浏览器时区改成别的时区（比如 `America/New_York`）后选「最近 24 小时」→ 输入框显示的是新时区的本地时间，库里的 `range_start` 和 `range_end` 是对应的 UTC 时间
