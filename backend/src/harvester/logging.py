@@ -27,6 +27,19 @@ def _redact(
     return event_dict
 
 
+def strip_query(path: str) -> str:
+    """去掉 URL 里 ? 之后的部分：搜索关键词在查询串里，不能进日志（spec 0013 AC-25）。"""
+    return path.split("?", 1)[0]
+
+
+def _strip_access_query(record: logging.LogRecord) -> bool:
+    """uvicorn.access 的 args 是 (客户端, 方法, 带查询串的路径, 协议版本, 状态码)。"""
+    args = record.args
+    if isinstance(args, tuple) and len(args) == 5 and isinstance(args[2], str):
+        record.args = (args[0], args[1], strip_query(args[2]), args[3], args[4])
+    return True
+
+
 def _file_handler(process: str, log_dir: Path) -> RotatingFileHandler:
     """打不开就抛异常：配了 LOG_DIR 却写不了时要退出，不能悄悄退回只写 stdout（AC-10）。"""
     log_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -87,5 +100,6 @@ def configure_logging(
         uv_logger = logging.getLogger(name)
         uv_logger.handlers = []
         uv_logger.propagate = True
+    logging.getLogger("uvicorn.access").addFilter(_strip_access_query)
     # 固定在 WARNING，不跟随 LOG_LEVEL：discord 库的低级别日志带请求细节（spec 0005）。
     logging.getLogger("discord").setLevel(logging.WARNING)
