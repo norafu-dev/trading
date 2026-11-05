@@ -1,7 +1,7 @@
 # 0013. 消息搜索与筛选
 
 **Date**: 2026-11-05
-**Status**: In Progress
+**Status**: Accepted
 
 ## Summary
 
@@ -37,7 +37,7 @@
 筛选
 
 - **AC-8**: 服务器筛选和频道筛选共用一个选择器：按服务器分组、可以按名字搜索，只列至少有一条消息的服务器和频道（父频道或论坛自己没有消息但它的线程有，也列出来），已关闭采集、已删除的频道带标记。排序：服务器按名字；服务器内按所在分类的 `position`（没有分类的在最前），再按频道自己的 `position`；线程排在父频道下面，按 ID 从新到旧。分类和语音频道没有消息，自然不出现。可以整个服务器勾选（发 `guild`，不展开成频道 ID），也可以勾选单个频道或线程。选中一个频道时，它下面的线程和论坛帖子一起算进去（只展开线程，不展开分类）。勾选的频道超过 200 个时，前端拦住并提示「频道太多，请改选整个服务器」。服务器和频道之间是「或」：消息属于任一选中的服务器，或任一选中的频道（含其线程），就算符合。
-- **AC-9**: 作者筛选：输入名字联想，不分大小写的子串匹配 `discord_user` 的 `username` 和 `global_name`（`%`、`_` 当普通字符），只列至少有一条消息的作者（包括 webhook），最多 20 个候选；可多选（最多 20 人），多个作者之间是「或」。点结果里某条消息的作者名，把这个人加进作者筛选；已经选满 20 人时不加，提示「最多选 20 人」。刷新后已选作者的名字能从网址里的 ID 还原，库里找不到的 ID 直接丢掉。
+- **AC-9**: 作者筛选：输入名字联想，不分大小写的子串匹配 `discord_user` 的 `username` 和 `global_name`（`%`、`_` 当普通字符），只列至少有一条消息的作者（包括 webhook），最多 20 个候选；可多选（最多 20 人），多个作者之间是「或」。已经选满 20 人时不再添加，提示「最多选 20 人」。结果卡片里的作者名不可点击（2026-11-05 决定不做「点作者名加入筛选」）。刷新后已选作者的名字能从网址里的 ID 还原，库里找不到的 ID 直接丢掉。
 - **AC-10**: 时间筛选：快捷项「今天」「最近 7 天」「最近 30 天」和「自定义」（两个浏览器本地时间输入，开始包含、结束不包含，可以只填一边；不填结束就是没有上限，开始在未来是合法的，结果为空）。快捷项在网址里存成相对值，刷新后仍是「最近 7 天」；「今天」按浏览器本地时区的零点算。网址里 `range` 和 `from`/`to` 同时出现时，以 `from`/`to` 为准。早于 Discord 纪元（2015-01-01）的时间按纪元算。开始不早于结束时接口返回 422 `invalid_filters`，前端在输入时就提示。
 - **AC-11**: 不同种类的条件之间是「并且」（关键词、服务器或频道、作者、时间同时满足）。
 
@@ -295,7 +295,7 @@ SET LOCAL enable_seqscan = off;                 -- 不许全表扫描
 按 Tracer Bullet：第一步先打通「输入一个词 → 走索引 → 页面上看到结果」的整条细线，之后逐段加粗。
 
 1. **打通细线**：迁移（`harvester_bigrams`、`search_text`、两个索引），ORM 里 `search_text` 设 `deferred`；`build_search_text` 和 `refresh_search_text`，接进 `ingest_message` 的插入分支和更新分支；最简 `parse_query`（只有空白分词和 2 字符下限）；`search_conditions` 只处理包含词，带固定计划的 `SET LOCAL`；`GET /api/search/messages`（只有 `q`、`before`、`limit`，含顶层 `users`、`channels`）；`/search` 页面（输入框和独立的结果卡片，无筛选）和图标栏入口；OpenAPI 同步，satisfies **AC-1**、**AC-5**、**AC-6**、**AC-12**、**AC-20**、**AC-21**
-2. **筛选和完整语法**：`ApiError` 加 `fields`、`toUiError` 同步；`parse_query` 补全引号、排除、限制；`parse_filters`（原始字符串手动解析、`exclude_only`）、`snowflake_floor`、带 `type` 条件的线程展开、服务器和频道并集；`/api/search/channels`（排序和分类名）、`/api/search/authors`；前端 `parseQuery`、`search-params.ts`、`resolveRange`、筛选栏（选择器、作者联想、时间）、网址同步、空条件提示、点作者名加入筛选；共用用例文件，satisfies **AC-2**、**AC-3**、**AC-4**、**AC-7** 到 **AC-11**、**AC-26**
+2. **筛选和完整语法**：`ApiError` 加 `fields`、`toUiError` 同步；`parse_query` 补全引号、排除、限制；`parse_filters`（原始字符串手动解析、`exclude_only`）、`snowflake_floor`、带 `type` 条件的线程展开、服务器和频道并集；`/api/search/channels`（排序和分类名）、`/api/search/authors`；前端 `parseQuery`、`search-params.ts`、`resolveRange`、筛选栏（选择器、作者联想、时间）、网址同步、空条件提示；共用用例文件，satisfies **AC-2**、**AC-3**、**AC-4**、**AC-7** 到 **AC-11**、**AC-26**
 3. **跳到上下文**：`around` 取法、`has_newer` 和 `message_not_found`；`channelHref` 加消息参数；频道页「以某条为中心」模式（独立 `queryKey`、双向翻页、关掉 `fetchNew` 和 `reconcile`、按中心重取、切回普通模式）、`scrollToMessage`、高亮、「回到最新」、找不到时的提示，satisfies **AC-17**、**AC-18**、**AC-19**
 4. **补建、总数和收口体验**：`run_search_backfill` 接进 `lifespan`（含补完后的 `ANALYZE`）；`/api/search/count`（封顶）和 `/api/search/status`；超时识别（SQLSTATE `57014`）和 `SearchTimeout`；补建横幅和 30 秒刷新、总数显示、「刷新」和快照行为、`splitHighlights` 和一路传进渲染器的高亮、各状态（含下一页失败）和窄屏筛选面板、日志字段，satisfies **AC-13** 到 **AC-16**、**AC-22** 到 **AC-25**
 5. **测试和检查**：后端集成测试（连真实 PostgreSQL，含 `EXPLAIN` 断言和并发补建）、前端 Vitest（解析、网址往返、高亮、以某条为中心的状态）；更新 spec 0002 和 spec 0001 里「搜索由第 13 项决定」的几处；ruff、pyright、Biome、typecheck、build 全部通过，satisfies **AC-1** 到 **AC-26**
