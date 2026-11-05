@@ -1,7 +1,7 @@
 "use client";
 
 import { XIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,16 +16,38 @@ type FilterProps = Readonly<{ filters: SearchFilters; onChange: Change }>;
 const toggle = (list: readonly string[], id: string): readonly string[] =>
   list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
 
+// 点下拉框以外的地方或按 Esc 时收起 <details>。
+function useDismissDetails() {
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const close = (e: Event) => {
+      const el = ref.current;
+      if (el?.open && e.target instanceof Node && !el.contains(e.target)) el.open = false;
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && ref.current?.open) ref.current.open = false;
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, []);
+  return ref;
+}
+
 // 服务器和频道共用一个选择器：整个服务器勾选发 guild，单个频道或线程发 channel（AC-8）。
 export function ChannelPicker({ filters, onChange }: FilterProps) {
   const { data } = usePicker();
   const [text, setText] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  const menu = useDismissDetails();
   const needle = text.trim().toLowerCase();
   const count = filters.guilds.length + filters.channels.length;
 
   return (
-    <details className="relative">
+    <details ref={menu} className="relative">
       <summary className="flex h-10 cursor-pointer list-none items-center rounded-input border border-input px-3 text-sm">
         服务器和频道{count > 0 ? `（${count}）` : ""}
       </summary>
@@ -77,10 +99,7 @@ export function ChannelPicker({ filters, onChange }: FilterProps) {
                         onChange({ channels: next });
                       }}
                     />
-                    <span className="truncate">
-                      {c.category_name ? `${c.category_name} / ` : ""}
-                      {c.name}
-                    </span>
+                    <span className="truncate">{c.name}</span>
                     {c.status === "deleted" ? (
                       <Badge variant="destructive">已删除</Badge>
                     ) : !c.collect_enabled ? (
@@ -205,29 +224,44 @@ export function TimePicker({ filters, onChange }: FilterProps) {
     filters.from !== null &&
     filters.to !== null &&
     Date.parse(filters.from) >= Date.parse(filters.to);
+  const menu = useDismissDetails();
+  const options: readonly (readonly [string, string])[] = [
+    ["", "不限时间"],
+    ...(Object.keys(RANGE_LABELS) as TimeRange[]).map((r) => [r, RANGE_LABELS[r]] as const),
+    ["custom", "自定义"],
+  ];
+  const label = options.find(([key]) => key === value)?.[1] ?? "不限时间";
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <select
-        aria-label="时间"
-        className="h-10 rounded-input border border-input bg-transparent px-2 text-sm"
-        value={value}
-        onChange={(e) => {
-          const next = e.target.value;
-          if (next === "custom") {
-            onChange({ range: null, from: new Date().toISOString(), to: null });
-          } else {
-            onChange({ range: (next || null) as TimeRange | null, from: null, to: null });
-          }
-        }}
-      >
-        <option value="">不限时间</option>
-        {(Object.keys(RANGE_LABELS) as TimeRange[]).map((r) => (
-          <option key={r} value={r}>
-            {RANGE_LABELS[r]}
-          </option>
-        ))}
-        <option value="custom">自定义</option>
-      </select>
+      <details ref={menu} className="relative">
+        <summary
+          aria-label="时间"
+          className="flex h-10 cursor-pointer list-none items-center rounded-input border border-input px-3 text-sm"
+        >
+          {label}
+        </summary>
+        <ul className="absolute z-20 mt-1 w-36 rounded-lg border bg-popover p-1 shadow-lg">
+          {options.map(([key, text]) => (
+            <li key={key}>
+              <button
+                type="button"
+                className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted aria-[current=true]:font-semibold"
+                aria-current={key === value}
+                onClick={() => {
+                  if (key === "custom") {
+                    onChange({ range: null, from: new Date().toISOString(), to: null });
+                  } else {
+                    onChange({ range: (key || null) as TimeRange | null, from: null, to: null });
+                  }
+                  menu.current?.removeAttribute("open");
+                }}
+              >
+                {text}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </details>
       {custom ? (
         <>
           <Input
