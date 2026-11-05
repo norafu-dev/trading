@@ -52,6 +52,7 @@ async def test_empty_state(logged_in: httpx.AsyncClient) -> None:  # covers: AC-
             "quota_resumes_at": None,
             "last_seen_at": None,
             "stale": False,
+            "gap_channel_count": 0,
         },
     }
 

@@ -10,6 +10,7 @@ import { ErrorBlock } from "@/components/states/error-block";
 import { ApiResponseError, toUiError } from "@/lib/api/errors";
 import { useNow } from "@/lib/format/use-now";
 
+import { ChannelHistoryActions } from "./channel-history-actions";
 import { ChannelStatusBanner } from "./channel-status-banner";
 import { useSetCurrentChannel } from "./unread-provider";
 import { useChannelDetail } from "./use-channel-detail";
@@ -34,6 +35,7 @@ function ChannelView({ channelId }: Readonly<{ channelId: string }>) {
       className="flex h-full flex-col"
     >
       {reason !== null ? <ChannelStatusBanner reason={reason} /> : null}
+      <ChannelHistoryActions channelId={channelId} channelName={detail.data?.name} />
       <div className="min-h-0 flex-1">
         <MessageList
           key={channel.epoch}

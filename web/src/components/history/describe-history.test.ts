@@ -178,6 +178,7 @@ const STATUS: HistoryStatus = {
   quota_resumes_at: null,
   last_seen_at: "2026-11-05T10:00:00Z",
   stale: false,
+  gap_channel_count: 0,
 };
 
 describe("statusNotices", () => {

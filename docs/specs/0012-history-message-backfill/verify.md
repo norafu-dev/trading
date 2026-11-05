@@ -1,7 +1,7 @@
 # Verify: 按时间段采集历史消息 · spec 0012 · updated 2026-11-05
 _Steps derived from spec 0012 acceptance criteria. `/check verify` runs these; `/test` locks the durable ones._
 
-目前覆盖里程碑 1（打通细线）、里程碑 2（节奏和安全）和里程碑 3（操作和失败）。后面的里程碑做完时，在下面追加对应的步骤。
+目前覆盖里程碑 1（打通细线）、里程碑 2（节奏和安全）、里程碑 3（操作和失败）和里程碑 4（缺口）。后面的里程碑做完时，在下面追加对应的步骤。
 
 ## UI / manual
 - [x] 登录后打开 `/history`，点「新建任务」→ 只列小号能读、没删除、类型能采集的频道；没开实时采集的频道也能选 → AC-1
@@ -10,8 +10,8 @@ _Steps derived from spec 0012 acceptance criteria. `/check verify` runs these; `
 - [x] 选一个开着采集的频道，点「最近 24 小时」建任务 → 已经被实时覆盖的时间不会建任务；同样再提交一次，结果显示「这段时间已经采齐了」 → AC-2
 - [x] 选「全部历史」建任务 → 任务的起点是频道的创建时间 → AC-1
 - [x] 结束时间填一个比现在晚的时间 → 任务的结束时间按现在算；开始时间晚于结束时间 → 不提交，提示「开始时间要早于结束时间」 → AC-1
-- [x] collector 在线时 → 任务变成「抓取中」，进度和已抓条数大约 1 秒内更新；完成后从「进行中」消失 → AC-3, AC-14
-- [x] 点任务行的频道名 → 打开 `/channels?id=<频道 ID>`，补回来的消息按时间出现在正确位置 → AC-14
+- [x] collector 在线时 → 任务变成「抓取中」，进度和已抓条数大约 1 秒内更新；完成后从「进行中」消失 → AC-3, AC-14a
+- [x] 点任务行的频道名 → 打开 `/channels?id=<频道 ID>`，补回来的消息按时间出现在正确位置 → AC-14a
 - [x] 补回来的消息里有已经被实时采集存过的 → 库里仍然只有一行，`source` 仍是 `realtime` → AC-4
 - [x] 收回小号对某个频道的读取权限后建任务 → 任务失败，显示「小号没有读取权限」，collector 日志里没有发出这一页的请求 → AC-3
 - [ ] 对一个小号能看到、但没有「读取消息历史」权限的频道，选一段库里已有消息的时间建任务 → 任务失败，原因是 Discord 返回了空结果；没有写入新的覆盖段 → AC-3a
@@ -44,7 +44,20 @@ _Steps derived from spec 0012 acceptance criteria. `/check verify` runs these; `
 - [ ] 勾「整段重抓」对一个已经覆盖的时间段建任务，事先在 Discord 里删掉其中一条消息 → 任务完成后那条消息显示为已删除；没勾「整段重抓」时同样的删除不会被发现 → AC-13
 - [ ] 选一个已经被实时采集覆盖了一部分的频道建一周的任务 → 同一个频道只显示一行和一个总进度条（按时间长度加权，几秒的小段不拉低它），行尾有「共 N 段，展开」；展开后列出每一段的时间、状态、进度；有子任务失败时默认展开，频道行显示「N 段失败：原因」→ AC-14
 - [ ] 频道行的「暂停 / 继续 / 取消」→ 一次作用于这个频道下所有符合的子任务，批次里其他频道不动；失败的子任务在展开后点「重试」→ AC-9, AC-14
-- [ ] 「已结束」区域 → 默认列最近 7 天结束的已完成和已取消任务；超过一页时有「加载更多」；切到「全部（保留 30 天）」后能看到更早的 → AC-14
+- [ ] 「已结束」区域 → 默认列最近 7 天结束的已完成和已取消任务；超过一页时有「加载更多」；切到「全部（保留 30 天）」后能看到更早的 → AC-14a
+
+### 里程碑 4：缺口
+- [ ] 让一个开着采集的频道留下缺口（关掉采集等几分钟再打开，或者重启 collector）→ `/history` 的「缺口」区域列出这个频道、段数、总时长和最早一段的时间 → AC-15
+- [ ] 点这一行的「补缺口」→ 每一段缺口建一个 `origin = 'gap_manual'` 的任务（任务行的来源显示「一键补缺口」）；立刻再点一次 → 结果是「没有需要补的缺口」 → AC-15
+- [ ] 多个频道都有缺口时点标题上的「全部补上」→ 每个频道各自按段建任务 → AC-15
+- [ ] 一个频道只有一段开着的实时覆盖（从没断过）→ 「缺口」区域里没有它；全都没有缺口时显示「没有缺口，采集到的时间是连续的」 → AC-15
+- [ ] 打开一个有缺口的频道页 → 消息列表上方显示「这个频道有 N 段缺口，共 X」和「补缺口」按钮；没有缺口的频道页只有「抓这个频道的历史」按钮 → AC-15, AC-18
+- [ ] 在频道页点「抓这个频道的历史」→ 新建任务对话框打开，这个频道已经勾好；没开实时采集的频道页也有这个按钮，顶部仍然是「这个频道已关闭采集」的提示 → AC-18
+- [ ] `auto_gap_max_hours` 保持默认 6，重启 collector（留下几秒的缺口）→ 覆盖对齐打开新段之后，自动建出来源是「自动补缺口」的任务并很快跑完 → AC-16
+- [ ] 把一个频道的采集关掉 10 小时以上再打开 → 不自动建任务，缺口仍然列在「缺口」里等你一键补 → AC-16
+- [ ] 在 `/settings/history` 把「自动补缺口的时长上限」改成 0，再重启 collector → 不建任何 `gap_auto` 任务，实时采集照常 → AC-16
+- [ ] 打开一个频道页，往上滚到中间，同时让一个补采任务往这个频道写消息 → 5 秒内补回来的消息按时间插到正确位置，你正在看的那条不跳动，也没有未读圆点以外的闪动 → AC-17
+- [ ] 补采写入期间看浏览器的网络面板 → 没有 `new_message` 事件，只有 `history_changed`；未读数按已读位置算（比已读位置旧的补采消息不算未读）→ AC-17
 
 ## Commands
 - [x] `curl -i http://localhost:8080/api/history/jobs`（不带登录 cookie）→ 401 → AC-22
@@ -57,12 +70,16 @@ _Steps derived from spec 0012 acceptance criteria. `/check verify` runs these; `
 - [ ] `SELECT * FROM history_page_hour ORDER BY hour DESC LIMIT 3` 在抓取几页后 → 当前整点的 `pages` 随页数增加（含为了拿频道对象额外调用的那次）→ AC-5
 - [ ] `SELECT history_waiting_reason, history_waiting_until, history_worker_seen_at FROM collector_heartbeat` → 休息或等限额时前两列有值，结束后为空；`history_worker_seen_at` 每 30 秒更新 → AC-6, AC-20
 - [ ] 把 `discord.http` 的日志级别调成 ERROR 后启动 collector → 日志有 `history.ratelimit_watch_unhealthy`，`history_settings.paused_reason` 变成 `rate_limited` → AC-7
-- [ ] `SELECT preempted_count FROM history_job` 在手动任务被 `gap_auto` 抢先后 → 加 1，抓到一页后清零；累计抢先 3 次后不再让位（缺口自动补在里程碑 4 才有，到时候再验）→ AC-10
 - [ ] `SELECT status, error, finished_at FROM history_job WHERE id = <被取消的失败任务>` → `status = 'cancelled'`，`error` 为空 → AC-9
 - [ ] 取消前后对比 `SELECT span, source FROM channel_coverage WHERE channel_id = <频道> AND source = 'history'` → 取消一个有断点的 `running` 或 `paused` 任务后多一段 `[断点时间 + 1 毫秒, range_end)`；没有断点的、从 `failed` 取消的、只暂停的都不多 → AC-11
 - [ ] `SELECT delete_source, count(*) FROM message WHERE deleted_at IS NOT NULL GROUP BY delete_source` 在整段重抓任务前后对比 → 只有 `reconciled` 增加，数量等于 Discord 上确实删掉的条数 → AC-13
 - [ ] 在 collector 容器里等一个小时（或临时把 `CLEANUP_INTERVAL` 调小）→ 日志有 `history.cleanup`；`finished_at` 早于 30 天前的任务行被删，覆盖段和消息不动，48 小时前的 `history_page_hour` 行被删 → AC-21
 - [ ] `curl -i -X POST http://localhost:8080/api/history/jobs/1/pause`（不带登录 cookie）和 `.../batches/<uuid>/pause` → 401；登录后用错误的 `Origin` → 403，任务状态不变 → AC-22
+- [ ] `curl -i http://localhost:8080/api/history/gaps` 和 `curl -i -X POST .../api/history/gaps/fill -d '{"channel_ids":["<频道>"]}'`（不带登录 cookie）→ 都是 401；登录后用错误的 `Origin` POST → 403，没有建出任务 → AC-22
+- [ ] `SELECT origin, count(*) FROM history_job GROUP BY origin` 在一键补和自动补之后 → 分别多出 `gap_manual` 和 `gap_auto` 的行 → AC-15, AC-16
+- [ ] 让 `create_gap_jobs` 抛异常（临时改代码或改掉设置表）后重启 collector → 日志有 `history.auto_gap_failed` 警告，实时覆盖段照常打开，采集不受影响 → AC-16
+- [ ] `SELECT preempted_count FROM history_job` 在手动任务被 `gap_auto` 抢先后 → 加 1，抓到一页后清零；连续被抢先 3 次后不再让位 → AC-10
+- [ ] `cd backend && uv run pytest tests/db/test_history_gaps.py tests/api/test_history_routes.py` → 全部通过（缺口段、自动补上限、一键补扣减未完成任务、两个接口的鉴权）→ AC-15, AC-16, AC-22
 
 ## Value sourcing
 - [x] 浏览器时区改成别的时区（比如 `America/New_York`）后选「最近 24 小时」→ 输入框显示的是新时区的本地时间，库里的 `range_start` 和 `range_end` 是对应的 UTC 时间
@@ -74,6 +91,9 @@ _Steps derived from spec 0012 acceptance criteria. `/check verify` runs these; `
 - [ ] 休息结束时间 = 开始休息的时间 + `history_settings.rest_minutes`；改设置后下一轮用新值
 - [ ] 取消或失败时覆盖段的起点 = 断点消息的时间加 1 毫秒（同一毫秒里更小的 ID 还没抓到），终点 = `range_end`，不是 `range_start`，也不是当前时间
 - [ ] 整段重抓对账的 ID 区间：上界 = 这一页请求的 `before_id`（第一页是 `range_end` 对应的 ID），下界 = 这一页最旧一条的 ID，最后一页和空页是 `range_start` 对应的 ID；`deleted_at` 是这一页提交时的数据库时间，`delete_source = 'reconciled'`
+- [ ] 缺口段来自 `range_agg`：覆盖 `[1点, 3点)` 和 `[5点, ∞)` 的频道，缺口正好是 `[3点, 5点)`；开放的实时段算到数据库 `now()`，不是浏览器时间
+- [ ] 自动补的时长上限读的是 `history_settings.auto_gap_max_hours`（改成 12 之后，原来不补的 10 小时缺口会自动补）
+- [ ] 一键补的每一行时间段等于缺口本身减去未完成任务占着的时间，不是整段时间
 
 ## Acceptance-criteria coverage
 - AC-1：新建任务对话框的几步，加上时区那一步
@@ -81,12 +101,16 @@ _Steps derived from spec 0012 acceptance criteria. `/check verify` runs these; `
 - AC-3：抓取进度、读取权限、入库数量、覆盖段这几步
 - AC-3a：没有「读取消息历史」权限那一步
 - AC-4：实时和补采去重那一步
-- AC-14：进度更新、点频道名跳转那两步
+- AC-14：按频道合并、折叠子任务、频道级操作那两步
+- AC-14a：进度更新、点频道名跳转、「已结束」分页那几步
 - AC-22：401 和 Origin 那两条命令
 - AC-5、AC-6：休息、额度、页数和心跳那几步
 - AC-7、AC-8：限速自动暂停、总开关、红点那几步
 - AC-10：杀掉 collector、掉线、抢先计数那几步
 - AC-19：设置页保存和超范围那几步
 - AC-20：首页「历史采集」一行
-- AC-9、AC-11、AC-12、AC-13、AC-21：里程碑 3 那几步（任务操作、部分覆盖段、失败处理、整段重抓对账、清理）；AC-14 的「已结束」分页也在里面
-- AC-15 到 AC-18：属于后面的里程碑，到时候再补
+- AC-9、AC-11、AC-12、AC-13、AC-21：里程碑 3 那几步（任务操作、部分覆盖段、失败处理、整段重抓对账、清理）；AC-14 和 AC-14a 的「已结束」分页、按频道合并那几步也在里面
+- AC-15：「缺口」区域、「补缺口」「全部补上」、频道页提示那几步
+- AC-16：自动补短缺口、超过上限不补、上限设为 0 那几步
+- AC-17：频道页 5 秒合并重取、不发 `new_message` 那两步
+- AC-18：频道页「抓这个频道的历史」那一步

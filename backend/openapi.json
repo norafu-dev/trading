@@ -1220,6 +1220,103 @@
         }
       }
     },
+    "/api/history/gaps": {
+      "get": {
+        "tags": [
+          "history"
+        ],
+        "summary": "List History Gaps",
+        "description": "有缺口的频道；给了 `channel_id` 就只看这一个（AC-15）。",
+        "operationId": "list_history_gaps_api_history_gaps_get",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]{1,19}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Channel Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GapSummaryOut"
+                  },
+                  "title": "Response List History Gaps Api History Gaps Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history/gaps/fill": {
+      "post": {
+        "tags": [
+          "history"
+        ],
+        "summary": "Fill History Gaps",
+        "description": "一键补缺口：一段缺口一行，`origin = 'gap_manual'`（AC-15）。",
+        "operationId": "fill_history_gaps_api_history_gaps_fill_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FillGapsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateJobsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/history/jobs/{job_id}/{action}": {
       "post": {
         "tags": [
@@ -2339,6 +2436,25 @@
         ],
         "title": "EmbedField"
       },
+      "FillGapsIn": {
+        "properties": {
+          "channel_ids": {
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Channel Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channel_ids"
+        ],
+        "title": "FillGapsIn"
+      },
       "ForwardedOut": {
         "properties": {
           "message_id": {
@@ -2389,6 +2505,62 @@
           "attachment_names"
         ],
         "title": "ForwardedOut"
+      },
+      "GapOut": {
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "GapOut"
+      },
+      "GapSummaryOut": {
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "title": "Channel Id"
+          },
+          "guild_name": {
+            "type": "string",
+            "title": "Guild Name"
+          },
+          "channel_name": {
+            "type": "string",
+            "title": "Channel Name"
+          },
+          "gaps": {
+            "items": {
+              "$ref": "#/components/schemas/GapOut"
+            },
+            "type": "array",
+            "title": "Gaps"
+          },
+          "total_seconds": {
+            "type": "number",
+            "title": "Total Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channel_id",
+          "guild_name",
+          "channel_name",
+          "gaps",
+          "total_seconds"
+        ],
+        "title": "GapSummaryOut"
       },
       "GuildBriefOut": {
         "properties": {
@@ -3041,6 +3213,10 @@
           "stale": {
             "type": "boolean",
             "title": "Stale"
+          },
+          "gap_channel_count": {
+            "type": "integer",
+            "title": "Gap Channel Count"
           }
         },
         "type": "object",
@@ -3053,7 +3229,8 @@
           "daily_page_limit",
           "quota_resumes_at",
           "last_seen_at",
-          "stale"
+          "stale",
+          "gap_channel_count"
         ],
         "title": "HistoryStatusOut"
       },

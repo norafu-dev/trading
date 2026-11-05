@@ -21,6 +21,8 @@ const HISTORY_COALESCE_MS = 1_000;
 export type MessageStreamEvent =
   | Readonly<{ type: "new_message"; channel_id: string; message_id: string }>
   | Readonly<{ type: "message_changed"; channel_id: string; message_ids: readonly string[] }>
+  // 补采写进了这个频道：正在看这个频道时重新取已加载的范围（spec 0012 AC-17）。
+  | Readonly<{ type: "history_changed"; channel_id: string }>
   | Readonly<{ type: "reconnected" }>;
 
 type MessageListener = (event: MessageStreamEvent) => void;
@@ -100,7 +102,14 @@ export function EventStreamProvider({ children }: Readonly<{ children: ReactNode
     });
     source.addEventListener("account_status", refreshAccount);
     source.addEventListener("channels_changed", refreshChannels);
-    source.addEventListener("history_changed", refreshHistory);
+    source.addEventListener("history_changed", (event) => {
+      refreshHistory();
+      // 设置和总开关的通知没有频道 ID，只有补采进度才需要通知消息列表。
+      const payload = JSON.parse(event.data) as Readonly<{ channel_id?: string }>;
+      if (payload.channel_id) {
+        emit({ type: "history_changed", channel_id: payload.channel_id });
+      }
+    });
     for (const name of ["new_message", "message_changed"]) {
       source.addEventListener(name, (event) => emit(JSON.parse(event.data) as MessageStreamEvent));
     }

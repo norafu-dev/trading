@@ -46,6 +46,7 @@ import {
   STATUS_LABELS,
   WAIT_LABELS,
 } from "./describe-history";
+import { GapList } from "./gap-list";
 import { HistoryStatusBar } from "./history-status-bar";
 import { NewJobDialog } from "./new-job-dialog";
 import {
@@ -522,6 +523,8 @@ export function HistoryPanel() {
           </div>
           {body}
         </section>
+
+        <GapList time={time} />
 
         <FinishedSection time={time} />
       </div>

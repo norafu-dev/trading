@@ -148,56 +148,28 @@ async def _remaining_ranges(
     return tuple((row.range_start, row.range_end) for row in rows)
 
 
-async def create_jobs(
-    session: AsyncSession,
-    channel_ids: Sequence[int],
-    range_start: datetime | None,
-    range_end: datetime | None,
-    *,
-    refetch: bool,
-    origin: HistoryOrigin,
-) -> CreateResult | InvalidRange:
-    """`range_start` 为空表示全部历史（从频道创建时间起），`range_end` 为空或晚于现在时按现在算。
-
-    先按 ID 顺序锁住频道行，两次并发提交不会排出重叠的任务，也不会互相等待（AC-2）。
-    """
-    db_now: datetime = await session.scalar(select(func.now()))  # pyright: ignore[reportAssignmentType]
-    end = db_now if range_end is None or range_end > db_now else range_end
-    if range_start is not None and range_start >= end:
-        return InvalidRange()
-
-    unique_ids = tuple(dict.fromkeys(channel_ids))
+async def _lock_channels(
+    session: AsyncSession, channel_ids: Sequence[int]
+) -> Mapping[int, RowMapping]:
+    """按 ID 顺序锁住频道行：两次并发提交不会排出重叠的任务，也不会互相等待（AC-2）。"""
     rows = await session.execute(
         select(Channel.id, Channel.status, Channel.type, _can_read_any())
-        .where(Channel.id.in_(unique_ids))
+        .where(Channel.id.in_(tuple(dict.fromkeys(channel_ids))))
         .order_by(Channel.id)
         .with_for_update(of=Channel)
     )
-    found = {row.id: row for row in rows}
+    return {row["id"]: row for row in rows.mappings()}
 
-    planned: list[tuple[int, datetime, datetime]] = []
-    skipped: list[SkippedChannel] = []
-    for channel_id in unique_ids:
-        row = found.get(channel_id)
-        if row is None:
-            skipped.append(SkippedChannel(channel_id, "not_found"))
-            continue
-        reason = _skip_reason(row.status, row.type, row.can_read)
-        if reason is not None:
-            skipped.append(SkippedChannel(channel_id, reason))
-            continue
-        created = snowflake_time(channel_id)
-        start = created if range_start is None or range_start < created else range_start
-        pieces = (
-            await _remaining_ranges(session, channel_id, start, end, refetch=refetch)
-            if start < end
-            else ()
-        )
-        if not pieces:
-            skipped.append(SkippedChannel(channel_id, "nothing_to_fetch"))
-            continue
-        planned.extend((channel_id, lo, hi) for lo, hi in pieces)
 
+async def _insert_jobs(
+    session: AsyncSession,
+    planned: Sequence[tuple[int, datetime, datetime]],
+    *,
+    origin: HistoryOrigin,
+    refetch: bool,
+    skipped: Sequence[SkippedChannel],
+) -> CreateResult:
+    """同一次提交排出的所有段共用一个 `batch_id`，每一段一行。"""
     if not planned:
         return CreateResult(batch_id=None, job_ids=(), skipped=tuple(skipped))
     batch_id: uuid.UUID = await session.scalar(text("SELECT uuidv7()"))  # pyright: ignore[reportAssignmentType]
@@ -223,6 +195,188 @@ async def create_jobs(
     for job_id, (channel_id, _lo, _hi) in zip(job_ids, planned, strict=True):
         await notify_history_changed(session, job_id, channel_id)
     return CreateResult(batch_id=batch_id, job_ids=job_ids, skipped=tuple(skipped))
+
+
+async def create_jobs(
+    session: AsyncSession,
+    channel_ids: Sequence[int],
+    range_start: datetime | None,
+    range_end: datetime | None,
+    *,
+    refetch: bool,
+    origin: HistoryOrigin,
+) -> CreateResult | InvalidRange:
+    """`range_start` 为空表示全部历史（从频道创建时间起），`range_end` 为空或晚于现在时按现在算。
+
+    先按 ID 顺序锁住频道行，两次并发提交不会排出重叠的任务，也不会互相等待（AC-2）。
+    """
+    db_now: datetime = await session.scalar(select(func.now()))  # pyright: ignore[reportAssignmentType]
+    end = db_now if range_end is None or range_end > db_now else range_end
+    if range_start is not None and range_start >= end:
+        return InvalidRange()
+
+    unique_ids = tuple(dict.fromkeys(channel_ids))
+    found = await _lock_channels(session, unique_ids)
+
+    planned: list[tuple[int, datetime, datetime]] = []
+    skipped: list[SkippedChannel] = []
+    for channel_id in unique_ids:
+        row = found.get(channel_id)
+        if row is None:
+            skipped.append(SkippedChannel(channel_id, "not_found"))
+            continue
+        reason = _skip_reason(row["status"], row["type"], row["can_read"])
+        if reason is not None:
+            skipped.append(SkippedChannel(channel_id, reason))
+            continue
+        created = snowflake_time(channel_id)
+        start = created if range_start is None or range_start < created else range_start
+        pieces = (
+            await _remaining_ranges(session, channel_id, start, end, refetch=refetch)
+            if start < end
+            else ()
+        )
+        if not pieces:
+            skipped.append(SkippedChannel(channel_id, "nothing_to_fetch"))
+            continue
+        planned.extend((channel_id, lo, hi) for lo, hi in pieces)
+
+    return await _insert_jobs(session, planned, origin=origin, refetch=refetch, skipped=skipped)
+
+
+# ---- 缺口（AC-15、AC-16） -----------------------------------------------------------
+
+# 一个频道的缺口：从最早一段覆盖的起点到最晚一段覆盖的终点（开放的实时段算到现在）之间，
+# 没有被任何覆盖段盖住的时间，不设最短长度。只算没删除、小号读得了的频道（AC-15）。
+_GAPS_SQL = text(
+    """
+    WITH eligible AS (
+        SELECT c.id, c.name AS channel_name, g.name AS guild_name
+        FROM channel c
+        JOIN guild g ON g.id = c.guild_id
+        WHERE c.status <> 'deleted'
+          AND EXISTS (
+              SELECT 1 FROM account_channel_access a
+              WHERE a.channel_id = c.id AND a.can_read
+          )
+          AND (:all_channels OR c.id = ANY(:channel_ids))
+    ),
+    spans AS (
+        SELECT e.id, e.channel_name, e.guild_name, range_agg(cc.span) AS m
+        FROM eligible e
+        JOIN channel_coverage cc ON cc.channel_id = e.id
+        GROUP BY e.id, e.channel_name, e.guild_name
+    )
+    SELECT s.id AS channel_id, s.guild_name, s.channel_name,
+           lower(gap) AS gap_start, upper(gap) AS gap_end
+    FROM spans s,
+         unnest(
+             tstzmultirange(tstzrange(lower(s.m), coalesce(upper(s.m), now()), '[)')) - s.m
+         ) AS gap
+    ORDER BY s.id, lower(gap)
+    """
+)
+
+
+@dataclass(frozen=True)
+class ChannelGaps:
+    channel_id: int
+    guild_name: str
+    channel_name: str
+    gaps: tuple[tuple[datetime, datetime], ...]
+
+    @property
+    def total_seconds(self) -> float:
+        return sum((hi - lo).total_seconds() for lo, hi in self.gaps)
+
+
+async def channel_gaps(
+    session: AsyncSession, channel_ids: Sequence[int] | None = None
+) -> tuple[ChannelGaps, ...]:
+    """有缺口的频道，按频道 ID 排序；`channel_ids` 为空表示所有频道（AC-15）。"""
+    ids = tuple(dict.fromkeys(channel_ids)) if channel_ids is not None else ()
+    if channel_ids is not None and not ids:
+        return ()
+    rows = await session.execute(
+        _GAPS_SQL,
+        {"all_channels": channel_ids is None, "channel_ids": list(ids)},
+    )
+    by_channel: dict[int, list[tuple[datetime, datetime]]] = {}
+    names: dict[int, tuple[str, str]] = {}
+    for row in rows:
+        by_channel.setdefault(row.channel_id, []).append((row.gap_start, row.gap_end))
+        names[row.channel_id] = (row.guild_name, row.channel_name)
+    return tuple(
+        ChannelGaps(
+            channel_id=channel_id,
+            guild_name=names[channel_id][0],
+            channel_name=names[channel_id][1],
+            gaps=tuple(gaps),
+        )
+        for channel_id, gaps in by_channel.items()
+    )
+
+
+async def gap_summary(
+    session: AsyncSession, channel_id: int | None = None
+) -> tuple[ChannelGaps, ...]:
+    """页面要显示的缺口：一个频道的，或者所有有缺口的频道（AC-15）。"""
+    return await channel_gaps(session, None if channel_id is None else (channel_id,))
+
+
+async def gap_channel_count(session: AsyncSession) -> int:
+    """有缺口的频道数，首页和历史页入口用（AC-15、AC-20）。"""
+    return len(await channel_gaps(session))
+
+
+async def create_gap_jobs(
+    session: AsyncSession,
+    channel_ids: Sequence[int],
+    at: datetime | None = None,
+    *,
+    origin: HistoryOrigin,
+) -> CreateResult:
+    """补缺口：一段缺口一行，同样先减去未完成任务的时间段（AC-15）。
+
+    `at` 不为空时是自动补（AC-16）：只取紧挨在这个时间点前面的那一段缺口，
+    并且长度不超过 `auto_gap_max_hours`；设置为 0 时什么都不建。
+    """
+    unique_ids = tuple(dict.fromkeys(channel_ids))
+    if not unique_ids:
+        return CreateResult(batch_id=None, job_ids=(), skipped=())
+    max_gap: timedelta | None = None
+    if at is not None:
+        settings = await get_history_settings(session)
+        if settings.auto_gap_max_hours == 0:
+            return CreateResult(batch_id=None, job_ids=(), skipped=())
+        max_gap = timedelta(hours=settings.auto_gap_max_hours)
+
+    found = await _lock_channels(session, unique_ids)
+    gaps_by_channel = {g.channel_id: g.gaps for g in await channel_gaps(session, unique_ids)}
+
+    planned: list[tuple[int, datetime, datetime]] = []
+    skipped: list[SkippedChannel] = []
+    for channel_id in unique_ids:
+        row = found.get(channel_id)
+        if row is None:
+            skipped.append(SkippedChannel(channel_id, "not_found"))
+            continue
+        reason = _skip_reason(row["status"], row["type"], row["can_read"])
+        if reason is not None:
+            skipped.append(SkippedChannel(channel_id, reason))
+            continue
+        gaps = gaps_by_channel.get(channel_id, ())
+        if at is not None and max_gap is not None:
+            gaps = tuple(g for g in gaps if g[1] == at and timedelta() < g[1] - g[0] <= max_gap)
+        pieces: list[tuple[datetime, datetime]] = []
+        for lo, hi in gaps:
+            pieces.extend(await _remaining_ranges(session, channel_id, lo, hi, refetch=False))
+        if not pieces:
+            skipped.append(SkippedChannel(channel_id, "nothing_to_fetch"))
+            continue
+        planned.extend((channel_id, lo, hi) for lo, hi in pieces)
+
+    return await _insert_jobs(session, planned, origin=origin, refetch=False, skipped=skipped)
 
 
 # ---- collector：领取、抓页、结束 -----------------------------------------------------

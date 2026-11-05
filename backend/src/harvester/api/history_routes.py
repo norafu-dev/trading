@@ -1,6 +1,7 @@
 """历史采集接口（spec 0012）。api 不连 Discord：只建任务、读进度，由 collector 去抓。"""
 
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Annotated, Literal
 
@@ -39,6 +40,8 @@ history_router = APIRouter(prefix="/history", tags=["history"])
 
 _BIGINT_MAX = 2**63 - 1
 SnowflakeStr = Annotated[str, StringConstraints(pattern=r"^[0-9]{1,19}$")]
+# 「全部补上」一次最多这么多个频道（spec 0012 的接口表）。
+MAX_GAP_CHANNELS = 200
 
 
 class InvalidRangeError(ApiError):
@@ -152,6 +155,24 @@ class HistoryStatusOut(BaseModel):
     quota_resumes_at: datetime | None
     last_seen_at: datetime | None
     stale: bool
+    gap_channel_count: int
+
+
+class GapOut(BaseModel):
+    start: datetime
+    end: datetime
+
+
+class GapSummaryOut(BaseModel):
+    channel_id: str
+    guild_name: str
+    channel_name: str
+    gaps: list[GapOut]
+    total_seconds: float
+
+
+class FillGapsIn(BaseModel):
+    channel_ids: list[SnowflakeStr] = Field(min_length=1, max_length=MAX_GAP_CHANNELS)
 
 
 class HistorySettingsIn(BaseModel):
@@ -192,6 +213,7 @@ def status_out(state: system_db.HistoryState) -> HistoryStatusOut:
         quota_resumes_at=state.quota_resumes_at,
         last_seen_at=state.last_seen_at,
         stale=state.stale,
+        gap_channel_count=state.gap_channel_count,
     )
 
 
@@ -233,6 +255,25 @@ def _batch_out(row: HistoryBatchRow) -> HistoryBatchOut:
 
 def _is_naive(value: datetime | None) -> bool:
     return value is not None and value.utcoffset() is None
+
+
+def _create_jobs_out(
+    result: history_store.CreateResult,
+    rows: Sequence[HistoryJobRow],
+    oversize: Sequence[SkippedChannelOut],
+) -> CreateJobsOut:
+    """建任务和补缺口共用同一种结果：建了哪些行、哪些频道跳过了和原因。"""
+    return CreateJobsOut(
+        batch_id=str(result.batch_id) if result.batch_id is not None else None,
+        jobs=[job_out(r) for r in rows],
+        skipped=[
+            *oversize,
+            *(
+                SkippedChannelOut(channel_id=str(s.channel_id), reason=s.reason)
+                for s in result.skipped
+            ),
+        ],
+    )
 
 
 @history_router.get("/jobs")
@@ -283,17 +324,45 @@ async def create_history_jobs(body: CreateJobsIn, factory: SessionFactoryDep) ->
         if isinstance(result, InvalidRange):
             raise InvalidRangeError
         rows = await history_store.get_jobs(session, result.job_ids)
-    return CreateJobsOut(
-        batch_id=str(result.batch_id) if result.batch_id is not None else None,
-        jobs=[job_out(r) for r in rows],
-        skipped=[
-            *oversize,
-            *(
-                SkippedChannelOut(channel_id=str(s.channel_id), reason=s.reason)
-                for s in result.skipped
-            ),
-        ],
-    )
+    return _create_jobs_out(result, rows, oversize)
+
+
+@history_router.get("/gaps")
+async def list_history_gaps(
+    factory: SessionFactoryDep,
+    channel_id: Annotated[str | None, Query(pattern=r"^[0-9]{1,19}$")] = None,
+) -> list[GapSummaryOut]:
+    """有缺口的频道；给了 `channel_id` 就只看这一个（AC-15）。"""
+    only = int(channel_id) if channel_id is not None else None
+    if only is not None and only > _BIGINT_MAX:
+        return []
+    async with factory() as session:
+        rows = await history_store.gap_summary(session, only)
+    return [
+        GapSummaryOut(
+            channel_id=str(row.channel_id),
+            guild_name=row.guild_name,
+            channel_name=row.channel_name,
+            gaps=[GapOut(start=lo, end=hi) for lo, hi in row.gaps],
+            total_seconds=row.total_seconds,
+        )
+        for row in rows
+    ]
+
+
+@history_router.post("/gaps/fill")
+async def fill_history_gaps(body: FillGapsIn, factory: SessionFactoryDep) -> CreateJobsOut:
+    """一键补缺口：一段缺口一行，`origin = 'gap_manual'`（AC-15）。"""
+    ids = [int(i) for i in body.channel_ids if int(i) <= _BIGINT_MAX]
+    oversize = [
+        SkippedChannelOut(channel_id=i, reason="not_found")
+        for i in dict.fromkeys(body.channel_ids)
+        if int(i) > _BIGINT_MAX
+    ]
+    async with factory() as session, session.begin():
+        result = await history_store.create_gap_jobs(session, ids, origin="gap_manual")
+        rows = await history_store.get_jobs(session, result.job_ids)
+    return _create_jobs_out(result, rows, oversize)
 
 
 _UUID_PATTERN = r"^[0-9a-fA-F-]{36}$"

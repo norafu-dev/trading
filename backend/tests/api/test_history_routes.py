@@ -7,6 +7,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from harvester.db.history import (
@@ -15,7 +16,7 @@ from harvester.db.history import (
     set_history_paused,
     set_history_waiting,
 )
-from harvester.db.models import AccountChannelAccess, HistoryJob
+from harvester.db.models import AccountChannelAccess, ChannelCoverage, HistoryJob
 from harvester.db.system import record_collector_heartbeat
 from tests.api.conftest import FakeClock, complete_setup, do_login, make_client
 from tests.db.builders import CHANNEL, make_account, seed_channel
@@ -40,6 +41,9 @@ async def readable(factory: Factory) -> None:
         account = await make_account(session)
         session.add(AccountChannelAccess(account_id=account, channel_id=CHANNEL.id, can_read=True))
 
+
+GAP_DAY = datetime(2026, 1, 1, tzinfo=UTC)
+HOUR = timedelta(hours=1)
 
 BODY = {
     "channel_ids": [str(CHANNEL.id)],
@@ -255,6 +259,8 @@ async def test_status_not_stale_when_process_is_down(
         ("PUT", "/api/history/settings", SETTINGS),
         ("POST", "/api/history/jobs/1/pause", None),
         ("POST", f"/api/history/batches/{UUID_ZERO}/pause", None),
+        ("GET", "/api/history/gaps", None),
+        ("POST", "/api/history/gaps/fill", {"channel_ids": [str(CHANNEL.id)]}),
     ],
 )
 async def test_new_endpoints_require_login(
@@ -349,3 +355,51 @@ async def test_channel_scoped_batch_action(logged_in: httpx.AsyncClient, readabl
     assert (await logged_in.post(f"{base}/{CHANNEL.id}/pause")).json() == {"changed": 0}
     missing = await logged_in.post(f"{base}/999/cancel")
     assert missing.status_code == 404 and missing.json()["error"]["code"] == "batch_not_found"
+
+
+# ---- 里程碑 4：缺口 ----------------------------------------------------------------
+
+
+async def test_gaps_list_and_fill(
+    logged_in: httpx.AsyncClient, readable: None, factory: Factory
+) -> None:  # covers: AC-15
+    async with factory() as session, session.begin():
+        for lo, hi in ((GAP_DAY, GAP_DAY + HOUR), (GAP_DAY + 3 * HOUR, None)):
+            session.add(
+                ChannelCoverage(channel_id=CHANNEL.id, span=Range(lo, hi), source="realtime")
+            )
+
+    listed = (await logged_in.get("/api/history/gaps")).json()
+
+    assert len(listed) == 1
+    assert listed[0]["channel_id"] == str(CHANNEL.id)
+    assert listed[0]["channel_name"] == CHANNEL.name
+    assert listed[0]["total_seconds"] == 7200.0
+    assert len(listed[0]["gaps"]) == 1
+
+    filled = await logged_in.post("/api/history/gaps/fill", json={"channel_ids": [str(CHANNEL.id)]})
+
+    assert filled.status_code == 200
+    (job,) = filled.json()["jobs"]
+    assert job["origin"] == "gap_manual" and job["status"] == "pending"
+    # 建完任务之后这段时间已经排上了，再补一次就没有要补的了。
+    again = await logged_in.post("/api/history/gaps/fill", json={"channel_ids": [str(CHANNEL.id)]})
+    assert again.json()["jobs"] == []
+    assert again.json()["skipped"] == [
+        {"channel_id": str(CHANNEL.id), "reason": "nothing_to_fetch"}
+    ]
+
+
+async def test_gaps_for_one_channel_and_status_count(
+    logged_in: httpx.AsyncClient, readable: None, factory: Factory
+) -> None:  # covers: AC-15
+    async with factory() as session, session.begin():
+        session.add(
+            ChannelCoverage(channel_id=CHANNEL.id, span=Range(GAP_DAY, None), source="realtime")
+        )
+
+    only = (await logged_in.get(f"/api/history/gaps?channel_id={CHANNEL.id}")).json()
+
+    assert only == []
+    status = (await logged_in.get("/api/system/status")).json()["history"]
+    assert status["gap_channel_count"] == 0

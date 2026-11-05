@@ -75,6 +75,9 @@ export function useMessageScroll(params: Params): MessageScroll {
   const [lastSeenMaxId, setLastSeenMaxId] = useState<string | null>(null);
   const atBottomRef = useRef(true);
   const anchorRef = useRef<ScrollAnchor | null>(null);
+  // 平时滚动就一直记着视口顶部那一行：补采把旧消息插进已加载的范围时（spec 0012 AC-17），
+  // 没有「加载更早」那样的显式触发点，就用这个锚点把你正在看的那条放回原位。
+  const liveAnchorRef = useRef<ScrollAnchor | null>(null);
   const requestedRef = useRef(false);
   const restoringRef = useRef(false);
   // 事件回调里要读最新的 props，又不想因此反复重建回调。
@@ -153,9 +156,9 @@ export function useMessageScroll(params: Params): MessageScroll {
 
   // 前面插入了旧消息：找到原来第一条可见行的新下标，先按估算位置跳过去；之后新行陆续被测量，
   // 每帧按 DOM 实测位置校正，直到它连续几帧都停在原来的高度。
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 只在第一行的 key 变化时恢复
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 行数或第一行变化时恢复
   useLayoutEffect(() => {
-    const anchor = anchorRef.current;
+    const anchor = anchorRef.current ?? (atBottomRef.current ? null : liveAnchorRef.current);
     const container = scrollRef.current;
     if (!anchor || !container) return;
     const index = latest.current.rows.findIndex((row) => row.key === anchor.key);
@@ -190,7 +193,7 @@ export function useMessageScroll(params: Params): MessageScroll {
       cancelAnimationFrame(handle);
       restoringRef.current = false;
     };
-  }, [firstKey]);
+  }, [firstKey, rows.length]);
 
   // 加载结束（成功插入或失败）后允许下一次触发；内容还不够一屏时继续往前加载。
   // biome-ignore lint/correctness/useExhaustiveDependencies: 这些值变化时都要重新检查是否该触发
@@ -213,7 +216,12 @@ export function useMessageScroll(params: Params): MessageScroll {
     const bottom = distanceFromBottom(container) <= NEAR_BOTTOM_PX;
     if (bottom !== atBottomRef.current || bottom) markAtBottom(bottom);
     if (requestedRef.current) captureAnchor();
-    else maybeRequestOlder();
+    else {
+      liveAnchorRef.current = bottom
+        ? null
+        : anchorFromVirtualizer(latest.current.virtualizer, container.scrollTop);
+      maybeRequestOlder();
+    }
   }, [markAtBottom, maybeRequestOlder, captureAnchor]);
 
   const jumpToLatest = useCallback(() => {

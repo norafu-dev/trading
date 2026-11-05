@@ -325,6 +325,49 @@ export function countChannels(guilds: readonly PickerGuild<PickerChannel>[]): nu
   return guilds.reduce((sum, g) => sum + g.channels.length, 0);
 }
 
+// ---- 缺口（spec 0012 AC-15） -----------------------------------------------------------
+
+export type ChannelGapSummary = components["schemas"]["GapSummaryOut"];
+
+// 「全部补上」一次最多这么多个频道，和接口的上限一致。
+export const MAX_GAP_CHANNELS = 200;
+
+const MINUTE_S = 60;
+const HOUR_S = 3600;
+const DAY_S = 86_400;
+
+/** 缺口时长的中文说明，取最大的两级单位；不到 1 分钟按秒显示。 */
+export function formatGapDuration(seconds: number): string {
+  const total = Math.max(Math.round(seconds), 0);
+  if (total < MINUTE_S) return `${total} 秒`;
+  if (total < HOUR_S) {
+    const minutes = Math.floor(total / MINUTE_S);
+    const rest = total % MINUTE_S;
+    return rest === 0 ? `${minutes} 分钟` : `${minutes} 分 ${rest} 秒`;
+  }
+  if (total < DAY_S) {
+    const hours = Math.floor(total / HOUR_S);
+    const minutes = Math.floor((total % HOUR_S) / MINUTE_S);
+    return minutes === 0 ? `${hours} 小时` : `${hours} 小时 ${minutes} 分`;
+  }
+  const days = Math.floor(total / DAY_S);
+  const hours = Math.floor((total % DAY_S) / HOUR_S);
+  return hours === 0 ? `${days} 天` : `${days} 天 ${hours} 小时`;
+}
+
+/** 频道页那一行提示：「这个频道有 N 段缺口，共 X」；没有缺口时返回 null（AC-15）。 */
+export function gapNotice(summary: ChannelGapSummary | undefined): string | null {
+  if (!summary || summary.gaps.length === 0) return null;
+  return `这个频道有 ${summary.gaps.length} 段缺口，共 ${formatGapDuration(summary.total_seconds)}`;
+}
+
+/** 补缺口的结果说明。 */
+export function describeFill(result: CreateJobsResult): string {
+  if (result.jobs.length === 0) return "没有需要补的缺口";
+  const channels = new Set(result.jobs.map((j) => j.channel_id)).size;
+  return `已为 ${channels} 个频道建了 ${result.jobs.length} 个补缺口任务`;
+}
+
 // ---- 总开关、节奏设置（spec 0012 AC-6、AC-8、AC-19） ----------------------------------
 
 export type HistoryStatus = components["schemas"]["HistoryStatusOut"];

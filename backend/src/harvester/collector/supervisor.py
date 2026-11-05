@@ -47,6 +47,7 @@ from harvester.collector.refresh import RefreshResult
 from harvester.crypto import PURPOSE_DISCORD_TOKEN, DecryptError, KeyRing, decrypt
 from harvester.db import account as accounts
 from harvester.db import channel_sync
+from harvester.db import history as history_db
 from harvester.db.account import AccountRow, LoginBudgetExhausted
 from harvester.db.coverage_plan import align_coverage, subscription_guild_ids
 from harvester.db.ingest import close_stale_coverage, ingest_message, mark_messages_deleted
@@ -249,15 +250,39 @@ async def _sync_subscriptions(deps: Deps, account: AccountRow, state: SessionSta
     return replace(state, subscribed=subscribed)
 
 
+async def _auto_fill_gaps(deps: Deps, channel_ids: frozenset[int], at: datetime) -> None:
+    """打开新的实时覆盖段之后，给紧挨在前面的短缺口建自动补采任务（spec 0012 AC-16）。
+
+    用一个单独的事务，出错只记日志：补缺口失败不能影响实时采集。
+    """
+    if not channel_ids:
+        return
+    try:
+        async with deps.factory() as session, session.begin():
+            result = await history_db.create_gap_jobs(
+                session, sorted(channel_ids), at, origin="gap_auto"
+            )
+        if result.job_ids:
+            log.info(
+                "history.auto_gap_jobs_created",
+                channels=len(channel_ids),
+                jobs=len(result.job_ids),
+            )
+    except Exception:
+        log.warning("history.auto_gap_failed", exc_info=True)
+
+
 async def _align(deps: Deps, account: AccountRow, state: SessionState) -> SessionState:
     """只在会话 online 时对齐；reconnecting 期间既不开也不关（AC-7）。"""
     if state.status != "online":
         return state
+    at = deps.clock()
     async with deps.factory() as session, session.begin():
-        alignment = await align_coverage(session, account.id, deps.clock())
+        alignment = await align_coverage(session, account.id, at)
     plan = alignment.plan
     if plan.to_open or plan.to_close:
         log.info("collector.coverage_aligned", opened=len(plan.to_open), closed=len(plan.to_close))
+    await _auto_fill_gaps(deps, plan.to_open, at)
     return await _sync_subscriptions(
         deps, account, replace(state, open_channels=alignment.open_after)
     )
@@ -282,6 +307,7 @@ async def _write_channels(
         await channel_sync.notify_channels_changed(session)
     if alignment is None:
         return state
+    await _auto_fill_gaps(deps, alignment.plan.to_open, now)
     return await _sync_subscriptions(
         deps, account, replace(state, open_channels=alignment.open_after)
     )

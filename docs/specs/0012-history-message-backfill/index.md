@@ -1,6 +1,6 @@
 # 0012. 按时间段采集历史消息
 
-**Date**: 2026-11-04
+**Date**: 2026-11-04（2026-11-05 修订：AC-14 改成按频道合并子任务，新增 AC-14a 和频道级操作）
 **Status**: In Progress
 
 ## Summary
@@ -37,7 +37,7 @@
 
 任务操作和断点
 
-- **AC-9**: 每个任务可以：暂停（`pending` 或 `running` 变成 `paused`，`running` 的在当前页提交后停）；继续（`paused` 变成 `pending`）；取消（`pending`、`running`、`paused`、`failed` 变成 `cancelled`）；重试（`failed` 变成 `pending`，从断点继续）。每个批次也可以整批暂停、继续、取消，只作用于状态符合的行。状态不符合时单个任务的操作返回 409 `invalid_transition`；整批操作返回实际改了几行。
+- **AC-9**: 每个任务可以：暂停（`pending` 或 `running` 变成 `paused`，`running` 的在当前页提交后停）；继续（`paused` 变成 `pending`）；取消（`pending`、`running`、`paused`、`failed` 变成 `cancelled`）；重试（`failed` 变成 `pending`，从断点继续）。暂停、继续、取消还有两级批量：整批（这个批次里所有行）和频道（这个批次里这个频道的所有子任务，不影响批次里其他频道）。两级批量都只作用于状态符合的行，返回实际改了几行。重试没有批量，只能在单个子任务上点（见 Follow-up）。状态不符合时单个任务的操作返回 409 `invalid_transition`；批量操作找不到行（批次不存在，或者这个批次里没有这个频道）时返回 404 `batch_not_found`。
 - **AC-10**: 小号掉线、collector 重启、被自动补缺口任务抢先、总开关暂停时，正在跑的任务回到 `pending`，断点保留，之后从断点继续，最多多抓一页（重复的消息由 `ingest_message` 去重）。被抢先发生在当前页提交之后、下一页开始之前。同一个任务连续被抢先 3 次后，下一次不再让位，跑到它自己完成、失败或被放回为止；它抓到一页之后计数清零（`preempted_count`）。
 - **AC-11**: 任务从 `pending`、`running` 或 `paused` 变成 `cancelled` 或 `failed` 时，如果已有断点，就写一段历史覆盖 `[断点消息的时间 + 1 毫秒, range_end)`，在改状态的同一个事务里写；不做删除对账。加 1 毫秒是因为和断点同一毫秒、ID 更小的消息还没抓到。从 `failed` 变成 `cancelled` 不再写（失败时已经写过）。暂停不写覆盖。`suspect_empty` 失败时不写。
 
@@ -62,7 +62,8 @@
 
 进度
 
-- **AC-14**: 历史页按批次分组显示任务。每行显示：频道（服务器名加频道名，点进去打开 `/channels?id=<频道 ID>`）、时间段、来源（手动、一键补缺口、自动补缺口）、是否整段重抓、状态、进度百分比、已抓条数、当前抓到的时间、等待原因和预计继续时间、失败原因。进度是 `(range_end − 断点消息的时间) / (range_end − range_start)`，没有断点时是 0，`done` 时是 100%。批次标题显示频道数、总条数和各状态的数量，这些合计由接口按整个批次算好返回，不靠页面上已加载的行。「进行中」显示所有未结束的任务和失败的任务；「已结束」默认显示最近 7 天结束的任务，分页加载，可以切换到全部（最多到 30 天的保留期）。任务状态或进度变化后 2 秒内页面更新（SSE 事件 `history_changed`，加 30 秒轮询兜底）。
+- **AC-14**: 历史页按批次分组显示任务，批次里按频道合并。一个频道在这个批次里被拆成两段以上时，只显示一个「频道行」：频道（服务器名加频道名，点进去打开 `/channels?id=<频道 ID>`）、最早一段的起点到最晚一段的终点、来源（手动、一键补缺口、自动补缺口）、是否整段重抓、合并状态、合并进度条和百分比、已抓条数合计、当前抓到的时间、等待原因和预计继续时间、失败段数和原因。合并状态按「最需要你注意」取第一个存在的：失败 > 抓取中 > 已暂停 > 排队中 > 已取消 > 已完成。合并进度按每一段的时间长度加权，`Σ(段长 × 段进度) / Σ(段长)`，所以几秒的小段不会明显拉低总进度。已抓条数是各段之和；当前抓到的时间和等待原因取正在抓的那一段，没有在抓的段时为空；失败原因取第一个失败段的，和失败段数一起显示（「N 段失败：原因」），并且进度条用错误色。频道行行尾有「共 N 段，展开」，展开后按时间从早到晚列出每一段的时间、状态、进度、已抓条数和失败原因，以及这一段自己的操作按钮（含重试）；有失败段时默认展开，其余默认折叠（展开只是页面上的状态，重新加载后回到默认）。
+- **AC-14a**: 一个频道在这个批次里只有一段时不合并，直接显示这一段的任务行，没有展开控件。单段的进度是 `(range_end − 断点消息的时间) / (range_end − range_start)`，没有断点时是 0，`done` 时是 100%。批次标题显示频道数、总条数和各状态的段数（按子任务算，不按频道），这些合计由接口按整个批次算好返回，不靠页面上已加载的行。「进行中」显示所有未结束的任务和失败的任务；「已结束」默认显示最近 7 天结束的任务，分页加载，可以切换到全部（最多到 30 天的保留期），同样按频道合并，但不显示任何操作按钮。任务状态或进度变化后 2 秒内页面更新（SSE 事件 `history_changed`，加 30 秒轮询兜底）。
 
 缺口
 
@@ -88,7 +89,7 @@
 
 **Chosen option**: Option 1：collector 里的历史任务循环，任务表按连续时间段拆行
 
-在 collector 里加一个和附件下载任务并列的历史任务循环，用当前已登录的网关会话发请求；任务表每行是一个频道的一段连续时间，建任务时就用 PostgreSQL 的多段范围运算扣掉已覆盖和已排队的部分；节奏、限额和总开关存在一张单行设置表里，设置页可改。
+在 collector 里加一个和附件下载任务并列的历史任务循环，用当前已登录的网关会话发请求；任务表每行是一个频道的一段连续时间，建任务时就用 PostgreSQL 的多段范围运算扣掉已覆盖和已排队的部分；节奏、限额和总开关存在一张单行设置表里，设置页可改。存储按段拆行，但页面按频道合并显示：一个频道的几段只占一行、一个加权进度条，段落折叠起来，暂停、继续、取消也按频道一次完成（2026-11-05 修订 AC-14，合并只发生在读取时，服务端仍然只认「段」）。
 
 **Implementation skills**: `fastapi` (`fastapi/fastapi`, `.claude/skills/fastapi/`) · `postgresql-table-design` (`wshobson/agents`, `.claude/skills/postgresql-table-design/`) · `tanstack-query` (`tanstack-skills/tanstack-skills`, `.claude/skills/tanstack-query/`) · `shadcn` (`shadcn-ui/ui`, `.claude/skills/shadcn/`) · `python-testing-patterns` (`wshobson/agents`, `.claude/skills/python-testing-patterns/`) · `vitest` (`antfu/skills`, `.claude/skills/vitest/`)
 
@@ -107,7 +108,7 @@ Reasoning and options: see [rationale.md](rationale.md).
 - `backend/src/harvester/collector/discord_client.py`：新增带类型的边界函数 `fetch_history_page(client, channel_id, before_id) -> HistoryPage`。先用 `client.get_channel`，缓存里没有（比如已归档的线程）再 `fetch_channel` 一次；然后 `channel.history(limit=100, before=discord.Object(before_id), oldest_first=False)`，每条用现有的 `snapshot_message` 转成 `MessageSnapshot`。`HistoryPage` 是判别联合：`Fetched(messages, request_count, returned_ids, raw_count)`、`RateLimited(retry_after)`、`Forbidden`、`NotFound`、`Unavailable(reason)`、`AccountRisk(reason)`、`Unexpected(error_type)`，按 AC-12 的表从异常换过来，边界之外不出现库的异常类型。已核对：`limit=100` 且给了 `before` 时，库走 `_before_strategy`，一页只调用一次 `logs_from`。`GatewaySession` 协议扩出 `fetch_history_page(channel_id, before_id)`。
 - `backend/src/harvester/collector/supervisor.py`：`_align` 的对齐事务提交之后，`plan.to_open` 不为空时开一个新事务调用 `create_gap_jobs(session, plan.to_open, at, origin='gap_auto')`（AC-16），外面包 `except Exception` 只记 `history.auto_gap_failed` 警告。`Deps` 新增 `history_wake: asyncio.Event`，由 `history_changed` 的 NOTIFY 和 30 秒轮询设上。
 - `backend/src/harvester/api/history_routes.py`：下面的接口；`api/notifications.py` 的映射加上 `history_changed`；`api/system_routes.py` 的系统状态加 `history`。
-- 前端：`web/src/app/(dashboard)/history/page.tsx`、`web/src/app/(dashboard)/settings/history/page.tsx`；`web/src/components/history/`（任务列表、批次、新建任务对话框、时间段选择、缺口列表、总开关条）；`web/src/components/shell/` 图标栏新增入口和红点；`web/src/components/channels/` 频道页的缺口提示和两个按钮；`web/src/app/(dashboard)/system-status.tsx` 新增一行；接口调用放 `web/src/lib/api/`。
+- 前端：`web/src/app/(dashboard)/history/page.tsx`、`web/src/app/(dashboard)/settings/history/page.tsx`；`web/src/components/history/`（任务列表、批次、频道行和折叠的子任务、新建任务对话框、时间段选择、缺口列表、总开关条；纯函数都在 `describe-history.ts`，含 `groupByBatch`、`groupByChannel` 和各种标签，单独测）；`web/src/components/shell/` 图标栏新增入口和红点；`web/src/components/channels/` 频道页的缺口提示和两个按钮；`web/src/app/(dashboard)/system-status.tsx` 新增一行；接口调用放 `web/src/lib/api/`。
 
 ### 数据模型
 
@@ -193,7 +194,7 @@ Reasoning and options: see [rationale.md](rationale.md).
 - `done`、`cancelled` 是终态。
 - 进入 `running`：写 `account_id`、第一次时写 `started_at`。离开 `running`：清空 `wait_reason`、`wait_until`。
 - 进入 `done`、`failed`、`cancelled`：写 `finished_at`；`failed` 写 `error`。`failed → pending`：清空 `error`、`finished_at`，断点保留。
-- **并发规则**：api 改任务状态（暂停、继续、取消、重试，单个和整批）时都先 `SELECT ... FOR UPDATE` 锁住要改的行（整批按 `id` 排序加锁），和 collector 的写入互相串行。collector 对任务行的每一次写入（`commit_page` 之外的 `set_job_wait`、`release_job`、`fail_job`、`finish_job`）都带 `WHERE id = :id AND status = 'running'`，并检查影响行数：是 0 行说明 api 刚改过状态，collector 不再碰这一行，放下任务回到第 1 步。所以 collector 永远不会把你取消或暂停的任务改回去。
+- **并发规则**：api 改任务状态（暂停、继续、取消、重试，单个、整批和按频道）时都先 `SELECT ... FOR UPDATE` 锁住要改的行（整批和按频道都按 `id` 排序加锁），和 collector 的写入互相串行。collector 对任务行的每一次写入（`commit_page` 之外的 `set_job_wait`、`release_job`、`fail_job`、`finish_job`）都带 `WHERE id = :id AND status = 'running'`，并检查影响行数：是 0 行说明 api 刚改过状态，collector 不再碰这一行，放下任务回到第 1 步。所以 collector 永远不会把你取消或暂停的任务改回去。
 - `commit_page` 锁住任务行后看状态：不是 `done`、`failed`、`cancelled` 时（包括你刚暂停或暂停后又继续成 `pending` 的情况），照常写消息并更新断点和计数；是 `cancelled` 或 `failed` 时，消息照样写（都是真实数据，丢掉反而要重抓），但不动这一行，也不写覆盖段。是 `done` 不会发生（只有 collector 自己写 `done`）。
 - collector 启动时（`_startup`）调用 `reset_running_on_start`：把所有 `running` 改回 `pending`，清空等待字段，清空 `collector_heartbeat` 的两个等待列（spec 0002 原来写的是「自己账号下的」，现在只有一个 collector，全部改回）。
 
@@ -232,6 +233,7 @@ Reasoning and options: see [rationale.md](rationale.md).
 | `/api/history/jobs` | POST | `channel_ids`：str 列表（1 到 50）；`range_start`：带时区的时间或 `null`（`null` 表示全部历史）；`range_end`：带时区的时间或 `null`（`null` 表示现在）；`refetch`：bool（默认 false） | `CreateJobsOut`：`batch_id`（没建行时为空）、`jobs`、`skipped`（`channel_id`、`reason`） | 会话加 Origin | 422 `invalid_range`（起点不早于终点，或时间没带时区）、`too_many_channels` |
 | `/api/history/jobs/{job_id}/{action}` | POST | `action`：`pause`、`resume`、`cancel`、`retry` | `HistoryJobOut` | 会话加 Origin | 404 `job_not_found`；409 `invalid_transition` |
 | `/api/history/batches/{batch_id}/{action}` | POST | `action`：`pause`、`resume`、`cancel` | `{ "changed": int }` | 会话加 Origin | 404 `batch_not_found` |
+| `/api/history/batches/{batch_id}/channels/{channel_id}/{action}` | POST | `action`：`pause`、`resume`、`cancel`；`channel_id`：路径里的频道 ID（1 到 19 位数字） | `{ "changed": int }` | 会话加 Origin | 404 `batch_not_found`（批次不存在，或者这个批次里没有这个频道，含超出 bigint 的 ID）；422 ID 格式不对 |
 | `/api/history/gaps` | GET | `channel_id`：str（查询，可选；不给就返回所有有缺口的频道） | `GapSummaryOut` 列表：`channel_id`、`guild_name`、`channel_name`、`gaps`（`start`、`end`）、`total_seconds` | 会话 | 401 |
 | `/api/history/gaps/fill` | POST | `channel_ids`：str 列表（1 到 200） | `CreateJobsOut` | 会话加 Origin | 422 |
 | `/api/history/control` | POST | `paused`：bool | `HistoryStatusOut` | 会话加 Origin | 401 |
@@ -243,6 +245,7 @@ Reasoning and options: see [rationale.md](rationale.md).
 - 所有 ID 在 JSON 里都是字符串（同 spec 0008，避免浏览器丢精度）。
 - `HistoryJobOut`：`id`、`batch_id`、`channel_id`、`guild_name`、`channel_name`、`origin`、`refetch`、`range_start`、`range_end`、`status`、`fetched_count`、`pages_fetched`、`cursor_at`、`progress`、`wait_reason`、`wait_until`、`not_before`、`error`、`created_at`、`started_at`、`finished_at`。
 - `HistoryBatchOut`（`batches` 里每个批次一项，覆盖这一页 `jobs` 里出现的所有 `batch_id`）：`batch_id`、`channel_count`、`fetched_count`（整个批次的合计）、`status_counts`（六个状态各一个整数），都按整个批次在数据库里算，不受分页影响（AC-14）。
+- 频道级操作和整批操作是同一段代码（`transition_batch` 多一个可选的 `channel_id` 过滤）：先判断范围内有没有行，没有就 404；有就按 `id` 排序锁住状态符合的行再改，返回改了几行。范围里不含状态不符合的行，所以频道级暂停不会影响同一个频道里已经完成的段，也不会碰到批次里其他频道（AC-9、AC-14）。
 - `active` 返回所有 `pending`、`running`、`paused`、`failed` 的行（`failed` 留在这里，等你重试或取消），按 `batch_id` 再按 `id` 排序，不分页（同时未结束的行数受建任务的上限约束，实际很少）；`finished` 返回 `since_days` 天内结束的 `done` 和 `cancelled`，按 `finished_at` 倒序分页。
 - `HistoryStatusOut`：`paused_reason`、`paused_at`、`waiting_reason`、`waiting_until`（`collector_heartbeat` 的两个等待列，已过期按空返回）、`pages_used_24h`、`daily_page_limit`、`quota_resumes_at`（用量达到上限时按 `quota_resumes_at(buckets, limit)` 算；否则为空）、`last_seen_at`（`history_worker_seen_at`）、`stale`（进程心跳正常而 `last_seen_at` 为空或超过 180 秒）、`gap_channel_count`。
 - `HistorySettingsOut`：六个数值，加 `pages_used_24h`。
@@ -252,7 +255,11 @@ Reasoning and options: see [rationale.md](rationale.md).
 ### 前端
 
 - 图标栏新增「历史采集」入口（`/history`），`history.paused_reason = 'rate_limited'` 时显示红点。
-- `/history` 页从上到下：状态条（总开关、暂停原因、24 小时用量和上限、额度用完时的预计继续时间、无响应提示）；「新建任务」按钮；「进行中」按批次分组的任务列表（每行有进度条和操作按钮，批次标题有整批操作）；「缺口」列表（有缺口的频道、段数、总时长、「补缺口」，标题上「全部补上」）；「已结束」列表（分页加载）。
+- `/history` 页从上到下：状态条（总开关、暂停原因、24 小时用量和上限、额度用完时的预计继续时间、无响应提示）；「新建任务」按钮；「进行中」按批次分组的任务列表（批次标题有合计和整批操作，批次里按频道合并成频道行或单段任务行）；「缺口」列表（有缺口的频道、段数、总时长、「补缺口」，标题上「全部补上」）；「已结束」列表（分页加载，同样的分组和合并，不显示操作按钮）。
+- 合并是纯前端的：接口仍然按子任务返回行，页面用一个纯函数（`groupByChannel`）把一个批次里的行按 `channel_id` 分组、按 `range_start` 从早到晚排序，并算出合并状态、加权进度、条数合计、展示用的时间段、各状态段数、第一个失败原因、正在抓那一段的等待信息和断点（AC-14）。频道按第一次出现的顺序排。
+- 频道行有一个进度条（`role="progressbar"`，`aria-label` 是「#频道名 进度」，`aria-valuenow` 是整数百分比，失败时用错误色），操作按钮的 `aria-label` 带频道名（「暂停：#频道名」），展开按钮用 `aria-expanded` 和 `aria-controls` 指向子任务列表。失败提示用 `role="alert"`。
+- 展开状态按频道存在组件里，SSE 或轮询带来的重新取数不会把它收起来；整页重新加载后回到默认（有失败段时展开）。
+- 只有一段的频道走原来的单任务行，外观和操作都不变（AC-14a）。
 - 新建任务对话框：频道多选（按服务器分组、可搜索，数据来自现有的频道列表接口，只列 AC-1 允许的频道），时间段快捷项和两个本地时间输入，「整段重抓」勾选框，提交后显示建了几个任务、哪些频道被跳过和原因。
 - 频道页：缺口提示一行和「补缺口」按钮；「抓这个频道的历史」按钮；收到当前频道的 `history_changed` 时，5 秒合并一次，重新取已加载的范围，沿用 spec 0003 的「加载更早不跳动」锚点逻辑保持当前位置。
 - `/settings/history`：六个数字输入和保存按钮、24 小时用量。
@@ -291,6 +298,15 @@ Reasoning and options: see [rationale.md](rationale.md).
 | 覆盖段 | 取消或失败时的范围 | `[snowflake_time(cursor_message_id) + 1 毫秒, range_end)` |
 | 进度 | `cursor_at` | `snowflake_time(cursor_message_id)` |
 | 进度 | `progress` | `(range_end − cursor_at) / (range_end − range_start)`；没有断点为 0，`done` 为 1 |
+| 频道行 | 合并状态 | 这个频道各状态的段数，按 失败 > 抓取中 > 已暂停 > 排队中 > 已取消 > 已完成 取第一个不为 0 的 |
+| 频道行 | 合并进度 | `Σ((range_end − range_start) × progress) / Σ(range_end − range_start)`，各段的两个端点和 `progress` 都来自接口返回的行；总长为 0 时取 0 |
+| 频道行 | 显示的时间段 | 最早一段的 `range_start` 到最晚一段的 `range_end`（中间已经采齐的时间没有行，所以这是个外包围的区间） |
+| 频道行 | 已抓条数 | 各段 `fetched_count` 之和 |
+| 频道行 | 来源、是否整段重抓 | 第一段的 `origin`、`refetch`（同一个批次同一个频道的各段必然相同） |
+| 频道行 | 失败段数和原因 | 失败的段数，加第一个 `failed` 子任务的 `error` |
+| 频道行 | 抓到哪里、等待原因和预计继续时间 | `running` 那一段的 `cursor_at`、`wait_reason`、`wait_until`；没有在抓的段时为空 |
+| 频道行 | 默认是否展开 | 失败段数大于 0 |
+| 频道行 | 能点哪些操作 | 各状态段数：有排队中或抓取中 → 暂停；有已暂停 → 继续；有排队中、抓取中、已暂停或失败 → 取消 |
 | 缺口 | 缺口段 | AC-15 的 `range_agg` 运算，开放段算到数据库 `now()` |
 | 自动补 | 时长上限 | `history_settings.auto_gap_max_hours` |
 | 自动补 | 新实时段起点 | `align_coverage` 用的 `at`（spec 0006） |
@@ -313,6 +329,9 @@ Reasoning and options: see [rationale.md](rationale.md).
 - 总开关暂停时不发出任何历史请求。
 - 空的第一页而库里区间内有消息时，不写覆盖段也不对账。
 - 同一段失败或取消只写一次部分覆盖段。
+- 同一个批次同一个频道的所有子任务，`origin` 和 `refetch` 相同（都由同一次提交产生），所以频道行可以取第一段的值显示。
+- 按频道合并只发生在页面上：接口按子任务返回行和按批次算好的合计，服务端没有「频道行」这个概念，合并逻辑是一个纯函数，可以单独测。
+- 频道级操作只改这个批次里这个频道的行，批次里其他频道的状态不变。
 - `history_job` 只有清理会删除，只删结束 30 天以上的行（这是 spec 0002「只允许删除空覆盖段」之外新增的例外）。
 
 ### Security model
@@ -344,26 +363,29 @@ Reasoning and options: see [rationale.md](rationale.md).
 - 并发：api 在 collector 写入之前取消 `running` 的任务，collector 随后的 `set_job_wait`、`release_job`、`fail_job` 影响 0 行，状态仍是 `cancelled`；`commit_page` 在 `cancelled` 时写了消息但没改断点，verifies **AC-9**
 - 掉线和重启：会话句柄清空后任务回到 `pending`；`reset_running_on_start` 把 `running` 改回 `pending`，verifies **AC-10**
 - 状态操作：每个合法转换成功，非法的返回 409；暂停 `running` 的任务时正在提交的那一页仍然写入、断点更新，之后不再请求；整批操作只改符合的行，verifies **AC-9**
+- 频道级操作：一个批次里有两个频道各两段，对其中一个频道暂停只改它的两段（`changed = 2`），另一个频道不变；已经 `done` 的段不算在内；批次里没有这个频道、批次本身不存在、频道 ID 超出 bigint 都返回 404 `batch_not_found`，verifies **AC-9**
 - 半途结束：取消一个有断点的任务写入 `[断点时间 + 1 毫秒, range_end)`；没有断点时不写；失败同理；失败后再取消不再写第二段；都不对账，verifies **AC-11**
 - 失败：403 和 404 分别变成 `no_access`、`channel_deleted`，频道状态不变，等一个页间隔后下一个任务继续；5xx 和 `requests.RequestsError` 变成 `retrying` 并退避，成功后清零，连续 5 次后放回 `pending` 并带 `not_before`，期间先跑别的任务；数据库瞬时错误重发同一页不失败，verifies **AC-12**
 - 对账：整段重抓的一页返回 ID 为 10、8、7 的消息，库里同一区间还有未删除的 9，9 被标成 `reconciled`；区间外的消息不动；不勾整段重抓时不标，verifies **AC-13**
 - 缺口：覆盖 `[1点, 3点)`、`[5点, ∞)` 的频道，缺口是 `[3点, 5点)`；只有一段开放覆盖的频道没有缺口；已删除或不可读的频道不列出；对齐打开新段后，紧挨着的 2 小时缺口和 5 秒缺口都自动建 `gap_auto`，10 小时的不建，`auto_gap_max_hours = 0` 时都不建；`create_gap_jobs` 抛异常时实时覆盖段照常打开，verifies **AC-15**、**AC-16**
-- 建任务细节：重复的频道 ID 只建一次；不存在的 ID 记 `not_found`；起点早于频道创建时间时被截断；不带时区的时间返回 422；批次合计在分页之后仍是整个批次的数，verifies **AC-2**、**AC-14**
-- 进度：`range` 是 10 小时、断点在终点前 4 小时，`progress = 0.4`，verifies **AC-14**
+- 建任务细节：重复的频道 ID 只建一次；不存在的 ID 记 `not_found`；起点早于频道创建时间时被截断；不带时区的时间返回 422；批次合计在分页之后仍是整个批次的数，verifies **AC-2**、**AC-14a**
+- 进度：`range` 是 10 小时、断点在终点前 4 小时，`progress = 0.4`，verifies **AC-14a**
+- 按频道合并（纯函数）：一个批次里同一个频道的 3 段（一段 7 天 `progress = 0`、一段 10 秒 `done`、一段 1 天 `progress = 0.5`）合并后进度按时间加权（小段几乎不影响），已抓条数是三段之和，时间段是最早起点到最晚终点，段按时间从早到晚排；状态优先级逐个验证（有失败段时合并状态是失败、默认展开、进度条用错误色、显示失败段数和第一个原因）；等待信息和断点只来自 `running` 那一段；只有一段时返回的组不走频道行；能点的操作按各状态段数算，verifies **AC-14**、**AC-14a**
 - 设置：超出范围的值返回 422 不保存；最短间隔大于最长间隔返回 422；保存后 collector 下一页就用新值，verifies **AC-19**
 - 清理：31 天前结束的任务被删除，29 天前的保留，未结束的不论多旧都保留；49 小时前的限额行被删除，verifies **AC-21**
 - 鉴权：未登录访问每个新接口返回 401；写接口缺少或不匹配 Origin 时被拒绝，verifies **AC-22**
-- 前端：新建任务对话框的快捷项按本地时区算出正确的起止时间；任务行渲染各状态、进度和等待原因；频道页收到 `history_changed` 后合并取数且不跳动；红点和 `aria-label`，verifies **AC-1**、**AC-7**、**AC-14**、**AC-17**、**AC-18**、**AC-20**
+- 前端：新建任务对话框的快捷项按本地时区算出正确的起止时间；任务行渲染各状态、进度和等待原因；多段频道渲染成一个频道行加「共 N 段，展开」，展开后出现每一段和它的操作按钮，有失败段时初次渲染就是展开的；点频道行的暂停只发一次频道级请求；已结束列表里的频道行没有操作按钮；频道页收到 `history_changed` 后合并取数且不跳动；红点和 `aria-label`，verifies **AC-1**、**AC-7**、**AC-9**、**AC-14**、**AC-14a**、**AC-17**、**AC-18**、**AC-20**
 
 ## Build plan
 
 按 Tracer Bullet：先打通「建任务 → collector 抓 → 入库 → 页面看到进度和消息」这条细线，再逐段加粗节奏和安全、操作和失败、缺口。
 
-1. 打通细线：一次迁移建 `history_job`、`history_settings`（插入默认行）、`history_page_hour`，给 `collector_heartbeat` 加 `history_worker_seen_at`；`history_ranges.py` 的 `snowflake_floor` 和 `progress`；`create_jobs`（含多段范围扣减和频道行锁）、`claim_next_job`、`commit_page`、`finish_job`；`fetch_history_page` 边界函数和 `GatewaySession` 协议扩展；`history_worker` 只做领取、按固定间隔抓页、到底 `done` 并写覆盖段；`history_changed` 通知和 SSE 映射；`GET`、`POST /api/history/jobs`；最小的 `/history` 页（新建任务对话框和进行中列表）和图标栏入口，satisfies **AC-1**、**AC-2**、**AC-3**、**AC-3a**、**AC-4**、**AC-14**、**AC-22**
+1. 打通细线：一次迁移建 `history_job`、`history_settings`（插入默认行）、`history_page_hour`，给 `collector_heartbeat` 加 `history_worker_seen_at`；`history_ranges.py` 的 `snowflake_floor` 和 `progress`；`create_jobs`（含多段范围扣减和频道行锁）、`claim_next_job`、`commit_page`、`finish_job`；`fetch_history_page` 边界函数和 `GatewaySession` 协议扩展；`history_worker` 只做领取、按固定间隔抓页、到底 `done` 并写覆盖段；`history_changed` 通知和 SSE 映射；`GET`、`POST /api/history/jobs`；最小的 `/history` 页（新建任务对话框和进行中列表，每段一行）和图标栏入口，satisfies **AC-1**、**AC-2**、**AC-3**、**AC-3a**、**AC-4**、**AC-14a**、**AC-22**
 2. 节奏和安全：`next_wait`、`quota_resumes_at` 纯函数和随机间隔、休息、滚动限额，休息和等限额时放回任务；`RateLimitLog`、`discord.http` 日志钩子和启动自检；总开关、`POST /api/history/control`、限速和账号风险两种自动暂停；抢先、掉线和重启时的 `release_job`、`reset_running_on_start`；`set_job_wait` 和等待原因显示；历史任务心跳；`/settings/history` 和两个设置接口；系统状态新增 `history` 和首页一行、图标栏红点，satisfies **AC-5**、**AC-6**、**AC-7**、**AC-8**、**AC-10**、**AC-19**、**AC-20**
-3. 操作和失败：单个和整批的暂停、继续、取消、重试接口和按钮；collector 写入的状态条件；取消和失败时写部分覆盖段；AC-12 的异常映射表、重试上限和 `not_before`；数据库瞬时错误重发；整段重抓的逐页对账；`finished` 列表分页；清理循环，satisfies **AC-9**、**AC-11**、**AC-12**、**AC-13**、**AC-14**、**AC-21**
+3. 操作和失败：单个和整批的暂停、继续、取消、重试接口和按钮；collector 写入的状态条件；取消和失败时写部分覆盖段；AC-12 的异常映射表、重试上限和 `not_before`；数据库瞬时错误重发；整段重抓的逐页对账；`finished` 列表分页；清理循环，satisfies **AC-9**、**AC-11**、**AC-12**、**AC-13**、**AC-14a**、**AC-21**
+3a. 按频道合并显示：`groupByChannel` 纯函数（合并状态、加权进度、条数、时间段、各状态段数、失败和等待信息）；频道行、折叠的子任务列表和无障碍属性；`transition_batch` 加可选的 `channel_id` 和 `POST /api/history/batches/{batch_id}/channels/{channel_id}/{action}`；前端的频道级操作；已结束列表沿用同一套渲染但不显示操作，satisfies **AC-9**、**AC-14**
 4. 缺口：`channel_gaps`、`gap_summary`、`create_gap_jobs`；`GET /api/history/gaps`、`POST /api/history/gaps/fill`；`_align` 提交后用单独事务自动建 `gap_auto`；频道页的缺口提示、「补缺口」和「抓这个频道的历史」按钮；频道页收到 `history_changed` 后合并重取，satisfies **AC-15**、**AC-16**、**AC-17**、**AC-18**
-5. 测试和收口：上面 Critical test scenarios 里的后端集成测试（连真实 PostgreSQL，假的网关会话和假时钟）、前端渲染测试；OpenAPI 导出和 `pnpm gen:api` 同步；更新 spec 0002 里被这个 spec 改动的三处（见 Follow-up）；各项检查，satisfies **AC-1** 到 **AC-22**
+5. 测试和收口：上面 Critical test scenarios 里的后端集成测试（连真实 PostgreSQL，假的网关会话和假时钟）、前端渲染测试和合并函数的单元测试；OpenAPI 导出和 `pnpm gen:api` 同步；更新 spec 0002 里被这个 spec 改动的三处（见 Follow-up）；各项检查，satisfies **AC-1** 到 **AC-22**
 
 ## Consequences
 
@@ -372,6 +394,7 @@ Reasoning and options: see [rationale.md](rationale.md).
 - 补采完全走现有的 `ingest_message`，去重、编辑留痕和附件下载不用写第二套。
 - 每行是一段连续时间，断点、进度、部分覆盖都只有一个数字要管，重启和抢先都很简单。
 - 节奏、限额和总开关集中在一处，可以在设置页随时调，不用重启。
+- 一个频道不管被拆成多少段，页面上只有一行和一个总进度，所以「拆行」这个存储上的选择不再变成界面上的噪音；一次提交 50 个频道也看得过来。暂停、继续、取消按你实际想的粒度（这个频道）一次完成，不用逐段点。
 
 **Negative / tradeoffs**:
 - 按默认值，一天最多大约 15 万条，「全部历史」对大频道可能要跑好几天到几周。这是为了降低封号风险主动接受的。
@@ -383,15 +406,21 @@ Reasoning and options: see [rationale.md](rationale.md).
 - 「整段重抓」对一大段已覆盖的时间会重复发很多请求，所以默认不勾。
 - 频道页收到补采通知时会重新取已加载的范围，大任务进行中看那个频道会多一些查询（5 秒最多一次）。
 - 自己关掉开关的那段时间也算缺口（你选的定义），所以关过再开的频道会显示一段可能很长的缺口；超过 6 小时不会自动补。
+- 合并在前端做，所以它只看已经加载的行。「进行中」不分页，合并是完整的；「已结束」按结束时间分页，同一个频道的几段可能落在不同页，没点「加载更多」之前那个频道行的段数和进度只覆盖已加载的部分。
+- 批次标题的各状态数量按段算，频道行的状态按优先级取一个，两处的数字看起来会不一致（一个频道 3 段里 1 段失败时，标题是「失败 1 · 已完成 2」，频道行只显示失败）。这是有意的：标题回答「这批还剩多少」，频道行回答「这个频道现在要不要我管」。
+- 重试没有频道级和整批级，一个频道很多段同时失败（比如权限被收回）时要展开逐段点（见 Follow-up）。
+- 展开状态只存在页面上，整页刷新后回到默认（有失败段才展开）。
 
 **Neutral**:
 - `history_job` 成了第一张会被定期删除的业务表，spec 0002 的「不删除」不变量要加一个例外。
 - spec 0002 的删除对账规则从「只在 `done` 时」改成「整段重抓任务的每一个完整页」。
 - 历史任务心跳和附件任务心跳一样挂在 `collector_heartbeat` 上。
+- 频道行和单段任务行是两套渲染，样式和无障碍属性要同时维护；两者共用状态标签、进度百分比和操作按钮这些小组件。
 
 ## Follow-up
 
 - [ ] 更新 spec 0002：`history_job` 的字段按本 spec；删除对账规则改成本 spec 的 AC-13；「不删除」不变量加上「结束 30 天以上的 `history_job`」；`history_job.status` 的转换以本 spec 为准。
+- [ ] 频道级和整批的「重试全部失败段」还没有：现在只能展开后逐段点。等真的遇到一个频道很多段同时失败（权限被收回、`suspect_empty`）再加，后端是把 `retry` 也放进批量操作的状态表，前端在频道行和批次标题各加一个按钮。
 - [ ] 升级 `discord.py-self` 时检查 `discord/http.py` 里限速警告的措辞是否变化，`ratelimit_watch.py` 的匹配要跟着改；加一个测试直接断言当前版本的措辞。
 - [ ] 上线一段时间后看一下 Lightsail 的 CPU 积分（spec 0001、0009 的提醒）：补采会持续写库。
 - [ ] 上线后跑一个真实的小任务（比如一个频道最近 24 小时），确认边界函数对真实的 Discord 返回（尤其是没有「读取消息历史」权限的频道返回空列表）的处理和 spec 一致。一页一次调用已经对照库源码核实过。

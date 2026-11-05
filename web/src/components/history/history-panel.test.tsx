@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { jsonResponse, renderWithQuery } from "@/components/auth/test-utils";
 
-import type { HistoryJob, HistoryJobPage } from "./describe-history";
+import type { ChannelGapSummary, HistoryJob, HistoryJobPage } from "./describe-history";
 import { HistoryPanel } from "./history-panel";
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
@@ -120,6 +120,7 @@ function serve(
   page: HistoryJobPage,
   channels: typeof CHANNELS = CHANNELS,
   finished: readonly HistoryJobPage[] = [NO_JOBS],
+  gaps: readonly ChannelGapSummary[] = [],
 ) {
   const finishedCalls: Array<Record<string, unknown>> = [];
   get.mockImplementation(
@@ -132,6 +133,8 @@ function serve(
       }
       if (path === "/api/history/jobs")
         return Promise.resolve({ data: page, ...jsonResponse(200) });
+      if (path === "/api/history/gaps")
+        return Promise.resolve({ data: gaps, ...jsonResponse(200) });
       if (path === "/api/discord/guilds")
         return Promise.resolve({ data: GUILDS, ...jsonResponse(200) });
       return Promise.resolve({ data: channels, ...jsonResponse(200) });

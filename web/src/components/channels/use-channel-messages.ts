@@ -25,6 +25,8 @@ const PAGE_SIZE = 50;
 const MAX_IDS_PER_REQUEST = 100;
 // 通知丢了、LISTEN 断了或者订阅者队列溢出时，靠这个轮询补上（AC-19）。
 const RECONCILE_INTERVAL_MS = 30_000;
+// 补采每抓一页就发一次通知，合并成 5 秒一次重新取数（spec 0012 AC-17）。
+const HISTORY_COALESCE_MS = 5_000;
 
 type Query = Readonly<{ before?: string; after?: string; ids?: string; limit?: number }>;
 
@@ -42,6 +44,8 @@ type Pending = {
   fetchNew: boolean;
   reconcile: boolean;
   older: boolean;
+  /** 补采写进来了：重新取已加载的范围，新消息插到正确位置（spec 0012 AC-17）。 */
+  refreshLoaded: boolean;
   changed: Set<string>;
 };
 
@@ -49,6 +53,7 @@ const noPending = (): Pending => ({
   fetchNew: false,
   reconcile: false,
   older: false,
+  refreshLoaded: false,
   changed: new Set(),
 });
 
@@ -165,11 +170,20 @@ export function useChannelMessages(channelId: string): ChannelMessages {
         const work = pending.current;
         pending.current = noPending();
         const changed = [...work.changed];
-        if (!work.fetchNew && !work.reconcile && !work.older && changed.length === 0) break;
+        if (
+          !work.fetchNew &&
+          !work.reconcile &&
+          !work.older &&
+          !work.refreshLoaded &&
+          changed.length === 0
+        )
+          break;
         try {
           if (work.reconcile) await reconcile();
           if (work.fetchNew) await fetchNew();
           if (changed.length > 0) await fetchChanged(changed);
+          // 已加载的每一页都按原来的位置重新取，补进来的旧消息就会出现在该在的地方。
+          if (work.refreshLoaded) await latestQuery.current.refetch();
           if (work.older) await latestQuery.current.fetchNextPage();
         } catch {
           // 增量失败不打扰你：下一次轮询或重连会补上。
@@ -180,11 +194,32 @@ export function useChannelMessages(channelId: string): ChannelMessages {
     }
   }, [fetchChanged, fetchNew, read, reconcile]);
 
+  // 补采通知很密（每页一次），先攒 5 秒再重新取一次（AC-17）。
+  const historyTimer = useRef<number | null>(null);
+  const scheduleHistoryRefresh = useCallback(() => {
+    if (historyTimer.current !== null) return;
+    historyTimer.current = window.setTimeout(() => {
+      historyTimer.current = null;
+      pending.current.refreshLoaded = true;
+      void drain();
+    }, HISTORY_COALESCE_MS);
+  }, [drain]);
+
+  useEffect(
+    () => () => {
+      if (historyTimer.current !== null) window.clearTimeout(historyTimer.current);
+    },
+    [],
+  );
+
   useMessageEvents((event) => {
     if (event.type === "reconnected") pending.current.reconcile = true;
     else if (event.channel_id !== channelId) return;
     else if (event.type === "new_message") pending.current.fetchNew = true;
-    else for (const id of event.message_ids) pending.current.changed.add(id);
+    else if (event.type === "history_changed") {
+      scheduleHistoryRefresh();
+      return;
+    } else for (const id of event.message_ids) pending.current.changed.add(id);
     void drain();
   });
 

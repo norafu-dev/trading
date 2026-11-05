@@ -190,14 +190,14 @@ spec [0010](../specs/0010-database-unread-counts.md) · code in `backend/src/har
 
 选频道和起止时间，后台把这段时间的消息抓回来，和实时采集的数据合在一起。也用来补齐断线期间漏掉的消息。
 **Done when:** 能为一个或多个频道建立指定时间段的采集任务；dashboard 显示进度、可暂停或取消；中断后能从断点继续；和实时消息不重复；请求节奏受限速保护。
-spec [0012](../specs/0012-history-message-backfill/index.md) · code in `backend/src/harvester/db/history.py`, `backend/src/harvester/collector/history_worker.py`, `web/src/components/history/`
+spec [0012](../specs/0012-history-message-backfill/index.md) · code in `backend/src/harvester/db/history.py`, `backend/src/harvester/collector/history_worker.py`, `web/src/components/history/`, `web/src/components/channels/`
 
 - [x] Design it (spec): `/architect 按时间段采集历史消息`
 - [ ] Build it: `/develop 按时间段采集历史消息`
-  - [x] 打通细线：迁移，建任务和范围扣减，collector 领取、从新到旧翻页、入库、`done` 写覆盖段，空页保护，`history_changed`，最小的历史页，AC-1 到 AC-4, AC-3a, AC-14, AC-22
+  - [x] 打通细线：迁移，建任务和范围扣减，collector 领取、从新到旧翻页、入库、`done` 写覆盖段，空页保护，`history_changed`，最小的历史页，AC-1 到 AC-4, AC-3a, AC-14a, AC-22
   - [x] 节奏和安全：随机间隔、休息、滚动限额，429 日志计数和账号风险自动暂停，总开关，抢先和断点，设置页和系统状态，AC-5 到 AC-8, AC-10, AC-19, AC-20
-  - [x] 操作和失败：暂停、继续、取消、重试，部分覆盖段，异常映射和重试上限，整段重抓逐页对账，清理，AC-9, AC-11 到 AC-14, AC-21
-  - [ ] 缺口：缺口计算、一键补、自动补短缺口，频道页提示和按钮，补采后频道页刷新，AC-15 到 AC-18
+  - [x] 操作和失败：暂停、继续、取消、重试，部分覆盖段，异常映射和重试上限，整段重抓逐页对账，按频道合并显示和频道级操作，清理，AC-9, AC-11 到 AC-14, AC-14a, AC-21
+  - [x] 缺口：缺口计算、一键补、自动补短缺口，频道页提示和按钮，补采后频道页刷新，AC-15 到 AC-18
   - [ ] 测试和收口：集成测试、前端测试、OpenAPI 同步、更新 spec 0002 被改动的三处，AC-1 到 AC-22
 - [ ] Verify it: `/check verify 按时间段采集历史消息`
 - [ ] Test it: `/test 按时间段采集历史消息`
@@ -267,6 +267,7 @@ spec [0011](../specs/0011-attachment-media-storage/index.md)
 - **身份组名字**：采集服务器的身份组，让消息里的 @身份组 显示真名（新表 `role`）· from spec 0003
 - **查看已关闭频道的消息**：关掉开关的频道从侧栏消失后，在管理页提供入口查看已存的消息 · from spec 0008
 - **新线程提示**：醒目标出新出现的线程和论坛帖子，并能一键开启某频道下的全部线程 · from spec 0006
+- **一键重试一个频道的全部失败段**：历史采集现在只能展开后逐段点「重试」· from spec 0012
 
 ## Legend
 

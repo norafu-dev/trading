@@ -72,6 +72,8 @@ class HistoryState:
     quota_resumes_at: datetime | None
     last_seen_at: datetime | None
     stale: bool
+    # 有缺口的频道数（AC-15）。
+    gap_channel_count: int
 
 
 @dataclass(frozen=True)
@@ -158,6 +160,7 @@ async def get_history_state(session: AsyncSession) -> HistoryState:
         quota_resumes_at=quota_resumes_at(buckets, settings.daily_page_limit),
         last_seen_at=history_seen,
         stale=is_history_worker_stale(history_seen, db_now, process_alive=process_alive),
+        gap_channel_count=await history_db.gap_channel_count(session),
     )
 
 

@@ -506,6 +506,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/history/gaps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List History Gaps
+         * @description 有缺口的频道；给了 `channel_id` 就只看这一个（AC-15）。
+         */
+        get: operations["list_history_gaps_api_history_gaps_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/history/gaps/fill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fill History Gaps
+         * @description 一键补缺口：一段缺口一行，`origin = 'gap_manual'`（AC-15）。
+         */
+        post: operations["fill_history_gaps_api_history_gaps_fill_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/history/jobs/{job_id}/{action}": {
         parameters: {
             query?: never;
@@ -903,6 +943,11 @@ export interface components {
             /** Inline */
             inline?: boolean;
         };
+        /** FillGapsIn */
+        FillGapsIn: {
+            /** Channel Ids */
+            channel_ids: string[];
+        };
         /** ForwardedOut */
         ForwardedOut: {
             /** Message Id */
@@ -917,6 +962,32 @@ export interface components {
             embeds: components["schemas"]["EmbedData"][];
             /** Attachment Names */
             attachment_names: string[];
+        };
+        /** GapOut */
+        GapOut: {
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+        };
+        /** GapSummaryOut */
+        GapSummaryOut: {
+            /** Channel Id */
+            channel_id: string;
+            /** Guild Name */
+            guild_name: string;
+            /** Channel Name */
+            channel_name: string;
+            /** Gaps */
+            gaps: components["schemas"]["GapOut"][];
+            /** Total Seconds */
+            total_seconds: number;
         };
         /** GuildBriefOut */
         GuildBriefOut: {
@@ -1118,6 +1189,8 @@ export interface components {
             last_seen_at: string | null;
             /** Stale */
             stale: boolean;
+            /** Gap Channel Count */
+            gap_channel_count: number;
         };
         /** LabelUpdate */
         LabelUpdate: {
@@ -2258,6 +2331,70 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CreateJobsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateJobsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_history_gaps_api_history_gaps_get: {
+        parameters: {
+            query?: {
+                channel_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GapSummaryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fill_history_gaps_api_history_gaps_fill_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FillGapsIn"];
             };
         };
         responses: {

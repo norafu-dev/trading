@@ -17,6 +17,7 @@ import { HISTORY_KEY } from "@/lib/events/event-stream";
 import {
   type BatchAction,
   type CreateJobsResult,
+  describeFill,
   FINISHED_RANGE_DAYS,
   type FinishedRange,
   type HistorySettings,
@@ -188,6 +189,48 @@ export function useSelectableChannels(enabled: boolean) {
     isError: guilds.isError || channelQueries.some((q) => q.isError),
     error: guilds.error ?? channelQueries.find((q) => q.error)?.error ?? null,
   };
+}
+
+export const HISTORY_GAPS_KEY = [...HISTORY_KEY, "gaps"] as const;
+
+/** 有缺口的频道；给了频道 ID 就只看这一个（AC-15）。 */
+export function useHistoryGaps(channelId?: string) {
+  return useQuery({
+    queryKey: [...HISTORY_GAPS_KEY, channelId ?? "all"] as const,
+    queryFn: async () => {
+      const { data, error, response } = await api.GET("/api/history/gaps", {
+        params: { query: channelId ? { channel_id: channelId } : {} },
+      });
+      if (!data) throw toApiError(response.status, error);
+      return data;
+    },
+    refetchInterval: HISTORY_POLL_INTERVAL_MS,
+  });
+}
+
+/** 「补缺口」和「全部补上」：一段缺口一行（AC-15）。 */
+export function useFillGaps() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (channelIds: readonly string[]): Promise<CreateJobsResult> => {
+      const { data, error, response } = await api.POST("/api/history/gaps/fill", {
+        body: { channel_ids: [...channelIds] },
+      });
+      if (!data) throw toApiError(response.status, error);
+      return data;
+    },
+    onSuccess: (data) => {
+      toast.success(describeFill(data));
+    },
+    onError: (error) => {
+      const { title, detail } = toUiError(error);
+      toast.error(title, { description: detail });
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: HISTORY_KEY });
+      void queryClient.invalidateQueries({ queryKey: SYSTEM_STATUS_KEY });
+    },
+  });
 }
 
 export const HISTORY_SETTINGS_KEY = [...HISTORY_KEY, "settings"] as const;
