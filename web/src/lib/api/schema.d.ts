@@ -644,6 +644,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/search/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Messages */
+        get: operations["search_messages_api_search_messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/search/count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Count */
+        get: operations["search_count_api_search_count_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/search/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Status */
+        get: operations["search_status_api_search_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/search/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Channels */
+        get: operations["search_channels_api_search_channels_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/search/authors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Authors
+         * @description `q`（1 到 50 字符）和 `ids`（最多 20 个）二选一。
+         */
+        get: operations["search_authors_api_search_authors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/system/status": {
         parameters: {
             query?: never;
@@ -734,6 +822,22 @@ export interface components {
              * @enum {string}
              */
             state: "setup_required" | "unauthenticated" | "authenticated";
+        };
+        /** AuthorOut */
+        AuthorOut: {
+            /** Id */
+            id: string;
+            /** Username */
+            username: string;
+            /** Global Name */
+            global_name: string | null;
+            /** Avatar Hash */
+            avatar_hash: string | null;
+        };
+        /** AuthorsOut */
+        AuthorsOut: {
+            /** Authors */
+            authors: components["schemas"]["AuthorOut"][];
         };
         /** BackupRunOut */
         BackupRunOut: {
@@ -1352,6 +1456,8 @@ export interface components {
             messages: components["schemas"]["MessageOut"][];
             /** Has More */
             has_more: boolean;
+            /** Has Newer */
+            has_newer?: boolean | null;
             /** Users */
             users: components["schemas"]["NamedRefOut"][];
             /** Channels */
@@ -1363,6 +1469,39 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+        };
+        /** PickerChannelOut */
+        PickerChannelOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Type */
+            type: number;
+            /** Parent Id */
+            parent_id: string | null;
+            /** Category Name */
+            category_name: string | null;
+            /** Status */
+            status: string;
+            /** Collect Enabled */
+            collect_enabled: boolean;
+        };
+        /** PickerGuildOut */
+        PickerGuildOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Status */
+            status: string;
+            /** Channels */
+            channels: components["schemas"]["PickerChannelOut"][];
+        };
+        /** PickerOut */
+        PickerOut: {
+            /** Guilds */
+            guilds: components["schemas"]["PickerGuildOut"][];
         };
         /** ReplyOut */
         ReplyOut: {
@@ -1381,6 +1520,63 @@ export interface components {
         RequeuedOut: {
             /** Requeued */
             requeued: number;
+        };
+        /** SearchChannelOut */
+        SearchChannelOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Type */
+            type: number;
+            /** Status */
+            status: string;
+            /** Collect Enabled */
+            collect_enabled: boolean;
+            parent: components["schemas"]["SearchParentOut"] | null;
+        };
+        /** SearchCountOut */
+        SearchCountOut: {
+            /** Count */
+            count: number | null;
+            /** Capped */
+            capped: boolean;
+        };
+        /** SearchGuildOut */
+        SearchGuildOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** SearchHitOut */
+        SearchHitOut: {
+            message: components["schemas"]["MessageOut"];
+            guild: components["schemas"]["SearchGuildOut"];
+            channel: components["schemas"]["SearchChannelOut"];
+        };
+        /** SearchMessagesOut */
+        SearchMessagesOut: {
+            /** Items */
+            items: components["schemas"]["SearchHitOut"][];
+            /** Next Before */
+            next_before: string | null;
+            /** Users */
+            users: components["schemas"]["NamedRefOut"][];
+            /** Channels */
+            channels: components["schemas"]["NamedRefOut"][];
+        };
+        /** SearchParentOut */
+        SearchParentOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** SearchStatusOut */
+        SearchStatusOut: {
+            /** Index Pending */
+            index_pending: number;
         };
         /** SetupBeginBody */
         SetupBeginBody: {
@@ -2028,6 +2224,7 @@ export interface operations {
                 before?: string | null;
                 after?: string | null;
                 ids?: string | null;
+                around?: string | null;
                 limit?: number;
             };
             header?: never;
@@ -2588,6 +2785,152 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HistorySettingsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_messages_api_search_messages_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                guild?: string | null;
+                channel?: string | null;
+                author?: string | null;
+                from?: string | null;
+                to?: string | null;
+                before?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchMessagesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_count_api_search_count_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                guild?: string | null;
+                channel?: string | null;
+                author?: string | null;
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchCountOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_status_api_search_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchStatusOut"];
+                };
+            };
+        };
+    };
+    search_channels_api_search_channels_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PickerOut"];
+                };
+            };
+        };
+    };
+    search_authors_api_search_authors_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                ids?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorsOut"];
                 };
             };
             /** @description Validation Error */

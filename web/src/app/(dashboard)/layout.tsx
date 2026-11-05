@@ -3,6 +3,7 @@ import { CollectedShell } from "@/components/channels/collected-shell";
 import { AccountRailLink } from "@/components/discord/account-rail-link";
 import { HistoryRailLink } from "@/components/history/history-rail-link";
 import { MediaRailLink } from "@/components/media/media-rail-link";
+import { SearchRailLink } from "@/components/search/search-rail-link";
 import { HomeRailLink } from "@/components/system/home-rail-link";
 import { EventStreamProvider } from "@/lib/events/event-stream";
 
@@ -14,6 +15,7 @@ export default function DashboardLayout({ children }: LayoutProps<"/">) {
         <CollectedShell
           accountLink={
             <>
+              <SearchRailLink />
               <AccountRailLink />
               <HistoryRailLink />
               <MediaRailLink />
