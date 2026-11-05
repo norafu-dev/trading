@@ -337,6 +337,25 @@ async def act_on_history_batch(
                 return BatchChangedOut(changed=changed)
 
 
+@history_router.post("/batches/{batch_id}/channels/{channel_id}/{action}")
+async def act_on_history_batch_channel(
+    batch_id: Annotated[str, Path(pattern=_UUID_PATTERN)],
+    channel_id: Annotated[str, Path(pattern=r"^[0-9]{1,19}$")],
+    action: BatchAction,
+    factory: SessionFactoryDep,
+) -> BatchChangedOut:
+    """批次里一个频道的所有子任务一起暂停、继续、取消，只改状态符合的行。"""
+    channel = int(channel_id)
+    if channel > _BIGINT_MAX:
+        raise BatchNotFoundError
+    async with factory() as session, session.begin():
+        match await history_store.transition_batch(session, uuid.UUID(batch_id), action, channel):
+            case BatchNotFound():
+                raise BatchNotFoundError
+            case int() as changed:
+                return BatchChangedOut(changed=changed)
+
+
 @history_router.post("/control")
 async def control_history(body: ControlIn, factory: SessionFactoryDep) -> HistoryStatusOut:
     """总开关（AC-8）。暂停时已经是自动暂停的原因保留不覆盖；继续时清空原因并唤醒 collector。"""

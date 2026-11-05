@@ -546,6 +546,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/history/batches/{batch_id}/channels/{channel_id}/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Act On History Batch Channel
+         * @description 批次里一个频道的所有子任务一起暂停、继续、取消，只改状态符合的行。
+         */
+        post: operations["act_on_history_batch_channel_api_history_batches__batch_id__channels__channel_id___action__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/history/control": {
         parameters: {
             query?: never;
@@ -2299,6 +2319,39 @@ export interface operations {
             header?: never;
             path: {
                 batch_id: string;
+                action: "pause" | "resume" | "cancel";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchChangedOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    act_on_history_batch_channel_api_history_batches__batch_id__channels__channel_id___action__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+                channel_id: string;
                 action: "pause" | "resume" | "cancel";
             };
             cookie?: never;

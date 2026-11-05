@@ -163,6 +163,106 @@ export function groupByBatch(
   return [...groups].map(([batchId, list]) => ({ batchId, jobs: list }));
 }
 
+// ---- 按频道合并子任务（spec 0012 AC-14） -------------------------------------------------
+
+export type ChannelGroup = Readonly<{
+  channelId: string;
+  guildName: string;
+  channelName: string;
+  jobs: readonly HistoryJob[];
+  /** 最需要你注意的状态：失败 > 抓取中 > 已暂停 > 排队中 > 已取消 > 已完成。 */
+  status: JobStatus;
+  /** 按时间长度加权：几秒的小段几乎不影响总进度。0 到 1。 */
+  progress: number;
+  fetchedCount: number;
+  rangeStart: string;
+  rangeEnd: string;
+  counts: Readonly<Record<JobStatus, number>>;
+  /** 第一个失败子任务的原因。 */
+  error: HistoryJob["error"];
+  /** 正在抓的那一段的等待原因和预计继续时间。 */
+  waiting: Readonly<{ reason: NonNullable<HistoryJob["wait_reason"]>; until: string }> | null;
+  /** 正在抓的那一段已经抓到哪里。 */
+  cursorAt: string | null;
+}>;
+
+const STATUS_PRIORITY: readonly JobStatus[] = [
+  "failed",
+  "running",
+  "paused",
+  "pending",
+  "cancelled",
+  "done",
+];
+
+function emptyCounts(): Record<JobStatus, number> {
+  return { pending: 0, running: 0, paused: 0, done: 0, failed: 0, cancelled: 0 };
+}
+
+function summarize(channelId: string, jobs: readonly HistoryJob[]): ChannelGroup {
+  const counts = emptyCounts();
+  let total = 0;
+  let covered = 0;
+  let fetched = 0;
+  for (const job of jobs) {
+    counts[job.status] += 1;
+    const length = Date.parse(job.range_end) - Date.parse(job.range_start);
+    total += length;
+    covered += length * job.progress;
+    fetched += job.fetched_count;
+  }
+  const first = jobs[0] as HistoryJob;
+  const running = jobs.find((j) => j.status === "running");
+  return {
+    channelId,
+    guildName: first.guild_name,
+    channelName: first.channel_name,
+    jobs,
+    status: STATUS_PRIORITY.find((s) => counts[s] > 0) ?? first.status,
+    progress: total > 0 ? covered / total : 0,
+    fetchedCount: fetched,
+    rangeStart: first.range_start,
+    rangeEnd:
+      [...jobs]
+        .map((j) => j.range_end)
+        .sort()
+        .at(-1) ?? first.range_end,
+    counts,
+    error: jobs.find((j) => j.status === "failed")?.error ?? null,
+    waiting:
+      running?.wait_reason && running.wait_until
+        ? { reason: running.wait_reason, until: running.wait_until }
+        : null,
+    cursorAt: running?.cursor_at ?? null,
+  };
+}
+
+/** 一个批次里的任务按频道合并，频道按第一次出现的顺序；子任务按时间从早到晚。 */
+export function groupByChannel(jobs: readonly HistoryJob[]): readonly ChannelGroup[] {
+  const groups = new Map<string, HistoryJob[]>();
+  for (const job of jobs) {
+    const list = groups.get(job.channel_id);
+    if (list) list.push(job);
+    else groups.set(job.channel_id, [job]);
+  }
+  return [...groups].map(([id, list]) =>
+    summarize(
+      id,
+      [...list].sort((a, b) => a.range_start.localeCompare(b.range_start)),
+    ),
+  );
+}
+
+/** 频道这一行能点的操作：只列至少有一个子任务符合的；重试在展开后的子任务上点。 */
+export function channelActions(group: ChannelGroup): readonly BatchAction[] {
+  const c = group.counts;
+  const actions: BatchAction[] = [];
+  if (c.pending + c.running > 0) actions.push("pause");
+  if (c.paused > 0) actions.push("resume");
+  if (c.pending + c.running + c.paused + c.failed > 0) actions.push("cancel");
+  return actions;
+}
+
 /** 批次标题后面的各状态数量，只列不为 0 的。 */
 export function batchStatusSummary(batch: HistoryBatch): string {
   const order: readonly JobStatus[] = [

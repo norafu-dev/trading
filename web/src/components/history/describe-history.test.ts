@@ -3,12 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
   batchActions,
   batchStatusSummary,
+  channelActions,
   checkRange,
   checkSettings,
   countChannels,
   describeCreate,
   filterGuilds,
   groupByBatch,
+  groupByChannel,
   type HistoryJob,
   type HistoryStatus,
   isRateLimitedPause,
@@ -329,5 +331,65 @@ describe("任务操作", () => {
     expect(batchActions(batch({ paused: 2 }))).toEqual(["resume", "cancel"]);
     expect(batchActions(batch({ failed: 1 }))).toEqual(["cancel"]);
     expect(batchActions(batch({ done: 3, cancelled: 1 }))).toEqual([]);
+  });
+});
+
+describe("按频道合并", () => {
+  const job = (id: string, patch: Partial<HistoryJob>): HistoryJob =>
+    ({
+      id,
+      batch_id: "b",
+      channel_id: "1",
+      guild_name: "g",
+      channel_name: "c",
+      origin: "manual",
+      refetch: false,
+      range_start: "2026-01-01T00:00:00Z",
+      range_end: "2026-01-02T00:00:00Z",
+      status: "pending",
+      fetched_count: 0,
+      pages_fetched: 0,
+      cursor_at: null,
+      progress: 0,
+      wait_reason: null,
+      wait_until: null,
+      not_before: null,
+      error: null,
+      created_at: "2026-01-03T00:00:00Z",
+      started_at: null,
+      finished_at: null,
+      ...patch,
+    }) as HistoryJob;
+
+  it("总进度按时间长度加权，几秒的小段不拉低它", () => {
+    const [group] = groupByChannel([
+      job("1", { status: "running", progress: 0.92, fetched_count: 900 }),
+      job("2", { range_start: "2026-01-02T00:00:00Z", range_end: "2026-01-02T00:00:15Z" }),
+    ]);
+    expect(group?.progress).toBeCloseTo(0.92, 2);
+    expect(group?.fetchedCount).toBe(900);
+    expect(group?.status).toBe("running");
+    expect(group?.rangeEnd).toBe("2026-01-02T00:00:15Z");
+  });
+
+  it("失败优先显示，不同频道分开，子任务按时间排序", () => {
+    const groups = groupByChannel([
+      job("2", {
+        range_start: "2026-01-05T00:00:00Z",
+        range_end: "2026-01-06T00:00:00Z",
+        status: "failed",
+        error: "no_access",
+      }),
+      job("1", { status: "running" }),
+      job("3", { channel_id: "2" }),
+    ]);
+    expect(groups.map((g) => g.channelId)).toEqual(["1", "2"]);
+    expect(groups[0]?.status).toBe("failed");
+    expect(groups[0]?.error).toBe("no_access");
+    expect(groups[0]?.jobs.map((j) => j.id)).toEqual(["1", "2"]);
+    expect(channelActions(groups[0] as NonNullable<(typeof groups)[0]>)).toEqual([
+      "pause",
+      "cancel",
+    ]);
   });
 });

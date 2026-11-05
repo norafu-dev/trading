@@ -3,6 +3,8 @@
 import { cn } from "cn";
 import {
   BanIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
   HistoryIcon,
   PauseIcon,
   PlayIcon,
@@ -27,10 +29,13 @@ import {
   type BatchAction,
   batchActions,
   batchStatusSummary,
+  type ChannelGroup,
+  channelActions,
   ERROR_LABELS,
   FINISHED_RANGE_LABELS,
   type FinishedRange,
   groupByBatch,
+  groupByChannel,
   type HistoryBatch,
   type HistoryJob,
   type JobAction,
@@ -46,6 +51,7 @@ import { NewJobDialog } from "./new-job-dialog";
 import {
   useActiveHistoryJobs,
   useBatchAction,
+  useChannelAction,
   useFinishedHistoryJobs,
   useHistoryStatus,
   useJobAction,
@@ -154,6 +160,137 @@ function JobRow({
   );
 }
 
+function SubJobRow({
+  job,
+  time,
+  actions,
+}: Readonly<{ job: HistoryJob; time: TimeFormat; actions: boolean }>) {
+  return (
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
+      <span className="text-muted-foreground">
+        {time.fullTime(job.range_start)} 至 {time.fullTime(job.range_end)}
+      </span>
+      <Badge variant={STATUS_VARIANT[job.status]}>{STATUS_LABELS[job.status]}</Badge>
+      <span className="text-xs text-muted-foreground tabular-nums">
+        {percent(job.progress)}% · 已抓 {job.fetched_count} 条
+      </span>
+      {job.error ? (
+        <span className="text-xs text-destructive">{ERROR_LABELS[job.error]}</span>
+      ) : null}
+      {actions ? <JobActions job={job} /> : null}
+    </li>
+  );
+}
+
+function ChannelActions({ batchId, group }: Readonly<{ batchId: string; group: ChannelGroup }>) {
+  const act = useChannelAction();
+  return (
+    <div className="ml-auto flex items-center gap-1">
+      {channelActions(group).map((action) => {
+        const Icon = ACTION_ICONS[action];
+        return (
+          <Button
+            key={action}
+            variant="ghost"
+            size="sm"
+            disabled={act.isPending}
+            aria-label={`${ACTION_LABELS[action]}：#${group.channelName}`}
+            onClick={() => act.mutate({ batchId, channelId: group.channelId, action })}
+          >
+            <Icon data-icon="inline-start" aria-hidden />
+            {ACTION_LABELS[action]}
+          </Button>
+        );
+      })}
+    </div>
+  );
+}
+
+// 一个频道被拆成多段时只显示一个总进度，子任务折叠；有失败的子任务时默认展开（AC-14）。
+function ChannelRow({
+  batchId,
+  group,
+  time,
+  actions,
+}: Readonly<{ batchId: string; group: ChannelGroup; time: TimeFormat; actions: boolean }>) {
+  const [open, setOpen] = useState(group.counts.failed > 0);
+  const value = percent(group.progress);
+  const first = group.jobs[0] as HistoryJob;
+  const listId = `history-sub-${batchId}-${group.channelId}`;
+  return (
+    <li className="flex flex-col gap-2 px-5 py-4">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <Link
+          href={channelHref(group.channelId)}
+          className="min-w-0 truncate font-semibold hover:underline"
+        >
+          <span className="text-muted-foreground">{group.guildName} · </span>#{group.channelName}
+        </Link>
+        <Badge variant={STATUS_VARIANT[group.status]}>{STATUS_LABELS[group.status]}</Badge>
+        <span className="text-xs text-muted-foreground">
+          {ORIGIN_LABELS[first.origin]}
+          {first.refetch ? " · 整段重抓" : ""}
+        </span>
+        {actions ? <ChannelActions batchId={batchId} group={group} /> : null}
+      </div>
+      <p className="text-sm text-muted-foreground">
+        {time.fullTime(group.rangeStart)} 至 {time.fullTime(group.rangeEnd)}
+      </p>
+      <div className="flex items-center gap-3">
+        <div
+          role="progressbar"
+          aria-label={`#${group.channelName} 进度`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={value}
+          className="h-2 flex-1 overflow-hidden rounded-full bg-muted"
+        >
+          <div
+            style={{ width: `${value}%` }}
+            className={cn("h-full", group.counts.failed > 0 ? "bg-destructive" : "bg-primary")}
+          />
+        </div>
+        <span className="w-10 text-right text-sm font-medium tabular-nums">{value}%</span>
+      </div>
+      <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span>已抓 {group.fetchedCount} 条</span>
+        {group.cursorAt ? <span>抓到 {time.fullTime(group.cursorAt)}</span> : null}
+        {group.waiting ? (
+          <span>
+            {WAIT_LABELS[group.waiting.reason]}，预计 {time.fullTime(group.waiting.until)} 继续
+          </span>
+        ) : null}
+      </p>
+      {group.error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {group.counts.failed} 段失败：{ERROR_LABELS[group.error]}
+        </p>
+      ) : null}
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={listId}
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+      >
+        {open ? (
+          <ChevronDownIcon className="size-3.5" aria-hidden />
+        ) : (
+          <ChevronRightIcon className="size-3.5" aria-hidden />
+        )}
+        共 {group.jobs.length} 段{open ? "，收起" : "，展开"}
+      </button>
+      {open ? (
+        <ul id={listId} className="divide-y divide-border border-l-2 border-border pl-4">
+          {group.jobs.map((job) => (
+            <SubJobRow key={job.id} job={job} time={time} actions={actions} />
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
 function BatchActions({ batch }: Readonly<{ batch: HistoryBatch }>) {
   const act = useBatchAction();
   const actions = batchActions(batch);
@@ -203,9 +340,24 @@ function BatchCard({
         ) : null}
       </header>
       <ul className="divide-y divide-border">
-        {jobs.map((job) => (
-          <JobRow key={job.id} job={job} time={time} actions={actions} />
-        ))}
+        {groupByChannel(jobs).map((group) =>
+          group.jobs.length === 1 ? (
+            <JobRow
+              key={group.channelId}
+              job={group.jobs[0] as HistoryJob}
+              time={time}
+              actions={actions}
+            />
+          ) : (
+            <ChannelRow
+              key={group.channelId}
+              batchId={first?.batch_id ?? ""}
+              group={group}
+              time={time}
+              actions={actions}
+            />
+          ),
+        )}
       </ul>
     </section>
   );

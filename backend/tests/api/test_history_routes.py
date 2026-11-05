@@ -339,3 +339,13 @@ async def test_finished_view_pages_and_includes_cancelled(
 
     assert [j["id"] for j in page["jobs"]] == [first["id"]]
     assert active["jobs"] == []
+
+
+async def test_channel_scoped_batch_action(logged_in: httpx.AsyncClient, readable: None) -> None:
+    created = (await logged_in.post("/api/history/jobs", json=BODY)).json()
+    base = f"/api/history/batches/{created['batch_id']}/channels"
+
+    assert (await logged_in.post(f"{base}/{CHANNEL.id}/pause")).json() == {"changed": 1}
+    assert (await logged_in.post(f"{base}/{CHANNEL.id}/pause")).json() == {"changed": 0}
+    missing = await logged_in.post(f"{base}/999/cancel")
+    assert missing.status_code == 404 and missing.json()["error"]["code"] == "batch_not_found"

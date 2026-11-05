@@ -107,6 +107,23 @@ export function useBatchAction() {
   );
 }
 
+/** 批次里一个频道的所有子任务一起暂停、继续、取消。 */
+export function useChannelAction() {
+  return useActionMutation(
+    async ({
+      batchId,
+      channelId,
+      action,
+    }: Readonly<{ batchId: string; channelId: string; action: BatchAction }>) => {
+      const { data, error, response } = await api.POST(
+        "/api/history/batches/{batch_id}/channels/{channel_id}/{action}",
+        { params: { path: { batch_id: batchId, channel_id: channelId, action } } },
+      );
+      if (!data) throw toApiError(response.status, error);
+    },
+  );
+}
+
 export type CreateJobsBody = Readonly<{
   channel_ids: readonly string[];
   range_start: string | null;

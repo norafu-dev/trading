@@ -40,6 +40,7 @@ const PAGE: HistoryJobPage = {
     {
       ...JOB,
       id: "2",
+      channel_id: "202",
       channel_name: "news",
       status: "failed",
       error: "suspect_empty",
@@ -338,5 +339,60 @@ describe("HistoryPanel", () => {
 
     expect(await screen.findByText("全部（保留 30 天）内没有结束的任务")).toBeInTheDocument();
     expect(calls.at(-1)).toMatchObject({ since_days: 30 });
+  });
+
+  // covers: spec 0012 AC-14
+  it("同一个频道的多段任务合成一个总进度，子任务折叠，有失败时展开", async () => {
+    const piece = (id: string, patch: Partial<HistoryJob>): HistoryJob => ({
+      ...JOB,
+      id,
+      wait_reason: null,
+      wait_until: null,
+      ...patch,
+    });
+    const jobs = [
+      piece("1", {
+        range_start: "2026-01-01T00:00:00Z",
+        range_end: "2026-01-02T00:00:00Z",
+        progress: 0.5,
+      }),
+      piece("2", {
+        range_start: "2026-01-02T00:00:00Z",
+        range_end: "2026-01-02T00:00:10Z",
+        status: "pending",
+        progress: 0,
+        fetched_count: 0,
+        cursor_at: null,
+      }),
+    ];
+    serve({
+      jobs,
+      batches: [
+        {
+          batch_id: "b1",
+          channel_count: 1,
+          fetched_count: 240,
+          status_counts: { pending: 1, running: 1, paused: 0, done: 0, failed: 0, cancelled: 0 },
+        },
+      ],
+      next_before_id: null,
+    });
+    post.mockResolvedValue({ data: { changed: 2 }, ...jsonResponse(200) });
+    const user = userEvent.setup();
+    renderWithQuery(<HistoryPanel />);
+
+    expect(await screen.findAllByRole("progressbar", { name: "#alerts 进度" })).toHaveLength(1);
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "50");
+    expect(screen.getByText("共 2 段，展开")).toBeInTheDocument();
+    expect(screen.queryByText("排队中", { selector: "span" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /共 2 段/ }));
+    expect(screen.getAllByText("排队中").length).toBeGreaterThan(0);
+
+    await user.click(screen.getAllByRole("button", { name: "暂停：#alerts" })[0] as HTMLElement);
+    expect(post).toHaveBeenCalledWith(
+      "/api/history/batches/{batch_id}/channels/{channel_id}/{action}",
+      { params: { path: { batch_id: "b1", channel_id: "201", action: "pause" } } },
+    );
   });
 });

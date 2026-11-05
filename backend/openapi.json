@@ -1337,6 +1337,74 @@
         }
       }
     },
+    "/api/history/batches/{batch_id}/channels/{channel_id}/{action}": {
+      "post": {
+        "tags": [
+          "history"
+        ],
+        "summary": "Act On History Batch Channel",
+        "description": "批次里一个频道的所有子任务一起暂停、继续、取消，只改状态符合的行。",
+        "operationId": "act_on_history_batch_channel_api_history_batches__batch_id__channels__channel_id___action__post",
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F-]{36}$",
+              "title": "Batch Id"
+            }
+          },
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Channel Id"
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "pause",
+                "resume",
+                "cancel"
+              ],
+              "type": "string",
+              "title": "Action"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchChangedOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/history/control": {
       "post": {
         "tags": [

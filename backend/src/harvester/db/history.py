@@ -639,21 +639,22 @@ async def transition_job(
 
 
 async def transition_batch(
-    session: AsyncSession, batch_id: uuid.UUID, action: BatchAction
+    session: AsyncSession,
+    batch_id: uuid.UUID,
+    action: BatchAction,
+    channel_id: int | None = None,
 ) -> int | BatchNotFound:
-    """整批操作只作用于状态符合的行，返回实际改了几行；整批加锁按 `id` 排序（AC-9）。"""
-    exists_ = await session.scalar(select(exists().where(HistoryJob.batch_id == batch_id)))
-    if not exists_:
+    """整批（或批次里某一个频道）的操作只作用于状态符合的行，返回实际改了几行。
+
+    整批加锁按 `id` 排序（AC-9）。
+    """
+    scope = [HistoryJob.batch_id == batch_id]
+    if channel_id is not None:
+        scope.append(HistoryJob.channel_id == channel_id)
+    if not await session.scalar(select(exists().where(*scope))):
         return BatchNotFound()
     rows = (
-        (
-            await session.execute(
-                _lock_rows(
-                    HistoryJob.batch_id == batch_id,
-                    HistoryJob.status.in_(_TRANSITIONS[action][0]),
-                )
-            )
-        )
+        (await session.execute(_lock_rows(*scope, HistoryJob.status.in_(_TRANSITIONS[action][0]))))
         .mappings()
         .all()
     )
