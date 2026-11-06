@@ -4,6 +4,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { MessageSquareDashedIcon } from "lucide-react";
 import { useMemo, useRef } from "react";
 
+import { markFor } from "@/components/export/export-selection";
 import { EmptyState } from "@/components/states/empty-state";
 import { ErrorBlock } from "@/components/states/error-block";
 import { ListSkeleton } from "@/components/states/list-skeleton";
@@ -71,6 +72,8 @@ function VirtualMessageList({
   onReachBottom,
   onRetryNewer,
   onJumpLatest,
+  exportSelection = null,
+  onExportPick,
   parser,
 }: MessageListProps & Readonly<{ parser: ParserStatus }>) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -153,6 +156,9 @@ function VirtualMessageList({
                     resolver={resolver}
                     parser={parser}
                     highlighted={row.key === scroll.highlightId}
+                    exportMode={exportSelection !== null}
+                    exportMark={exportSelection ? markFor(exportSelection, row.key) : null}
+                    onExportPick={onExportPick}
                   />
                 </div>
               );

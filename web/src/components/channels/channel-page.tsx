@@ -2,8 +2,17 @@
 
 import { MousePointerClickIcon } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
+import { ExportBar } from "@/components/export/export-bar";
+import { ExportButton } from "@/components/export/export-button";
+import {
+  type ExportSelection,
+  type ExportSide,
+  NO_SELECTION,
+  selectMessage,
+  toggleOpen,
+} from "@/components/export/export-selection";
 import { MessageList } from "@/components/messages/message-list";
 import { channelHref } from "@/components/shell/routes";
 import { EmptyState } from "@/components/states/empty-state";
@@ -39,6 +48,29 @@ function ChannelView({
     channel.status === "ready" && !channel.hasNewer,
   );
 
+  // 导出的选择状态放在这里：ChannelView 按频道换 key，切换频道自然清空；
+  // MessageList 会在 epoch 或 center 变化时重新挂载，放在它里面会丢（spec 0014 AC-5）。
+  const [exportSelection, setExportSelection] = useState<ExportSelection | null>(null);
+  const exporting = exportSelection !== null;
+  const pickMessage = useCallback(
+    (message: Readonly<{ id: string; createdAt: string; authorName: string }>) =>
+      setExportSelection((prev) => selectMessage(prev ?? NO_SELECTION, message)),
+    [],
+  );
+  const toggleEnd = useCallback(
+    (side: ExportSide) => setExportSelection((prev) => toggleOpen(prev ?? NO_SELECTION, side)),
+    [],
+  );
+  const cancelExport = useCallback(() => setExportSelection(null), []);
+  useEffect(() => {
+    if (!exporting) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExportSelection(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [exporting]);
+
   // 找不到这条消息：提示一下，从网址去掉 `m`，按普通方式加载最新一页（AC-18）。
   const [notFound, setNotFound] = useState(false);
   const missing = (messageParam !== null && center === null) || channel.centerMissing;
@@ -63,7 +95,17 @@ function ChannelView({
           找不到这条消息，已显示最新消息
         </p>
       ) : null}
-      <ChannelHistoryActions channelId={channelId} channelName={detail.data?.name} />
+      <ChannelHistoryActions
+        channelId={channelId}
+        channelName={detail.data?.name}
+        actions={
+          <ExportButton
+            channelType={detail.data?.type}
+            active={exporting}
+            onClick={() => setExportSelection((prev) => (prev === null ? NO_SELECTION : null))}
+          />
+        }
+      />
       <div className="min-h-0 flex-1">
         <MessageList
           key={`${channel.epoch}:${center ?? ""}`}
@@ -85,8 +127,19 @@ function ChannelView({
           onReachBottom={channel.loadNewer}
           onRetryNewer={channel.loadNewer}
           onJumpLatest={() => router.replace(channelHref(channelId))}
+          exportSelection={exportSelection}
+          onExportPick={pickMessage}
         />
       </div>
+      {exportSelection !== null ? (
+        <ExportBar
+          channelId={channelId}
+          selection={exportSelection}
+          timeZone={TIME_ZONE}
+          onToggleOpen={toggleEnd}
+          onCancel={cancelExport}
+        />
+      ) : null}
     </section>
   );
 }

@@ -3,7 +3,7 @@
 import { cn } from "cn";
 import { ReplyIcon } from "lucide-react";
 import { memo } from "react";
-
+import type { ExportMark } from "@/components/export/export-selection";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { fallbackColorFor, initialFor } from "@/lib/discord-cdn";
@@ -14,7 +14,7 @@ import type { MessageRowItem } from "./build-rows";
 import { Embed } from "./embed";
 import { ForwardedBlock } from "./forwarded-block";
 import { MediaAttachment } from "./media-attachment";
-import type { MentionResolver, ReplyView } from "./types";
+import type { MentionResolver, MessageView, ReplyView } from "./types";
 
 type MessageRowProps = Readonly<{
   row: MessageRowItem;
@@ -26,7 +26,19 @@ type MessageRowProps = Readonly<{
   highlighted?: boolean;
   /** 搜索命中词（spec 0013 AC-13）。 */
   highlightTerms?: readonly string[];
+  /** 导出选择模式（spec 0014）：整行盖一层透明按钮，点哪里都是选中这条。 */
+  exportMode?: boolean;
+  exportMark?: ExportMark | null;
+  onExportPick?: (message: MessageView) => void;
 }>;
+
+const EXPORT_MARK_LABEL: Readonly<Record<ExportMark, string | null>> = {
+  picked: "已选",
+  start: "起点",
+  end: "终点",
+  single: "起点 · 终点",
+  range: null,
+};
 
 // 组首上方的引用行。摘要是第三方内容，只当纯文字显示，不解析 markdown。
 function ReplyLine({ reply }: Readonly<{ reply: ReplyView }>) {
@@ -56,6 +68,9 @@ export const MessageRow = memo(function MessageRow({
   parser,
   highlighted = false,
   highlightTerms,
+  exportMode = false,
+  exportMark = null,
+  onExportPick,
 }: MessageRowProps) {
   const { message, groupStart } = row;
   const fullTime = format.fullTime(message.createdAt);
@@ -85,9 +100,27 @@ export const MessageRow = memo(function MessageRow({
       className={cn(
         "group/message relative px-4 py-0.5 transition-colors duration-700 motion-reduce:transition-none",
         highlighted ? "bg-primary/15" : "hover:bg-muted/70",
+        exportMark !== null && "bg-primary/10",
+        exportMark !== null && exportMark !== "range" && "bg-primary/20",
         message.deleted && "opacity-60",
       )}
     >
+      {exportMode ? (
+        // 盖住图片、链接、附件、视频和音频的原生控件，点哪里都只是选中（AC-2）。
+        <button
+          type="button"
+          aria-label={`选中这条消息：${message.authorName}，${fullTime}`}
+          aria-pressed={exportMark !== null}
+          onClick={() => onExportPick?.(message)}
+          className="absolute inset-0 z-10 cursor-pointer focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+        />
+      ) : null}
+      {exportMark !== null && EXPORT_MARK_LABEL[exportMark] !== null ? (
+        // 绝对定位，不改变行高（AC-5）。
+        <span className="pointer-events-none absolute top-1 right-4 z-20 rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground">
+          {EXPORT_MARK_LABEL[exportMark]}
+        </span>
+      ) : null}
       {message.replyTo ? <ReplyLine reply={message.replyTo} /> : null}
       <div className="flex gap-4">
         {groupStart ? (

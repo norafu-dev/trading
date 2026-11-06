@@ -1,5 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 
 import { createTimeFormat } from "@/lib/format/time";
 
@@ -199,5 +200,56 @@ describe("MessageRow", () => {
     expect(screen.getByText("转发")).toBeInTheDocument();
     expect(screen.getByText("被转发的话")).toBeInTheDocument();
     expect(screen.getByText("设计稿.fig")).toBeInTheDocument();
+  });
+});
+
+describe("导出选择模式（spec 0014）", () => {
+  function renderExport(props: Partial<React.ComponentProps<typeof MessageRow>> = {}) {
+    const msg = message({
+      attachments: [
+        { id: "9", filename: "clip.mp4", contentType: "video/mp4", sizeBytes: 5, media: null },
+      ],
+    });
+    const row: MessageRowItem = { kind: "message", key: msg.id, message: msg, groupStart: true };
+    return render(
+      <MessageRow
+        row={row}
+        format={format}
+        now={NOW}
+        resolver={resolver}
+        parser="failed"
+        exportMode
+        {...props}
+      />,
+    );
+  }
+
+  it("整行盖一层按钮，点击只选中这条（AC-2）", async () => {
+    const onExportPick = vi.fn();
+    renderExport({ onExportPick });
+    await userEvent.click(screen.getByRole("button", { name: /选中这条消息/ }));
+    expect(onExportPick).toHaveBeenCalledTimes(1);
+    expect(onExportPick.mock.calls[0]?.[0].id).toBe("1");
+  });
+
+  it("起点和终点有文字标记，范围内的没有（AC-4）", () => {
+    const { unmount } = renderExport({ exportMark: "start" });
+    expect(screen.getByText("起点")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /选中这条消息/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    unmount();
+    renderExport({ exportMark: "range" });
+    expect(screen.queryByText("起点")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /选中这条消息/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("不在选择模式时没有覆盖按钮", () => {
+    renderExport({ exportMode: false });
+    expect(screen.queryByRole("button", { name: /选中这条消息/ })).not.toBeInTheDocument();
   });
 });

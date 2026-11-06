@@ -1,4 +1,5 @@
 // 消息列表的视图类型（spec 0003）。在这里定死，第 8 项把接口数据转换成它们。
+import type { ExportSelection } from "@/components/export/export-selection";
 import type { UiError } from "@/lib/api/errors";
 
 export type MessageView = Readonly<{
@@ -100,4 +101,7 @@ export type MessageListProps = Readonly<{
   onReachBottom?: () => void;
   onRetryNewer?: () => void;
   onJumpLatest?: () => void; // 还没加载到最新时，「回到最新」重新加载最新一页
+  // 导出选择模式（spec 0014）：不传时和普通消息列表完全一样。
+  exportSelection?: ExportSelection | null; // 非空即选择模式
+  onExportPick?: (message: MessageView) => void;
 }>;

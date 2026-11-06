@@ -121,6 +121,14 @@ function fromCode(error: ApiResponseError): UiError | null {
       retryable: true,
     };
   }
+  if (error.code === "export_timeout") {
+    return {
+      kind: "server",
+      title: "统计超时",
+      detail: "请缩小范围后再试。",
+      retryable: true,
+    };
+  }
   const known = error.code ? REJECTED_BY_CODE[error.code] : undefined;
   return known ? { kind: "rejected", retryable: false, ...known } : null;
 }

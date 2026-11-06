@@ -1,7 +1,7 @@
 "use client";
 
 import { HistoryIcon, WrenchIcon } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 
 import { gapNotice } from "@/components/history/describe-history";
 import { NewJobDialog } from "@/components/history/new-job-dialog";
@@ -14,7 +14,8 @@ import { Spinner } from "@/components/ui/spinner";
 export function ChannelHistoryActions({
   channelId,
   channelName,
-}: Readonly<{ channelId: string; channelName: string | undefined }>) {
+  actions,
+}: Readonly<{ channelId: string; channelName: string | undefined; actions?: ReactNode }>) {
   const gaps = useHistoryGaps(channelId);
   const fill = useFillGaps();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -42,10 +43,13 @@ export function ChannelHistoryActions({
           </Button>
         </>
       ) : null}
-      <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setDialogOpen(true)}>
-        <HistoryIcon data-icon="inline-start" aria-hidden />
-        抓这个频道的历史
-      </Button>
+      <div className="ml-auto flex items-center gap-1">
+        {actions}
+        <Button variant="ghost" size="sm" onClick={() => setDialogOpen(true)}>
+          <HistoryIcon data-icon="inline-start" aria-hidden />
+          抓这个频道的历史
+        </Button>
+      </div>
       <NewJobDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
