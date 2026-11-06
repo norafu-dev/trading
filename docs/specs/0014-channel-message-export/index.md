@@ -1,6 +1,6 @@
 # 0014. 频道消息导出
 
-**Date**: 2026-11-06（2026-11-06 更新：AC-17 给 embed 图片加不过期的副本链接）
+**Date**: 2026-11-06（2026-11-06 更新：AC-17 给 embed 图片加不过期的副本链接；2026-11-06 再更新：AC-17 的链接改成不用登录的公开链接，外部 AI 能直接读）
 **Status**: In Progress
 
 ## Summary
@@ -41,7 +41,11 @@
 - **AC-14**: 文件里所有时间都按请求里的 `tz`（浏览器的 IANA 时区，比如 `Asia/Shanghai`）写成带偏移的 ISO 8601，精确到秒，例如 `2026-11-06T15:30:00+08:00`。例外：embed 里的 `timestamp` 是发消息的人自己写的字段，原样保留。
 - **AC-15**: CSV：开头有 UTF-8 BOM（Excel 双击打开中文不乱码），按 RFC 4180 写（行尾 `\r\n`，含逗号、引号或换行的字段加引号），第一行是表头，每条消息一行，内容是最新版本。列和每列的写法见 Feature design 的「CSV 格式」。防公式注入：文字列（`author_name`、`content`、`forwarded`、`embeds`、`attachments`）里第一个字符是 `=`、`+`、`-`、`@`、制表符或回车的单元格，前面加一个 `'`，Excel 打开时不会当成公式执行；ID、时间、版本列不加。JSONL 不做这个处理。
 - **AC-16**: JSONL：每行一个 JSON 对象，UTF-8 不带 BOM，行尾 `\n`，中文不转义，所有 ID 是十进制字符串。字段见 Feature design 的「JSONL 格式」；`revisions` 是全部旧版本，按 `version` 从小到大，没有旧版本时是空数组。
-- **AC-17**: 附件：每个附件写文件名、类型和大小。已经保存好的（对应的 `media` 行是 `stored`）写链接 `<SITE_ORIGIN>/api/media/<media_id>`（登录 dashboard 后能打开，不会过期）；其他状态链接为空。转发里的附件按 `forwarded_attachment` 行的 `slot` 对上名字，同样处理；它们的类型和大小取 `media.declared_content_type` 和 `media.declared_size_bytes`，没有 `media` 行时为空。CSV 只列没被移除的附件；JSONL 列出全部，被移除的带 `removed_at`。embed 里的图片另有规则：消息自己的 embed（不含转发里的、旧版本里的）的 `image_url`、`thumbnail_url`，如果有对应的 `media` 行（`kind` 是 `embed_image` 或 `embed_thumbnail`，`slot` 等于这个 embed 在消息 `embeds` 里的序号）且状态是 `stored`，就在这个 embed 里加 `image_media_url`、`thumbnail_media_url`，值是 `<SITE_ORIGIN>/api/media/<media_id>`；没有 `stored` 的行（没有行、`pending`、`failed`、`gone` 等）就不加这个字段。原来的 `image_url`、`thumbnail_url` 原样保留，不改。原因：Discord 的图片链接带有效期，过期后打不开，而已保存的副本不会过期。
+- **AC-17**: 附件：每个附件写文件名、类型和大小。已经保存好的（对应的 `media` 行是 `stored`）写一个**文件链接**，其他状态链接为空。文件链接不用登录就能打开，指向原文件（不是缩略图），按存储方式决定（见 Feature design 的「文件链接」）：
+  - `MEDIA_STORAGE=r2`：`<MEDIA_PUBLIC_BASE_URL>/<object_key>`，`object_key` 是这一行 `media.file_id` 指向的 `stored_file.object_key`。线上是 `https://media.norafu.com/<频道ID>/<年月>/<sha256>.<扩展名>`，永久有效，任何人（包括外部 AI API）拿到都能直接读取，不需要登录、签名或 token。
+  - `MEDIA_STORAGE=local`：本机文件的绝对路径 `<MEDIA_LOCAL_DIR 的绝对路径>/<object_key>`，给你本机的 AI agent 直接读文件用，换一台电脑就失效。
+
+  转发里的附件按 `forwarded_attachment` 行的 `slot` 对上名字，同样处理；它们的类型和大小取 `media.declared_content_type` 和 `media.declared_size_bytes`，没有 `media` 行时为空。CSV 只列没被移除的附件；JSONL 列出全部，被移除的带 `removed_at`。embed 里的图片另有规则：消息自己的 embed（不含转发里的、旧版本里的）的 `image_url`、`thumbnail_url`，如果有对应的 `media` 行（`kind` 是 `embed_image` 或 `embed_thumbnail`，`slot` 等于这个 embed 在消息 `embeds` 里的序号）且状态是 `stored`，就在这个 embed 里加 `image_media_url`、`thumbnail_media_url`，值是这一行的文件链接；没有 `stored` 的行（没有行、`pending`、`failed`、`gone` 等）就不加这个字段。原来的 `image_url`、`thumbnail_url` 原样保留，不改。字段名（JSONL 的 `url`、`image_media_url`、`thumbnail_media_url`）和 CSV 的写法都不变，只是值从 `<SITE_ORIGIN>/api/media/<media_id>` 换成文件链接，文件里不再出现需要登录的链接。原因：Discord 的图片链接带有效期，过期后打不开；需要登录的 `/api/media` 链接外部 AI 也读不了。
 
 错误和边界
 
@@ -74,7 +78,8 @@ Reasoning and options: see [rationale.md](rationale.md).
 | `message` | `id`、`channel_id`、`guild_id`、`author_id`、`author_display_name`、`type`、`content`、`embeds`、`forwarded`、`reply_to_id`、`version`、`created_at`、`edited_at`、`deleted_at` | 按索引 (`channel_id`, `id` DESC) 做范围查询和计数 |
 | `message_revision` | `message_id`、`version`、`content`、`embeds`、`replaced_at` | 每批按消息 ID 批量取，只在 JSONL 时取 |
 | `attachment` | `id`、`message_id`、`filename`、`content_type`、`size_bytes`、`width`、`height`、`removed_at` | 每批批量取 |
-| `media` | `id`、`message_id`、`kind`、`attachment_id`、`slot`、`filename`、`declared_content_type`、`declared_size_bytes`、`status` | 每批取 `kind IN ('attachment', 'forwarded_attachment')` 的行，走 `ix_media_message` |
+| `media` | `id`、`message_id`、`kind`、`attachment_id`、`slot`、`filename`、`declared_content_type`、`declared_size_bytes`、`status`、`file_id` | 每批取这批消息的全部 `media` 行（附件、转发附件、embed 图），走 `ix_media_message` |
+| `stored_file` | `id`、`object_key` | 和上一行一起查：`media LEFT JOIN stored_file ON stored_file.id = media.file_id`，拿文件链接要的 `object_key` |
 | `channel`、`guild` | 名字、类型 | 文件名、可导出类型的判断 |
 | 采集缺口 | `harvester.db.history.channel_gaps(session, [channel_id])` | 预览里的缺口提示 |
 
@@ -142,10 +147,32 @@ type ExportSelection =
 |---|---|---|
 | `strip_markup(raw) -> str` | `harvester/db/search_text.py` | 只做 Discord 标记处理（AC-13）；`clean_text` 改成调用它再转小写、合并空白（AC-22） |
 | `export_filename(guild_name, channel_name, channel_id, first, last, tz, ext) -> ContentDisposition` | `harvester/api/export_format.py` | AC-11 的名字处理和两种文件名 |
-| `csv_header() -> str`、`csv_row(message, tz, site_origin) -> str` | 同上 | AC-15，用标准库 `csv` 写进 `io.StringIO` |
-| `jsonl_line(message, tz, site_origin) -> str` | 同上 | AC-16，`json.dumps(..., ensure_ascii=False)` |
-| `media_link(media, site_origin) -> str \| None` | 同上 | AC-17，只有 `status == 'stored'` 时返回链接；附件和 embed 图片共用 |
-| `with_embed_media_urls(embeds, media_rows, site_origin) -> tuple[EmbedData, ...]` | 同上 | AC-17，按 `(kind, slot)` 给每个 embed 加 `image_media_url`、`thumbnail_media_url`，不改入参，返回新对象；CSV 的 `embeds` 列用同一个结果写 `图片:` 行 |
+| `csv_header() -> str`、`csv_row(message, tz, link_base) -> str` | 同上 | AC-15，用标准库 `csv` 写进 `io.StringIO` |
+| `jsonl_line(message, tz, link_base) -> str` | 同上 | AC-16，`json.dumps(..., ensure_ascii=False)` |
+| `media_link(media, link_base) -> str \| None` | 同上 | AC-17，只有 `status == 'stored'` 且 `object_key` 不为空时返回文件链接（规则见下面的「文件链接」）；附件和 embed 图片共用 |
+| `with_embed_media_urls(embeds, media_rows, link_base) -> tuple[EmbedData, ...]` | 同上 | AC-17，按 `(kind, slot)` 给每个 embed 加 `image_media_url`、`thumbnail_media_url`，不改入参，返回新对象；CSV 的 `embeds` 列用同一个结果写 `图片:` 行 |
+
+原来到处传的 `site_origin` 参数全部换成 `link_base`，导出不再用 `site_origin`。
+
+### 文件链接
+
+```python
+@dataclass(frozen=True)
+class PublicMediaBase:   # MEDIA_STORAGE=r2
+    url: str             # MEDIA_PUBLIC_BASE_URL，已去掉末尾的 /
+
+@dataclass(frozen=True)
+class LocalMediaDir:     # MEDIA_STORAGE=local
+    root: Path           # MEDIA_LOCAL_DIR.resolve()，启动时算一次
+
+MediaLinkBase = PublicMediaBase | LocalMediaDir
+```
+
+- 放在 `harvester/media/urls.py`，加一个纯函数 `file_link(base, object_key) -> str`：`PublicMediaBase` 时返回 `f"{base.url}/{quote(object_key, safe='/')}"`（现在的键只有数字、字母、`/` 和 `-`，`quote` 不会改变它们，只是防以后键里出现别的字符）；`LocalMediaDir` 时返回 `str(base.root / object_key)`，**不做 URL 编码**（这是本机路径不是网址，路径里的中文，比如 `开发`，原样写出；JSONL 本来就是 `ensure_ascii=False`）。
+- `link_base_from_settings(settings) -> MediaLinkBase`（同一个文件）把 `load_media_settings("api")` 的结果转成上面两种之一。`api/main.py` 里现有的 `_build_media_store()` 已经调用过一次 `load_media_settings("api")`；改成**只读一次设置**，用同一个结果同时生成 `media_store` 和 `media_link_base`。
+- `create_app` 加一个**必填**的 keyword-only 参数 `media_link_base: MediaLinkBase`（不给默认值），pyright 会逼所有调用处都接上，不会因为漏接线导出就悄悄没了链接。测试里统一传 `LocalMediaDir(tmp_path)`（`tests/api/conftest.py`），`export_openapi.py` 这类不关心链接的调用处也传一个 `LocalMediaDir`。`export_routes.py` 从 `app.state.media_link_base` 取，传给生成器。
+- `ExportMedia` 加字段 `object_key: str | None`；`db/export.py` 每批的 `media` 查询加 `StoredFile.object_key` 列，用 `outerjoin(StoredFile, StoredFile.id == Media.file_id)`。数据库有约束 `(status = 'stored') = (file_id IS NOT NULL)`，所以 `stored` 的行一定有 `object_key`；`media_link` 里的「`object_key` 不为空」只是给 pyright 收窄类型用的。
+- 本地模式下 api 是在你电脑上用 `uv run` 跑的，路径就是你电脑上的真实路径。如果以后本地也把 api 放进容器里跑，这个路径会变成容器里的路径，需要回来改。
 | `clip_gaps(gaps, range_start, range_end) -> tuple[tuple[datetime, datetime], ...]` | 同上 | AC-8，缺口和范围取交集 |
 
 `message` 参数是一个 frozen dataclass `ExportMessage`（消息列加上它的附件、媒体行和旧版本），由数据库层按批组装。
@@ -184,8 +211,8 @@ type ExportSelection =
   "content": "正文",
   "reply_to_id": null,
   "forwarded": {"message_id": "…", "channel_id": "…", "guild_id": "…", "content": "…", "embeds": [], "attachments": []},
-  "embeds": [{"title": "…", "description": "…", "fields": [{"name": "…", "value": "…"}], "image_url": "https://cdn.discordapp.com/…", "image_media_url": "https://harvester.example/api/media/43", "...": "其余 EmbedData 字段原样"}],
-  "attachments": [{"id": "…", "filename": "a.png", "content_type": "image/png", "size_bytes": 1234, "width": 800, "height": 600, "removed_at": null, "media_status": "stored", "url": "https://harvester.example/api/media/42"}],
+  "embeds": [{"title": "…", "description": "…", "fields": [{"name": "…", "value": "…"}], "image_url": "https://cdn.discordapp.com/…", "image_media_url": "https://media.norafu.com/1200000000000000001/2026-11/9f2c…e1.jpg", "...": "其余 EmbedData 字段原样"}],
+  "attachments": [{"id": "…", "filename": "a.png", "content_type": "image/png", "size_bytes": 1234, "width": 800, "height": 600, "removed_at": null, "media_status": "stored", "url": "https://media.norafu.com/1200000000000000001/2026-11/4b7a…0c.png"}],
   "version": 2,
   "edited_at": "2026-11-06T15:31:00+08:00",
   "deleted_at": null,
@@ -211,9 +238,10 @@ type ExportSelection =
 | 下载 | 时区 | 请求参数 `tz`，前端取 `Intl.DateTimeFormat().resolvedOptions().timeZone` |
 | 下载 | 文件名里的服务器名、频道名 | `guild.name`、`channel.name` |
 | 下载 | 文件名里的日期 | 第一条和最后一条消息的 `created_at`，按 `tz` 换算 |
-| 下载 | 附件链接的域名 | 现有配置 `site_origin`（`harvester.config`） |
-| 下载 | 附件链接的 ID 和是否可用 | `media.id`、`media.status` |
-| 下载 | embed 图片副本的链接 | `media` 里 `message_id` 相同、`kind` 为 `embed_image` 或 `embed_thumbnail`、`slot` 等于 embed 序号、`status = 'stored'` 的行的 `id`，域名取 `site_origin`；每批消息一次查出，不逐条查 |
+| 下载 | 文件链接的开头 | r2：新配置 `MEDIA_PUBLIC_BASE_URL`（`ApiR2MediaSettings.media_public_base_url`）；local：现有配置 `MEDIA_LOCAL_DIR` 的绝对路径。都经 `app.state.media_link_base` 传入 |
+| 下载 | 文件链接的路径部分 | `stored_file.object_key`，经 `media.file_id` 关联 |
+| 下载 | 附件链接是否可用 | `media.status = 'stored'` 且 `object_key` 不为空 |
+| 下载 | embed 图片副本的链接 | `media` 里 `message_id` 相同、`kind` 为 `embed_image` 或 `embed_thumbnail`、`slot` 等于 embed 序号、`status = 'stored'` 的行的文件链接；和附件的 `media` 行在每批里一次查出，不逐条查 |
 | 下载 | 正文 | `message.content` 经 `strip_markup` |
 | 下载 | 旧版本 | `message_revision` |
 | 下载 | 删除和编辑标记 | `message.deleted_at`、`message.edited_at`、`message.version` |
@@ -228,11 +256,15 @@ type ExportSelection =
 
 ### Security model
 
-只有你一个用户。两个接口都在现有的会话保护下（`require_session`），没有登录返回 401。导出是只读的 `GET`，同源，不改任何数据。文件名里的名字经过 AC-11 的清理，防止响应头注入和路径字符。附件链接指向需要登录的 `/api/media/{id}`，导出文件流出去也不会直接暴露 R2 签名链接。日志不记消息内容。
+只有你一个用户。两个接口都在现有的会话保护下（`require_session`），没有登录返回 401。导出是只读的 `GET`，同源，不改任何数据。文件名里的名字经过 AC-11 的清理，防止响应头注入和路径字符。日志不记消息内容。
+
+导出文件里的附件和 embed 图片链接是**永久公开**的（你已决定：附件可以公开，速度优先）。拿到导出文件的人，或你交给的外部 AI 服务，都能一直打开这些文件，没有办法单独收回某个链接（除非在 R2 里删掉那个文件，而 spec 0011 规定不自动删；手动删掉后 Cloudflare 的缓存还会让链接活一段时间，需要时在控制台对这个网址做 Purge）。链接里的 `sha256` 由文件内容算出，猜不出来；自定义域名不提供列目录，所以没拿到导出文件的人找不到这些文件。链接会暴露频道 ID 和年月。公开域名上防恶意 HTML 和 SVG 的做法见 spec 0011 的 Security model。
 
 ### Configuration required
 
-不需要新的环境变量。附件链接用已有的 `site_origin`。
+- `MEDIA_PUBLIC_BASE_URL`：新加，只有 api 读，只在 `MEDIA_STORAGE=r2` 时读，**必填**，缺了 api 启动报错退出（collector 不读）。必须以 `https://` 开头，只能是 `https://<主机名>`：不能带路径（R2 自定义域名不支持路径前缀，带了链接会全部 404）、查询参数和 `#`，末尾的 `/` 自动去掉。线上是 `https://media.norafu.com`。完整定义在 spec 0011 的 Configuration required。
+- 本地模式不需要新配置，用现有的 `MEDIA_LOCAL_DIR`。
+- 导出不再使用 `site_origin`（它在别处照旧使用）。
 
 ### 代码位置
 
@@ -253,6 +285,7 @@ type ExportSelection =
 - 标记处理和时区：含提及、表情、斜杠命令的正文；`tz=Asia/Shanghai` 和非法时区，verifies **AC-13**、**AC-14**、**AC-18**
 - 附件：`stored` 有链接、`pending` 和 `too_large` 没有，移除的附件只在 JSONL；转发附件按 `slot` 对上，verifies **AC-17**
 - embed 图片：`stored` 的 `embed_image` 和 `embed_thumbnail` 在对应序号的 embed 里有 `image_media_url`、`thumbnail_media_url`，原 `image_url` 不变；`pending`、没有行、第二个 embed 的图不会串到第一个；CSV 的 `embeds` 列末尾有 `图片: 链接`；转发和旧版本里的 embed 不加，verifies **AC-17**
+- 文件链接：`PublicMediaBase("https://media.example")` 时附件、转发附件和 embed 图的链接都是 `https://media.example/<object_key>`，指向原文件不是缩略图；`LocalMediaDir` 时是绝对路径；两条 `media` 行指向同一个 `stored_file` 时链接相同；导出文件里搜不到 `/api/media/`；`MEDIA_STORAGE=r2` 缺 `MEDIA_PUBLIC_BASE_URL` 或填 `http://…` 时 api 启动失败，verifies **AC-17**
 - 文件名：中文、非法字符、超长名字、空名字，verifies **AC-11**
 - 缺口：范围和缺口部分重叠、完全不重叠，verifies **AC-8**
 - 中途失败：模拟第二批查询抛错，响应在已写部分后断开，日志记 `export_failed`，verifies **AC-19**
@@ -271,6 +304,24 @@ type ExportSelection =
 6. 内容加粗：CSV 的 `forwarded`、`embeds`、`attachments` 列；`media_link`（也用于 embed 图片副本，每批一次查出 embed 的 `stored` 行）；JSONL 的 `jsonl_line`、批量取旧版本；前端格式选择，satisfies **AC-13**、**AC-15**、**AC-16**、**AC-17**
 7. 失败和运维：超时设置、`export_timeout`、中途出错断开、取消处理、三种日志事件；确认两个接口都要求会话，satisfies **AC-19**、**AC-20**、**AC-21**
 8. 测试：后端纯函数单元测试和连真实 PostgreSQL 的集成测试（快照、范围、上限、附件、失败）；前端选择状态纯函数和操作栏的 Vitest；写 `verify.md` 给 `/check verify` 用，satisfies **AC-1** 到 **AC-22**
+9. 公开文件链接（2026-11-06 加，只改后端，前端和 OpenAPI 不变），satisfies **AC-17**：
+   - 配置：`ApiR2MediaSettings` 加必填的 `media_public_base_url` 和校验（见 Configuration required）。
+   - 链接：`media/urls.py` 加 `MediaLinkBase`、`file_link`、`link_base_from_settings`；`api/main.py` 只读一次媒体设置，同时生成 store 和 link base；`create_app` 的 `media_link_base` 必填。
+   - 数据：`ExportMedia` 加 `object_key: str | None`，每批的 `media` 查询 `outerjoin` `stored_file`；`export_format.py` 的 `site_origin` 参数全部换成 `link_base`。
+   - 测试：
+     - `tests/media/test_storage_config.py` 的 `READ` 测试数据加 `MEDIA_PUBLIC_BASE_URL`。这样现有的参数化测试会自动覆盖「api 缺它就启动失败」，collector 那边的测试本来就覆盖「不需要它」。
+     - 新写校验测试：`http://…`、带路径、带 `?`、带 `#` 都要被拒绝；末尾的 `/` 要被去掉。
+     - 更新 `test_export_format.py`，加上「Critical test scenarios」里的文件链接用例。
+     - 更新 `tests/api/test_export.py` 的接口级测试，断言链接存在，而且是 `app.state.media_link_base` 拼出来的形状，以此证明从 `app.state` 到生成器这条线接上了。
+   - 部署文件：
+     - `deploy/compose.prod.yml` 只在 api 服务的 `environment` 里加 `MEDIA_PUBLIC_BASE_URL: ${MEDIA_PUBLIC_BASE_URL:?set in .env}`，不放进共用的那块配置。
+     - `deploy/README.md` 补上 spec 0011 Follow-up 里的 Cloudflare 控制台步骤和下面的上线顺序。
+     - 第 215 行「不开公开访问」改成「桶本身不开 `r2.dev`，只通过自定义域名 `media.norafu.com` 公开读」。
+   - 上线顺序：
+     1. 完成 spec 0011 Follow-up 的 Cloudflare 步骤，用 `curl -I` 确认能打开一个已有文件，而且带着两个安全头。
+     2. 在**合并之前**给服务器 `.env` 加上 `MEDIA_PUBLIC_BASE_URL=https://media.norafu.com`。`:?` 的写法让 `.env` 缺这个变量时整个 compose 文件读取失败，collector 的发布和其他用 compose 的运维脚本也会一起挂，而合并后 CI 会自动发布。
+     3. 合并，发布 api。
+     4. 回滚：发回上一个镜像就行，`.env` 里留着这个变量不影响旧版本。
 
 ## Consequences
 
@@ -287,6 +338,10 @@ type ExportSelection =
 - 18 位的 Discord ID 用 Excel 直接打开会显示成科学计数法并丢失精度；需要精确 ID 时用导入向导把这几列设成文本，或用 JSONL。
 - 范围只能用已加载的消息来点；要从很久以前的一条开始，需要先往上滚到那里（或用「从最早」）。
 - 不能导出搜索结果；以后需要时另加入口，后端的格式函数可以复用。
+- 导出里的附件链接永久公开，交出去就收不回来；被删除的消息里的附件，只要出现在导出里，也一样能被打开。
+- 本地模式写的是本机路径，本地导出的文件交给外部云端 AI 读不到图；要交给外部服务时从线上导出。
+- 导出链接依赖 `media.norafu.com` 一直绑在这个桶上；以后换域名，已经发出去的旧导出文件里的链接会全部失效。
+- 外部 AI 拿到的文件类型来自上传时写的 `Content-Type`：图片由 Pillow 识别，可靠；非图片附件用 Discord 声明的类型或按文件名猜，猜不出时是 `application/octet-stream`，有的 AI 服务可能因此不认这个文件。
 
 **Neutral**:
 - `search_text.py` 里多了一个对外的 `strip_markup`，搜索和导出共用同一套标记规则，以后改规则两边一起变（改规则时搜索那边仍要按现有说明重建 `search_text`）。
@@ -298,3 +353,5 @@ type ExportSelection =
 - [ ] scope 第 14 项原来写的是“把当前筛选结果导出成文件”“CSV 和 JSON”，这个 spec 改成了单个频道按消息范围导出、CSV 和 JSONL；需要的话跑 `/scope` 更新这一行的说明和 Done when。
 - [ ] 确认 api 的 Docker 镜像里有时区数据（`/usr/share/zoneinfo`）。`uv.lock` 里的 `tzdata` 只在 Windows 上装；如果镜像里没有，就把 `tzdata` 加成直接依赖，否则 `Asia/Shanghai` 会被当成非法时区。
 - [ ] 以后如果要导出搜索结果，复用 `export_format.py` 和 spec 0013 的 `parse_filters`、`search_conditions`，另开 spec。
+- [ ] 公开链接上线前，先完成 spec 0011 Follow-up 里的 Cloudflare 控制台步骤（绑定 `media.norafu.com`、响应头规则、关掉 `r2.dev`）。
+- [ ] dashboard 这次仍走 `/api/media` 的签名链接跳转。以后觉得图片加载慢，可以另开一次 `/architect`，让缩略图和大图直接用公开链接（下载和非白名单类型仍走签名链接，保留原文件名）。

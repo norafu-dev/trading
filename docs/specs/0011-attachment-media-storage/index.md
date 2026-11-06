@@ -1,11 +1,11 @@
 # 0011. 附件与图片保存：R2 存储、collector 下载队列和签名链接
 
-**Date**: 2026-11-04
+**Date**: 2026-11-04（2026-11-06 更新：桶通过自定义域名 `media.norafu.com` 公开只读，给 spec 0014 的导出写永久公开链接；dashboard 仍走签名链接）
 **Status**: In Progress
 
 ## Summary
 
-Discord 的附件链接带过期签名，过一段时间就打不开。这个 spec 让 collector 把消息附件、转发里的附件，以及 embed 里由 Discord 托管的图片，下载到一个新的私有 R2 桶（Cloudflare 的按文件存储服务），按「频道 ID / 年月」分目录存放，同一频道同一个月里内容相同的文件只存一份，图片顺便生成小尺寸缩略图。dashboard 通过 api 拿到一个 1 小时有效的签名链接（带签名、到期作废的临时地址）去读文件，不再依赖 Discord 原链接。单个文件上限和总容量在设置页里改，空间满了就停止下载并提醒；已经入库的旧附件会先向 Discord 换新链接再补下载。
+Discord 的附件链接带过期签名，过一段时间就打不开。这个 spec 让 collector 把消息附件、转发里的附件，以及 embed 里由 Discord 托管的图片，下载到一个新的私有 R2 桶（Cloudflare 的按文件存储服务），按「频道 ID / 年月」分目录存放，同一频道同一个月里内容相同的文件只存一份，图片顺便生成小尺寸缩略图。dashboard 通过 api 拿到一个 1 小时有效的签名链接（带签名、到期作废的临时地址）去读文件，不再依赖 Discord 原链接。单个文件上限和总容量在设置页里改，空间满了就停止下载并提醒；已经入库的旧附件会先向 Discord 换新链接再补下载。2026-11-06 起，桶另外通过自定义域名 `media.norafu.com` 公开只读，频道导出（spec 0014）里写这个域名下的永久链接，方便交给外部 AI 读取；dashboard 自己仍然用签名链接。
 
 ## Rationale
 
@@ -42,7 +42,7 @@ Reasoning and options: see [rationale.md](rationale.md).
 - **AC-17**：消息里的「重试」按钮把那一行（`failed` 或 `gone`）改回 `pending`、`attempts` 清零；设置页的「重试全部失败」把所有 `failed` 行改回 `pending`（不含 `gone`）。`too_large` 和 `no_space` 不能手动重试，只能通过改设置重新排队，接口返回 409。
 - **AC-18**：collector 停止或崩溃时正在下载的文件，在下次启动时立刻放回队列，不计入 `attempts`，不需要等待超时；临时目录在启动时清空，崩溃留下的半截文件不会越积越多。同一个文件被上传两次也不会出错（R2 里的文件名就是内容哈希，重复上传结果一样）。正在下载的行被重置（AC-13）或手动重试后，那次下载的结果被丢弃，不会把旧文件写回去。
 - **AC-22**：下载任务遇到意外异常时记 `error` 日志，等 60 秒后继续运行，不会悄悄停掉，也不会让 collector 进程退出（退出重启要消耗登录额度）。下载任务每 30 秒写一次自己的心跳；首页系统状态显示「附件下载」最近心跳的相对时间，collector 进程心跳正常而下载任务心跳超过 180 秒没更新时，这一行标红并显示「附件下载任务无响应」；处于 AC-10 的暂停期时显示「已暂停到 <时间>」。
-- **AC-19**：R2 桶是私有的，不开公开访问。collector 用一个只作用于这个桶的读写 token，api 用一个只作用于这个桶的只读 token；两个进程各自只拿到自己那一组密钥。日志、错误响应和数据库里都不出现 R2 密钥、签名链接或 Discord 链接的查询参数（记日志时只留主机名和路径）。
+- **AC-19**：R2 桶只通过自定义域名 `media.norafu.com` 公开只读（2026-11-06 起，给 spec 0014 的导出用）：`https://media.norafu.com/<object_key>` 不用登录就能取到文件，根路径不列出文件；桶自带的 `r2.dev` 公开地址保持关闭；这个域名的每个响应都带 `Content-Security-Policy: sandbox` 和 `X-Content-Type-Options: nosniff`（Cloudflare 响应头规则加的，不靠上传时的元数据）。写入和签名仍然只能用 token：collector 用一个只作用于这个桶的读写 token，api 用一个只作用于这个桶的只读 token；两个进程各自只拿到自己那一组密钥。日志、错误响应和数据库里都不出现 R2 密钥、签名链接或 Discord 链接的查询参数（记日志时只留主机名和路径）。
 - **AC-20**：`MEDIA_STORAGE=local` 时文件写到 `MEDIA_LOCAL_DIR`（默认 `./media-dev`），`GET /api/media/{id}` 直接返回文件内容（同样的 `Content-Type`、`Content-Disposition` 和缓存头），本地开发不需要 R2。`MEDIA_STORAGE=r2` 时缺少任何一个 R2 配置，对应进程启动时报错退出。`MEDIA_STORAGE` 没设置时也报错退出。
 - **AC-23**：频道的采集开关（`channel.collect_enabled`）关掉后，这个频道里还没保存的附件停止处理：不领取、不换链接、不计入 `attempts`，状态保持 `pending`；关掉那一刻已经在下载的（最多 3 个）照常完成；已经 `stored` 的不受影响。重新打开后自动继续，不需要手动重试。线程看它自己的开关（关掉父频道时线程会被一起关掉，spec 0006）。设置页「待保存」数量旁边显示其中有多少个「所在频道已关闭」。
 - **AC-21**：新接口都要求登录；改动的写接口走现有的 Origin 检查；接口改动后 OpenAPI 和前端类型同步；后端 ruff、pyright、pytest 和前端 Biome、typecheck、Vitest、build 全部通过。
@@ -319,8 +319,9 @@ stored、任何状态 ──(embed 序号上的图片换了)─▶ pending（清
 ### Security model
 
 - 唯一的使用者是登录了 dashboard 的你；所有新接口都要求会话，写接口加 Origin 检查（spec 0004）。
-- R2 桶私有；签名链接 1 小时后作废。链接被复制出去，最多 1 小时内能打开那一个文件。
-- 文件在 R2 的域名上打开，和 dashboard 不同源，所以恶意的 HTML 或 SVG 附件拿不到 dashboard 的会话 cookie；不在 `INLINE_TYPES` 白名单里的文件（包括 SVG 和 HTML）一律以下载方式打开，文件名清理过控制字符，不会被注入响应头。本地模式下 api 同源返回文件，加 `X-Content-Type-Options: nosniff` 和 `Content-Security-Policy: sandbox`，同样防止被当成网页执行。
+- 访问分两条路（2026-11-06 起）。dashboard 走签名链接：1 小时后作废，被复制出去最多 1 小时内能打开那一个文件。导出走公开域名 `media.norafu.com`：链接永久有效、不能单独收回，谁拿到导出文件谁就能一直打开里面的文件（你已接受：附件可以公开，速度优先）。对象键里的 `sha256` 由内容算出，猜不到；自定义域名不列目录，所以没拿到链接的人找不到文件。对象键会暴露频道 ID 和年月。
+- 公开域名上的恶意文件：`media.norafu.com` 和 dashboard 的 `harvester.norafu.com` 不同源，但**同站**（都在 `norafu.com` 下），而上传时只写了 `ContentType`，HTML 或 SVG 附件会在这个域名上直接打开。会话 cookie 是只属于 `harvester.norafu.com` 的 host-only cookie，那个页面读不到；但 `SameSite=strict` 挡不住同站请求。所以在 Cloudflare 给这个域名加响应头规则：`Content-Security-Policy: sandbox` 让页面里的脚本不能运行，`X-Content-Type-Options: nosniff` 防止浏览器把文件猜成别的类型。对已有文件和以后的文件都生效，图片显示和程序读取不受影响。写接口的 Origin 检查（spec 0004）是第二层保护。
+- 签名链接的文件在 R2 的域名上打开，和 dashboard 不同站，所以恶意的 HTML 或 SVG 附件拿不到 dashboard 的会话 cookie；不在 `INLINE_TYPES` 白名单里的文件（包括 SVG 和 HTML）一律以下载方式打开，文件名清理过控制字符，不会被注入响应头。本地模式下 api 同源返回文件，加 `X-Content-Type-Options: nosniff` 和 `Content-Security-Policy: sandbox`，同样防止被当成网页执行。
 - 两个 R2 token 都只作用于这一个桶；collector 的能读写，api 的只能读。`compose.prod.yml` 只把写 token 给 collector，只把读 token 给 api。
 - 换链接用小号的已登录会话，走 discord.py-self 的限速，节奏按 AC-11（每批 50 个、间隔 30 秒、每小时 600 个），降低封号风险。CDN 下载不带登录信息，httpx 不读代理环境变量。
 - 解码前先查像素数（2500 万上限）防止压缩炸弹，缩略图一次只做一张；缩略图失败不影响原文件保存。
@@ -342,10 +343,11 @@ stored、任何状态 ──(embed 序号上的图片换了)─▶ pending（清
 
 只给 api：
 - `MEDIA_R2_READ_ACCESS_KEY_ID`、`MEDIA_R2_READ_SECRET_ACCESS_KEY`：只在 `r2` 时读，这个桶的只读 token。
+- `MEDIA_PUBLIC_BASE_URL`（2026-11-06 加）：只在 `r2` 时读，必填，桶的公开域名，线上是 `https://media.norafu.com`。字段 `ApiR2MediaSettings.media_public_base_url: str`，校验：只能是 `https://<主机名>`，不能带路径（R2 自定义域名不支持路径前缀）、查询参数和 `#`，末尾的 `/` 去掉。只有导出（spec 0014）用它拼文件链接；collector 不读。
 
 `MEDIA_STORAGE=r2` 时，对应进程缺任何一项就启动报错退出；`local` 时不要求任何 R2 配置（AC-20）。密钥用 `SecretStr`，不进日志。本地 `.env.example` 写 `MEDIA_STORAGE=local`。
 
-**上线前要准备的**（你在 Cloudflare 里做）：建私有桶 `harvester-media`，不加生命周期规则；建两个只作用于这个桶的 API token（对象读写、对象只读）；四个密钥写进服务器 `.env`，副本存密码管理器。
+**上线前要准备的**（你在 Cloudflare 里做）：建桶 `harvester-media`（桶本身不开 `r2.dev`；2026-11-06 起只通过自定义域名 `media.norafu.com` 公开读，见 AC-19），不加生命周期规则；建两个只作用于这个桶的 API token（对象读写、对象只读）；四个密钥写进服务器 `.env`，副本存密码管理器。
 
 ### Critical test scenarios
 
@@ -390,7 +392,8 @@ stored、任何状态 ──(embed 序号上的图片换了)─▶ pending（清
 - 多了一个外部依赖：R2 不可用时新附件暂时存不了（会重试，5 次后变 `failed`，需要你点「重试全部失败」）。
 - 换链接是带小号登录信息的额外请求，补下载期间请求量会上升；节奏已经压低到每小时 600 个，但封号风险不是零。代价是库存大时补下载要很久（1 万个旧附件大约 17 小时）。
 - 换过链接仍然 403 不会马上判死，而是重试 5 次，所以真正失效的文件要多花几个小时才落到 `failed`。
-- R2 里的文件没有自己加密，靠私有桶和 token 权限保护；桶的 token 泄露等于附件泄露。
+- R2 里的文件没有自己加密，写入靠 token 权限保护；桶的 token 泄露等于附件泄露。2026-11-06 起桶通过 `media.norafu.com` 公开只读，任何拿到对象键的人都能读那个文件，导出文件就是对象键清单，交出去就收不回来。
+- 公开域名的安全依赖 Cloudflare 控制台里的一条响应头规则；规则被误删时，恶意 HTML 或 SVG 附件会在一个和 dashboard 同站的域名上运行脚本，代码里没有第二道兜底（Origin 检查只保护写接口）。
 - 没有任何删除流程：容量只增不减，满了只能调高上限。以后要清理需要单独设计（要数引用）。
 - 上线前已入库的转发附件存不回来；补下载期间队列可能很长，旧附件要过一阵才能看到。
 - collector 的内存和 CPU 占用会因为下载和缩略图上升（同时 3 个下载，缩略图一次一张，最大约 100 MB 的解码内存）。
@@ -415,3 +418,11 @@ stored、任何状态 ──(embed 序号上的图片换了)─▶ pending（清
 - [ ] boto3 和 Pillow 的 Agent Skill 你选择了不装，`AGENTS.md` 的 `Declined:` 里应记一笔（`/sync` 负责）。
 - [ ] 设计第 10 项「按时间段采集历史消息」时，让历史采集和本 spec 的换链接共用同一份带登录身份的请求额度（同一个小号），不要各算各的；到时可能要把 AC-11 的每小时 600 个改成从共用额度里扣。
 - [ ] 以后如果要清理旧附件或看单个频道的占用，需要单独设计删除和引用计数。
+- [ ] 公开域名的 Cloudflare 控制台步骤（你自己做，在 spec 0014 第 9 步发布 api 之前完成）：
+  1. 核对 DNS 迁移（`norafu.com` 已于 2026-11-06 迁到 Cloudflare）：Cloudflare 里原来的记录都在（`harvester.norafu.com` 的 A 记录，以及邮件用的 MX、TXT 记录，如果有）；`harvester.norafu.com` 设成 **DNS only（灰色云）**，因为 Caddy 自己申请 HTTPS 证书，走 Cloudflare 代理（橙色云）可能让证书续期和 SSE 长连接出问题；`dig +short harvester.norafu.com` 返回服务器的静态 IP，dashboard 能正常打开。
+  2. R2 → `harvester-media` → Settings → Custom Domains，绑定 `media.norafu.com`（这条记录由 Cloudflare 自动建，走代理）。
+  3. 同一页确认 `r2.dev` 公开地址是关闭的。
+  4. Rules → Transform Rules → Modify Response Header，条件 `Hostname equals media.norafu.com`，设置 `Content-Security-Policy: sandbox` 和 `X-Content-Type-Options: nosniff`。
+  5. 让外部 AI 能取到文件：在 Security 里确认这个 zone 的「屏蔽 AI 爬虫」（AI bot blocking）和 Bot Fight Mode 是关的；要开着的话，就给 `media.norafu.com` 加一条跳过规则。不然外部 AI 取图会拿到 403 或质询页。
+  6. 用 `curl -I https://media.norafu.com/<一个已存的 object_key>` 确认返回 200、带上面两个头；`curl -I https://media.norafu.com/` 不列出文件。
+  7. 这些步骤写进 `deploy/README.md`（spec 0014 第 9 步负责）。以后手动删了 R2 里的文件，记得在 Cloudflare 对那个网址做 Purge，否则缓存会让它还能打开一阵子。

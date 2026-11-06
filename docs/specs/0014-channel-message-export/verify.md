@@ -21,8 +21,11 @@ _Steps derived from spec 0014 acceptance criteria. `/check verify` runs these; `
 - [ ] 用 Asia/Shanghai 和另一个时区的浏览器各导出同一段 → 时间带对应偏移、精确到秒；embed 的 `timestamp` 原样不变 → AC-14
 - [ ] 用 Excel 双击打开 CSV → 中文不乱码；多行正文、含逗号和引号的单元格正确；以 `=`、`+`、`-`、`@` 开头的正文单元格前面有 `'`，ID 和时间列没有 → AC-15
 - [ ] 打开 JSONL → 每行一个对象，中文不转义，ID 是字符串，带 `revisions`；没改过的消息 `revisions` 为空数组 → AC-16
-- [ ] 导出 embed 里带图的消息（如「华尔街聚合」的 Trader Gauls 频道）→ JSONL 里该 embed 有 `image_media_url`（`<SITE_ORIGIN>/api/media/<id>`，登录后能打开图片）且 `image_url` 不变；CSV 的 `embeds` 列末尾有 `图片: 链接`；`pending` 或没有副本的 embed 图没有这个字段；一条消息里有多个 embed 时链接和各自的图对得上；转发和 `revisions` 里的 embed 没有 → AC-17
-- [ ] 导出带已保存附件、未保存附件、被移除附件、转发附件的消息 → 已保存的有 `<SITE_ORIGIN>/api/media/<id>` 链接（登录后能打开），其他没有；CSV 不列被移除的，JSONL 列出并带 `removed_at` → AC-17
+- [ ] 导出 embed 里带图的消息（如「华尔街聚合」的 Trader Gauls 频道）→ JSONL 里该 embed 有 `image_media_url`（`https://media.norafu.com/<object_key>`，在没登录的隐私窗口里也能打开图片）且 `image_url` 不变；CSV 的 `embeds` 列末尾有 `图片: 链接`；`pending` 或没有副本的 embed 图没有这个字段；一条消息里有多个 embed 时链接和各自的图对得上；转发和 `revisions` 里的 embed 没有 → AC-17
+- [ ] 导出带已保存附件、未保存附件、被移除附件、转发附件的消息 → 已保存的有 `https://media.norafu.com/<object_key>` 链接（不登录也能打开，是原文件不是缩略图），其他没有；CSV 不列被移除的，JSONL 列出并带 `removed_at`；整个文件里搜不到 `/api/media/` → AC-17
+- [ ] 把一份线上导出的 JSONL 交给一个外部 AI（不带任何登录信息），让它描述其中两张 embed 图 → 它能读到图的内容 → AC-17
+- [ ] 本地 `MEDIA_STORAGE=local` 导出一份 → 链接是 `media-dev` 下的绝对路径，`ls` 这个路径文件存在；交给本机 agent 能读到图 → AC-17
+- [ ] 公开域名的安全头：`curl -I https://media.norafu.com/<某个已存的 object_key>` → 200，带 `Content-Security-Policy: sandbox` 和 `X-Content-Type-Options: nosniff`；`curl -I https://media.norafu.com/` → 不列出文件 → AC-17
 - [ ] 已登录状态下导出 → 正常；登出后直接打开下载网址 → 401 → AC-21
 
 ## Commands
@@ -43,8 +46,9 @@ _Steps derived from spec 0014 acceptance criteria. `/check verify` runs these; `
 - [ ] 上限 100000 → 用缩小后的常量验证预览 `over_limit` 与下载 422 `export_too_large` → AC-7
 - [ ] 时区 → 改浏览器时区后文件里的偏移和文件名里的日期随之变化（例如 UTC 20:00 在上海算次日） → AC-11, AC-14
 - [ ] 文件名里的服务器名、频道名 → 对照 `guild.name`、`channel.name`；线程用线程名 → AC-11
-- [ ] 附件链接域名 → 等于配置的 `SITE_ORIGIN` → AC-17
-- [ ] embed 图片副本链接 → `image_media_url`、`thumbnail_media_url` 的 ID 等于 `select id from media where message_id=… and kind in ('embed_image','embed_thumbnail') and slot=… and status='stored'` → AC-17
+- [ ] 附件链接开头 → r2 时等于配置的 `MEDIA_PUBLIC_BASE_URL`，local 时等于 `MEDIA_LOCAL_DIR` 的绝对路径 → AC-17
+- [ ] 附件链接的路径部分 → 等于 `select sf.object_key from media m join stored_file sf on sf.id = m.file_id where m.id = …` → AC-17
+- [ ] embed 图片副本链接 → `image_media_url`、`thumbnail_media_url` 的路径部分等于 `media` 里 `message_id=… and kind in ('embed_image','embed_thumbnail') and slot=… and status='stored'` 那一行经 `file_id` 关联的 `stored_file.object_key` → AC-17
 - [ ] 删除和编辑标记 → 对照 `deleted_at`、`edited_at`、`version`；旧版本对照 `message_revision` → AC-12, AC-16
 
 ## Acceptance-criteria coverage
