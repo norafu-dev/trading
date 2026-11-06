@@ -251,14 +251,14 @@ spec [0013](../specs/0013-message-search-filter/index.md)
 
 把当前筛选结果导出成文件。
 **Done when:** 能把筛选后的消息导出为 CSV 和 JSON；大量数据导出不会卡死页面；导出内容包含编辑和删除标记。
-spec [0014](../specs/0014-channel-message-export/index.md)
+spec [0014](../specs/0014-channel-message-export/index.md) · code in `backend/src/harvester/api/export_*.py`, `backend/src/harvester/db/export.py`, `web/src/components/export/`
 
 - [x] Design it (spec): `/architect 导出`
-- [ ] Build it: `/develop 导出`
-  - [ ] 打通细线：拆出 `strip_markup`，选两条消息下载最简 CSV（快照事务、键集分页、文件名），频道页导出按钮和选择模式，AC-1, AC-2, AC-4, AC-5, AC-10 到 AC-15, AC-22
-  - [ ] 开放端和预览：「从最早」「到最新」、封顶计数和 10 万条上限、缺口提示、空频道和错误状态，AC-3, AC-6 到 AC-9, AC-18
-  - [ ] 内容加粗：CSV 的转发、embed、附件列和防公式注入，JSONL 和旧版本，附件链接，格式选择，AC-13, AC-15 到 AC-17
-  - [ ] 失败和收口：超时、中途断开、提前断开不漏连接、三种日志事件、会话保护，测试和 `verify.md`，AC-19 到 AC-21
+- [x] Build it: `/develop 导出`
+  - [x] 打通细线：拆出 `strip_markup`，选两条消息下载最简 CSV（快照事务、键集分页、文件名），频道页导出按钮和选择模式，AC-1, AC-2, AC-4, AC-5, AC-10 到 AC-15, AC-22
+  - [x] 开放端和预览：「从最早」「到最新」、封顶计数和 10 万条上限、缺口提示、空频道和错误状态，AC-3, AC-6 到 AC-9, AC-18
+  - [x] 内容加粗：CSV 的转发、embed、附件列和防公式注入，JSONL 和旧版本，附件链接，格式选择，AC-13, AC-15 到 AC-17
+  - [x] 失败和收口：超时、中途断开、提前断开不漏连接、三种日志事件、会话保护，测试和 `verify.md`，AC-19 到 AC-21
 - [ ] Verify it: `/check verify 导出`
 
 ## Slice 7: 关键词提醒
