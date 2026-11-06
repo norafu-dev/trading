@@ -11,7 +11,7 @@ import { type BlockNode, parseMarkdown } from "./parser";
 vi.mock("./parser", () => ({ parseMarkdown: vi.fn() }));
 
 const parse = vi.mocked(parseMarkdown);
-const resolver: MentionResolver = { user: () => undefined, channel: () => undefined };
+const resolver: MentionResolver = { channel: () => undefined };
 const baseProps = {
   resolver,
   now: new Date("2026-10-30T06:00:00Z"),
@@ -27,6 +27,18 @@ const paragraph = (value: string): BlockNode => ({
 describe("MessageContent", () => {
   beforeEach(() => {
     parse.mockReset();
+  });
+
+  // covers: spec 0015
+  it("解析前去掉 @ 提及，纯文本降级时也看不到", () => {
+    parse.mockReturnValue({ ok: true, blocks: [paragraph("早上好")] });
+    render(<MessageContent content="<@1> @everyone 早上好" parser="ready" {...baseProps} />);
+    expect(parse).toHaveBeenCalledWith("早上好");
+
+    const { container } = render(
+      <MessageContent content={"<@&2> 看这里\n<@3>"} parser="failed" {...baseProps} />,
+    );
+    expect(container.firstElementChild?.textContent).toBe("看这里");
   });
 
   // covers: AC-10

@@ -278,9 +278,6 @@ async def ingest_message(
     if not await _row_exists(session, _CHANNEL, snap.channel_id):
         return "missing_channel"
     await upsert_user(session, snap.author)
-    for mentioned in sorted(snap.mentions, key=lambda user: user.id):
-        if mentioned.id != snap.author.id:
-            await upsert_user(session, mentioned)
 
     embeds = normalize_embeds(snap.embeds)
     stored = await _lock_message(session, snap.id)

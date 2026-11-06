@@ -20,7 +20,7 @@ from harvester.db.messages import (
     NamedRef,
     hydrate_messages,
     messages_by_ids_statement,
-    resolve_names,
+    resolve_channel_names,
 )
 from harvester.db.models import Channel, DiscordUser, Guild, Message
 from harvester.db.snapshots import THREAD_CHANNEL_TYPES, snowflake_floor
@@ -68,7 +68,6 @@ class SearchHit:
 class SearchPage:
     hits: tuple[SearchHit, ...]
     next_before: int | None
-    users: tuple[NamedRef, ...]
     channels: tuple[NamedRef, ...]
 
 
@@ -201,7 +200,7 @@ async def search_page(
             has_more = len(ids) > limit
             ids = ids[:limit]
             if not ids:
-                return SearchPage((), None, (), ())
+                return SearchPage((), None, ())
             rows = list(await session.execute(messages_by_ids_statement(ids)))
             rows.sort(key=lambda r: r.id, reverse=True)
             messages = await hydrate_messages(session, rows)
@@ -210,7 +209,7 @@ async def search_page(
                 r.id: (NamedRef(r.guild_id, r.guild_name), _channel_info(r))
                 for r in await session.execute(_channel_info_statement(channel_ids))
             }
-            users, channels = await resolve_names(session, messages)
+            channels = await resolve_channel_names(session, messages)
     except DBAPIError as error:
         if is_query_canceled(error):
             return "timeout"
@@ -219,7 +218,7 @@ async def search_page(
         SearchHit(message=m, guild=infos[m.channel_id][0], channel=infos[m.channel_id][1])
         for m in messages
     )
-    return SearchPage(hits, messages[-1].id if has_more else None, users, channels)
+    return SearchPage(hits, messages[-1].id if has_more else None, channels)
 
 
 async def count_matches(

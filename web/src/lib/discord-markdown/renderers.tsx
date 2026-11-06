@@ -130,22 +130,18 @@ function renderLink(node: NodeOf<"link">, ctx: RenderContext): ReactNode {
   );
 }
 
-function mentionText(mention: MentionValue, resolver: MentionResolver): string {
+// @用户、@身份组、@everyone、@here 不显示（spec 0015）：正文在解析前已经去掉，这里兜底返回 null。
+function mentionText(mention: MentionValue, resolver: MentionResolver): string | null {
   switch (mention.type) {
-    case "user": {
-      const name = resolver.user(String(mention.value));
-      return name ? `@${name}` : "@未知用户";
-    }
+    case "user":
+    case "role":
+    case "everyone":
+    case "here":
+      return null;
     case "channel": {
       const name = resolver.channel(String(mention.value));
       return name ? `#${name}` : "#未知频道";
     }
-    case "role":
-      return "@身份组";
-    case "everyone":
-      return "@everyone";
-    case "here":
-      return "@here";
     case "command": {
       const value = mention.value as { name?: unknown } | undefined;
       return typeof value?.name === "string" ? `/${value.name}` : "/命令";
@@ -226,9 +222,10 @@ const RENDERERS = {
     </div>
   ),
   link: renderLink,
-  mention: (node, ctx) => (
-    <span className={MENTION_CLASS}>{mentionText(node.value, ctx.resolver)}</span>
-  ),
+  mention: (node, ctx) => {
+    const text = mentionText(node.value, ctx.resolver);
+    return text === null ? null : <span className={MENTION_CLASS}>{text}</span>;
+  },
   emoji: (node) =>
     node.value.type === "custom" ? (
       <CustomEmoji

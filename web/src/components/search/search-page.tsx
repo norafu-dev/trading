@@ -99,13 +99,10 @@ export function SearchPage() {
   const count = useSearchCount(apiQuery, valid, refreshToken);
   const hits = results.data?.pages.flatMap((p) => p.items) ?? [];
   const resolver = useMemo(() => {
-    const users = new Map(
-      results.data?.pages.flatMap((p) => p.users.map((u) => [u.id, u.name] as const)),
-    );
     const channels = new Map(
       results.data?.pages.flatMap((p) => p.channels.map((c) => [c.id, c.name] as const)),
     );
-    return { user: (id: string) => users.get(id), channel: (id: string) => channels.get(id) };
+    return { channel: (id: string) => channels.get(id) };
   }, [results.data]);
 
   const scrollRef = useRef<HTMLDivElement>(null);

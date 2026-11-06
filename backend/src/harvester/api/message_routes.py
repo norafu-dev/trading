@@ -160,7 +160,6 @@ class MessagesOut(BaseModel):
     has_more: bool
     # 只有 around 取法才有值：更新的消息还有没有；其他取法为 null。
     has_newer: bool | None = None
-    users: list[NamedRefOut]
     channels: list[NamedRefOut]
 
 
@@ -325,7 +324,6 @@ async def list_messages(
         messages=[message_out(m) for m in page.messages],
         has_more=page.has_more,
         has_newer=page.has_newer,
-        users=named_out(page.users),
         channels=named_out(page.channels),
     )
 

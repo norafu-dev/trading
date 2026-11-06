@@ -76,7 +76,6 @@ class SearchHitOut(BaseModel):
 class SearchMessagesOut(BaseModel):
     items: list[SearchHitOut]
     next_before: str | None
-    users: list[NamedRefOut]
     channels: list[NamedRefOut]
 
 
@@ -173,7 +172,6 @@ async def search_messages(
             for hit in page.hits
         ],
         next_before=str(page.next_before) if page.next_before is not None else None,
-        users=named_out(page.users),
         channels=named_out(page.channels),
     )
 

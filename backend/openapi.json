@@ -4234,13 +4234,6 @@
             ],
             "title": "Has Newer"
           },
-          "users": {
-            "items": {
-              "$ref": "#/components/schemas/NamedRefOut"
-            },
-            "type": "array",
-            "title": "Users"
-          },
           "channels": {
             "items": {
               "$ref": "#/components/schemas/NamedRefOut"
@@ -4253,7 +4246,6 @@
         "required": [
           "messages",
           "has_more",
-          "users",
           "channels"
         ],
         "title": "MessagesOut"
@@ -4571,13 +4563,6 @@
             ],
             "title": "Next Before"
           },
-          "users": {
-            "items": {
-              "$ref": "#/components/schemas/NamedRefOut"
-            },
-            "type": "array",
-            "title": "Users"
-          },
           "channels": {
             "items": {
               "$ref": "#/components/schemas/NamedRefOut"
@@ -4590,7 +4575,6 @@
         "required": [
           "items",
           "next_before",
-          "users",
           "channels"
         ],
         "title": "SearchMessagesOut"

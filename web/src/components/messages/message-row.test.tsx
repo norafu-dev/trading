@@ -8,7 +8,7 @@ import { MessageRow } from "./message-row";
 import type { EmbedView, MentionResolver, MessageView } from "./types";
 
 const format = createTimeFormat("Asia/Shanghai");
-const resolver: MentionResolver = { user: () => undefined, channel: () => undefined };
+const resolver: MentionResolver = { channel: () => undefined };
 const NOW = new Date("2026-10-30T10:00:00Z");
 
 function message(overrides: Partial<MessageView> = {}): MessageView {

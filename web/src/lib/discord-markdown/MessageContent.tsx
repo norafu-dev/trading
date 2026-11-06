@@ -8,6 +8,7 @@ import type { TimeFormat } from "@/lib/format/time";
 
 import { parseMarkdown } from "./parser";
 import { type RenderContext, renderNodes } from "./renderers";
+import { stripAtMentions } from "./strip-at-mentions";
 import type { ParserStatus } from "./use-markdown-parser";
 
 type MessageContentProps = Readonly<{
@@ -38,7 +39,7 @@ function PlainText({
 // 把一条消息的 Discord markdown 变成 React 元素（从不当 HTML 插入）。解析器加载失败时
 // 显示纯文本；单条消息解析或渲染出错时，只有这一条显示原始文字（AC-10）。
 export function MessageContent({
-  content,
+  content: raw,
   parser,
   resolver,
   now,
@@ -46,6 +47,8 @@ export function MessageContent({
   highlightTerms,
   suffix,
 }: MessageContentProps) {
+  // @ 提及在解析前就去掉（spec 0015），纯文本降级时也一样看不到。
+  const content = useMemo(() => stripAtMentions(raw), [raw]);
   const [revealed, setRevealed] = useState<ReadonlySet<number>>(() => new Set());
   const reveal = useCallback(
     (id: number) => setRevealed((current) => new Set([...current, id])),

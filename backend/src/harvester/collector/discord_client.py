@@ -381,9 +381,6 @@ def snapshot_message(
         reply_to_id=reference.message_id if is_reply and reference is not None else None,
         edited_at=message.edited_at,
         attachments=tuple(_attachment_snapshot(a) for a in message.attachments),
-        mentions=tuple(
-            _user_snapshot(user, "bot" if user.bot else "user") for user in message.mentions
-        ),
         attachments_known=attachments_known,
         forwarded_attachments=_forwarded_attachments(message),
     )

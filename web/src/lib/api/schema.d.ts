@@ -1458,8 +1458,6 @@ export interface components {
             has_more: boolean;
             /** Has Newer */
             has_newer?: boolean | null;
-            /** Users */
-            users: components["schemas"]["NamedRefOut"][];
             /** Channels */
             channels: components["schemas"]["NamedRefOut"][];
         };
@@ -1561,8 +1559,6 @@ export interface components {
             items: components["schemas"]["SearchHitOut"][];
             /** Next Before */
             next_before: string | null;
-            /** Users */
-            users: components["schemas"]["NamedRefOut"][];
             /** Channels */
             channels: components["schemas"]["NamedRefOut"][];
         };

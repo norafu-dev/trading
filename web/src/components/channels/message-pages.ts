@@ -60,7 +60,6 @@ export function mergeIntoPages(data: MessagesData, incoming: MessagesPage): Mess
     return {
       ...page,
       messages: [...mergeMessages(messages, added)],
-      users: mergeNamed(page.users, incoming.users),
       channels: mergeNamed(page.channels, incoming.channels),
     };
   });

@@ -38,7 +38,7 @@ const sample: MessageView = {
 function props(overrides: Partial<MessageListProps> = {}): MessageListProps {
   return {
     messages: [],
-    resolver: { user: () => undefined, channel: () => undefined },
+    resolver: { channel: () => undefined },
     now: new Date("2026-10-30T10:00:00Z"),
     timeZone: "Asia/Shanghai",
     hasOlder: false,

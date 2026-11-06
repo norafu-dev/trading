@@ -172,8 +172,6 @@ class MessageSnapshot:
     reply_to_id: int | None
     edited_at: datetime | None
     attachments: tuple[AttachmentSnapshot, ...]
-    # 被提及的用户：和作者在同一个事务里写入 discord_user（spec 0008）。
-    mentions: tuple[UserSnapshot, ...] = ()
     # 编辑事件的原始载荷没有 attachments 键时为假：不同步附件，已有附件不会被标成已移除。
     attachments_known: bool = True
     # 转发消息里的附件（spec 0011）：只用来建 media 行，不改 ForwardedData 的结构。

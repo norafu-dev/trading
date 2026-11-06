@@ -805,7 +805,6 @@ def fake_message(**changes: Any) -> Any:
         "embeds": [],
         "edited_at": None,
         "attachments": [],
-        "mentions": [],
     }
     return SimpleNamespace(**{**fields, **changes})
 
@@ -814,12 +813,11 @@ def make_client(queue: "asyncio.Queue[SupervisorEvent]") -> HarvesterClient:
     return HarvesterClient(1, queue, lambda: datetime(2026, 1, 1, tzinfo=UTC))
 
 
-def test_snapshot_converts_author_reply_and_mentions() -> None:  # covers: AC-1, AC-6
+def test_snapshot_converts_author_and_reply() -> None:  # covers: AC-1, AC-6
     snap = snapshot_message(
         fake_message(
             type=SimpleNamespace(value=19),
             reference=SimpleNamespace(type=discord.MessageReferenceType.reply, message_id=9),
-            mentions=[fake_user(7, bot=True)],
         )
     )
 
@@ -827,7 +825,6 @@ def test_snapshot_converts_author_reply_and_mentions() -> None:  # covers: AC-1,
     assert (snap.channel_id, snap.guild_id, snap.reply_to_id) == (2, 1, 9)
     assert snap.author_display_name == "昵称"
     assert (snap.author.kind, snap.author.avatar_hash) == ("user", "hash")
-    assert [(u.id, u.kind) for u in snap.mentions] == [(7, "bot")]
     assert snap.attachments_known
 
 

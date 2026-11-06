@@ -35,7 +35,6 @@ const row = (id: string, content = "c"): Row => ({
 const page = (ids: readonly string[], overrides: Partial<MessagesPage> = {}): MessagesPage => ({
   messages: ids.map((id) => row(id)),
   has_more: false,
-  users: [],
   channels: [],
   ...overrides,
 });
@@ -62,10 +61,10 @@ describe("mergeIntoPages", () => {
   });
 
   // covers: spec 0008 AC-21
-  it("提及的名字合并，不丢旧的", () => {
-    const base = pageFrom(page(["1"], { users: [{ id: "u1", name: "甲" }] }));
-    const merged = mergeIntoPages(base, page(["2"], { users: [{ id: "u2", name: "乙" }] }));
-    expect(merged.pages[0]?.users.map((u) => u.name)).toEqual(["甲", "乙"]);
+  it("提及的频道名合并，不丢旧的", () => {
+    const base = pageFrom(page(["1"], { channels: [{ id: "c1", name: "甲" }] }));
+    const merged = mergeIntoPages(base, page(["2"], { channels: [{ id: "c2", name: "乙" }] }));
+    expect(merged.pages[0]?.channels.map((c) => c.name)).toEqual(["甲", "乙"]);
   });
 });
 
@@ -105,7 +104,6 @@ describe("hasNewerPages", () => {
     messages: [row("10")],
     has_more: false,
     has_newer,
-    users: [],
     channels: [],
   });
 

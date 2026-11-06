@@ -34,17 +34,12 @@ const AUTHORS: readonly FakeAuthor[] = [
   { id: "800000000000000010", names: [""], avatarUrl: null },
 ];
 
-const USER_NAMES: ReadonlyMap<string, string> = new Map(
-  AUTHORS.map((author) => [author.id, author.names[0] || "无名氏"]),
-);
-
 const CHANNEL_NAMES: ReadonlyMap<string, string> = new Map([
   ["910000000000000006", "闲聊"],
   ["910000000000000009", "程序"],
 ]);
 
 export const FAKE_RESOLVER: MentionResolver = {
-  user: (id) => USER_NAMES.get(id),
   channel: (id) => CHANNEL_NAMES.get(id),
 };
 

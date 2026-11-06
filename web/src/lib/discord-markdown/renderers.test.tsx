@@ -10,7 +10,6 @@ import type { InlineNode, MarkdownNode } from "./parser";
 import { renderNodes } from "./renderers";
 
 const resolver: MentionResolver = {
-  user: (id) => (id === "1" ? "阿青" : undefined),
   channel: (id) => (id === "2" ? "闲聊" : undefined),
 };
 const format = createTimeFormat("Asia/Shanghai");
@@ -110,16 +109,22 @@ describe("剧透", () => {
 describe("提及", () => {
   // covers: AC-9
   it.each([
-    ["查得到的用户显示名字", { type: "user", value: 1n }, "@阿青"],
-    ["查不到的用户显示占位", { type: "user", value: 999n }, "@未知用户"],
     ["查得到的频道显示名字", { type: "channel", value: 2n }, "#闲聊"],
     ["查不到的频道显示占位", { type: "channel", value: 999n }, "#未知频道"],
-    ["身份组统一显示", { type: "role", value: 5n }, "@身份组"],
-    ["@everyone", { type: "everyone" }, "@everyone"],
-    ["@here", { type: "here" }, "@here"],
   ])("%s", (_label, value, expected) => {
     render(<Harness nodes={[mention(value)]} />);
     expect(screen.getByText(expected)).toBeInTheDocument();
+  });
+
+  // covers: spec 0015
+  it.each([
+    ["用户", { type: "user", value: 1n }],
+    ["身份组", { type: "role", value: 5n }],
+    ["everyone", { type: "everyone" }],
+    ["here", { type: "here" }],
+  ])("漏到渲染这一步的 @%s 提及什么都不显示", (_label, value) => {
+    const { container } = render(<Harness nodes={[mention(value)]} />);
+    expect(container).toHaveTextContent(/^$/);
   });
 });
 

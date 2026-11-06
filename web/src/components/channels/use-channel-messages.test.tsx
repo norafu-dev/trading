@@ -57,7 +57,6 @@ const page = (
   messages: ids.map((id) => row(id)),
   has_more,
   has_newer,
-  users: [],
   channels: [],
 });
 

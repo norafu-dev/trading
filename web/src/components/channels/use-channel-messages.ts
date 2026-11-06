@@ -305,11 +305,10 @@ export function useChannelMessages(
   const data = query.data;
   const messages = useMemo(() => (data ? flatten(data).map(toMessageView) : []), [data]);
   const resolver = useMemo<MentionResolver>(() => {
-    const users = new Map(data?.pages.flatMap((p) => p.users.map((u) => [u.id, u.name] as const)));
     const channels = new Map(
       data?.pages.flatMap((p) => p.channels.map((c) => [c.id, c.name] as const)),
     );
-    return { user: (id) => users.get(id), channel: (id) => channels.get(id) };
+    return { channel: (id) => channels.get(id) };
   }, [data]);
 
   const loadOlder = useCallback(() => {

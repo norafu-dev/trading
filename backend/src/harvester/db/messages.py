@@ -40,9 +40,10 @@ from harvester.db.snapshots import (
 BIGINT_MAX = 2**63 - 1
 REPLY_PREVIEW_LENGTH = 100
 
-# 排除身份组写法 <@&id>：身份组仍按 spec 0003 显示固定文字。
-_USER_MENTION = re.compile(r"<@!?(\d+)>")
 _CHANNEL_MENTION = re.compile(r"<#(\d+)>")
+# @用户、@身份组、@everyone、@here 连同后面的空格（spec 0015）。
+# 规则和前端 strip-at-mentions.ts 一致，改一边要同步改另一边。
+_AT_MENTION = re.compile(r"(?:<@[!&]?\d+>|(?<!\w)@(?:everyone|here)\b)[ \t]*")
 
 
 @dataclass(frozen=True)
@@ -145,7 +146,6 @@ class NamedRef:
 class MessagePage:
     messages: tuple[MessageRow, ...]
     has_more: bool
-    users: tuple[NamedRef, ...]
     channels: tuple[NamedRef, ...]
     # 只有 around 取法才有值：更新的消息还有没有。
     has_newer: bool | None = None
@@ -170,6 +170,18 @@ def effective_edited_at(
     return edited_at or last_replaced_at
 
 
+def strip_at_mentions(text: str) -> str:
+    """去掉 @ 提及；改过的行去掉行尾空格，只剩提及的行整行去掉（spec 0015）。"""
+    lines: list[str] = []
+    for line in text.split("\n"):
+        stripped = _AT_MENTION.sub("", line)
+        if stripped == line:
+            lines.append(line)
+        elif stripped.strip():
+            lines.append(stripped.rstrip())
+    return "\n".join(lines)
+
+
 def reply_preview(
     content: str,
     embeds: Sequence[EmbedData] | None,
@@ -177,6 +189,7 @@ def reply_preview(
     forwarded: ForwardedData | None,
 ) -> str:
     """回复引用的摘要；正文为空时依次回退（AC-20）。"""
+    content = strip_at_mentions(content)
     title = embeds[0].get("title") if embeds else None
     if content or title:
         return (content or title or "")[:REPLY_PREVIEW_LENGTH]
@@ -204,13 +217,9 @@ def _valid_ids(matches: Iterable[str]) -> frozenset[int]:
     return frozenset(value for value in map(int, matches) if 1 <= value <= BIGINT_MAX)
 
 
-def extract_mentions(texts: Iterable[str]) -> tuple[frozenset[int], frozenset[int]]:
-    """从文字里取出被提及的用户和频道 ID。"""
-    joined = "\n".join(texts)
-    return (
-        _valid_ids(_USER_MENTION.findall(joined)),
-        _valid_ids(_CHANNEL_MENTION.findall(joined)),
-    )
+def extract_channel_mentions(texts: Iterable[str]) -> frozenset[int]:
+    """从文字里取出被提及的频道 ID。@ 提及在 dashboard 里不显示（spec 0015），不用查名字。"""
+    return _valid_ids(_CHANNEL_MENTION.findall("\n".join(texts)))
 
 
 def _message_select():
@@ -368,25 +377,16 @@ async def _replies_by_id(
     }
 
 
-async def resolve_names(
+async def resolve_channel_names(
     session: AsyncSession, messages: Sequence[MessageRow]
-) -> tuple[tuple[NamedRef, ...], tuple[NamedRef, ...]]:
-    user_ids, channel_ids = extract_mentions(t for m in messages for t in _message_texts(m))
-    users: tuple[NamedRef, ...] = ()
-    channels: tuple[NamedRef, ...] = ()
-    if user_ids:
-        rows = await session.execute(
-            select(DiscordUser.id, DiscordUser.global_name, DiscordUser.username).where(
-                DiscordUser.id.in_(user_ids)
-            )
-        )
-        users = tuple(NamedRef(r.id, r.global_name or r.username) for r in rows)
-    if channel_ids:
-        rows = await session.execute(
-            select(Channel.id, Channel.name).where(Channel.id.in_(channel_ids))
-        )
-        channels = tuple(NamedRef(r.id, r.name) for r in rows)
-    return users, channels
+) -> tuple[NamedRef, ...]:
+    channel_ids = extract_channel_mentions(t for m in messages for t in _message_texts(m))
+    if not channel_ids:
+        return ()
+    rows = await session.execute(
+        select(Channel.id, Channel.name).where(Channel.id.in_(channel_ids))
+    )
+    return tuple(NamedRef(r.id, r.name) for r in rows)
 
 
 async def hydrate_messages(session: AsyncSession, ordered: Sequence[Any]) -> tuple[MessageRow, ...]:
@@ -443,8 +443,8 @@ async def get_message_page(
     ordered = kept if isinstance(selector, After | ByIds) else list(reversed(kept))
 
     messages = await hydrate_messages(session, ordered)
-    users, channels = await resolve_names(session, messages)
-    return MessagePage(messages, has_more, users, channels)
+    channels = await resolve_channel_names(session, messages)
+    return MessagePage(messages, has_more, channels)
 
 
 async def _get_around_page(
@@ -460,11 +460,10 @@ async def _get_around_page(
     newer = list(await session.execute(_page_statement(channel_id, After(message_id, AROUND_SIDE))))
     ordered = [*reversed(older[:AROUND_SIDE]), *target, *newer[:AROUND_SIDE]]
     messages = await hydrate_messages(session, ordered)
-    users, channels = await resolve_names(session, messages)
+    channels = await resolve_channel_names(session, messages)
     return MessagePage(
         messages,
         has_more=len(older) > AROUND_SIDE,
-        users=users,
         channels=channels,
         has_newer=len(newer) > AROUND_SIDE,
     )

@@ -21,8 +21,8 @@ export type ReplyView =
   | Readonly<{ missing: true }>
   | Readonly<{ missing: false; authorName: string; preview: string; deleted: boolean }>;
 
+/** 只查频道名：@ 提及不显示（spec 0015），不用查用户名。 */
 export type MentionResolver = Readonly<{
-  user: (id: string) => string | undefined;
   channel: (id: string) => string | undefined;
 }>;
 
