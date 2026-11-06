@@ -4,6 +4,7 @@ Every CHECK and every composite or partial index carries an explicit `name=` so 
 model and the migration always agree under `NAMING_CONVENTION`.
 """
 
+import uuid
 from datetime import datetime
 from typing import get_args
 
@@ -22,8 +23,8 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import INET, JSONB, TSTZRANGE, Range
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.dialects.postgresql import INET, JSONB, TSTZRANGE, UUID, Range
+from sqlalchemy.orm import Mapped, deferred, mapped_column
 
 from harvester.db.base import Base
 from harvester.db.snapshots import (
@@ -38,7 +39,15 @@ from harvester.db.snapshots import (
     EmbedData,
     ForwardedData,
     GuildStatus,
+    HistoryError,
+    HistoryJobStatus,
+    HistoryOrigin,
+    HistoryPausedReason,
+    HistoryWaitingReason,
+    HistoryWaitReason,
     LoginOutcome,
+    MediaKind,
+    MediaStatus,
     MessageSource,
     UserKind,
 )
@@ -188,6 +197,8 @@ class Message(Base):
     delete_source: Mapped[DeleteSource | None] = mapped_column(Text)
     source: Mapped[MessageSource] = mapped_column(Text)
     ingested_at: Mapped[datetime] = _now()
+    # 小写的搜索文字（spec 0013）。NULL 表示还没补建；deferred 让现有的 select(Message) 不读它。
+    search_text: Mapped[str | None] = deferred(mapped_column(Text))
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -209,6 +220,19 @@ class Message(Base):
 Index("ix_message_channel_id_id", Message.channel_id, Message.id.desc())
 Index("ix_message_author_id_id", Message.author_id, Message.id.desc())
 Index("ix_message_guild_id_id", Message.guild_id, Message.id.desc())
+# 搜索（spec 0013）：二元切片的 GIN 表达式索引，查询必须写成同一个表达式才用得上。
+# 数据量大以后重建要用 CREATE INDEX CONCURRENTLY。
+Index(
+    "ix_message_search_bigrams",
+    func.harvester_bigrams(Message.search_text),
+    postgresql_using="gin",
+)
+# 补建取批次和数剩余条数用；补完后几乎是空的。
+Index(
+    "ix_message_search_pending",
+    Message.id.desc(),
+    postgresql_where=text("search_text IS NULL"),
+)
 
 
 class MessageRevision(Base):
@@ -321,8 +345,25 @@ class CollectorHeartbeat(Base):
         Boolean, primary_key=True, server_default=text("true"), autoincrement=False
     )
     last_seen_at: Mapped[datetime]
+    # 下载任务每 30 秒写一次；暂停结束时间在没有暂停时为空（spec 0011）。
+    media_worker_seen_at: Mapped[datetime | None]
+    media_paused_until: Mapped[datetime | None]
+    # 历史任务心跳，和历史采集整体休息或等限额的原因与结束时间（spec 0012）。
+    history_worker_seen_at: Mapped[datetime | None]
+    history_waiting_reason: Mapped[HistoryWaitingReason | None] = mapped_column(Text)
+    history_waiting_until: Mapped[datetime | None]
 
-    __table_args__ = (CheckConstraint("id", name="single"),)
+    __table_args__ = (
+        CheckConstraint("id", name="single"),
+        CheckConstraint(
+            _in("history_waiting_reason", get_args(HistoryWaitingReason)),
+            name="history_waiting_reason",
+        ),
+        CheckConstraint(
+            "(history_waiting_reason IS NULL) = (history_waiting_until IS NULL)",
+            name="history_waiting_pair",
+        ),
+    )
 
 
 class BackupRun(Base):
@@ -352,3 +393,251 @@ class BackupRun(Base):
         ),
         Index("ix_backup_run_started_at", text("started_at DESC")),
     )
+
+
+class ChannelReadState(Base):
+    """每个频道最多一行已读位置（spec 0010）。没有行等于 0 条未读。"""
+
+    __tablename__ = "channel_read_state"
+
+    channel_id: Mapped[int] = mapped_column(
+        ForeignKey("channel.id"), primary_key=True, autoincrement=False
+    )
+    # 已读位置：消息雪花 ID，比它新的消息算未读；只增不减。
+    last_read_message_id: Mapped[int]
+    updated_at: Mapped[datetime] = _now()
+
+
+# Feature 12 tables (spec 0011).
+class StoredFile(Base):
+    """存储里的一个真实文件，同一频道同一个月里按内容只存一份。"""
+
+    __tablename__ = "stored_file"
+
+    id: Mapped[int] = mapped_column(Identity(always=True), primary_key=True)
+    prefix: Mapped[str]
+    sha256: Mapped[bytes] = mapped_column(LargeBinary)
+    size_bytes: Mapped[int]
+    content_type: Mapped[str]
+    object_key: Mapped[str] = mapped_column(unique=True)
+    width: Mapped[int | None] = mapped_column(Integer)
+    height: Mapped[int | None] = mapped_column(Integer)
+    thumb_object_key: Mapped[str | None]
+    thumb_size_bytes: Mapped[int | None]
+    thumb_width: Mapped[int | None] = mapped_column(Integer)
+    thumb_height: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = _now()
+
+    __table_args__ = (
+        UniqueConstraint("prefix", "sha256", name="uq_stored_file_prefix_sha256"),
+        CheckConstraint("octet_length(sha256) = 32", name="sha256_length"),
+        CheckConstraint("size_bytes >= 0", name="size_not_negative"),
+        CheckConstraint(
+            "(thumb_object_key IS NULL AND thumb_size_bytes IS NULL"
+            " AND thumb_width IS NULL AND thumb_height IS NULL)"
+            " OR (thumb_object_key IS NOT NULL AND thumb_size_bytes IS NOT NULL"
+            " AND thumb_width IS NOT NULL AND thumb_height IS NOT NULL)",
+            name="thumb_all_or_none",
+        ),
+    )
+
+
+class Media(Base):
+    """每个要下载的附件或 embed 图一行。从不删除，只改状态。"""
+
+    __tablename__ = "media"
+
+    id: Mapped[int] = mapped_column(Identity(always=True), primary_key=True)
+    message_id: Mapped[int] = mapped_column(ForeignKey("message.id"))
+    kind: Mapped[MediaKind] = mapped_column(Text)
+    attachment_id: Mapped[int | None] = mapped_column(ForeignKey("attachment.id"))
+    slot: Mapped[int | None] = mapped_column(Integer)
+    discord_attachment_id: Mapped[int | None]
+    filename: Mapped[str]
+    declared_content_type: Mapped[str | None]
+    declared_size_bytes: Mapped[int | None]
+    declared_width: Mapped[int | None] = mapped_column(Integer)
+    declared_height: Mapped[int | None] = mapped_column(Integer)
+    source_url: Mapped[str]
+    status: Mapped[MediaStatus] = mapped_column(Text, server_default="pending")
+    attempts: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"))
+    next_attempt_at: Mapped[datetime] = _now()
+    claimed_at: Mapped[datetime | None]
+    needs_refresh: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    refreshed_at: Mapped[datetime | None]
+    aborted_at_bytes: Mapped[int | None]
+    last_error: Mapped[str | None]
+    file_id: Mapped[int | None] = mapped_column(ForeignKey("stored_file.id"))
+    created_at: Mapped[datetime] = _now()
+    stored_at: Mapped[datetime | None]
+
+    __table_args__ = (
+        CheckConstraint(_in("kind", get_args(MediaKind)), name="kind"),
+        CheckConstraint(_in("status", get_args(MediaStatus)), name="status"),
+        CheckConstraint(
+            "(kind = 'attachment' AND attachment_id IS NOT NULL AND slot IS NULL)"
+            " OR (kind <> 'attachment' AND attachment_id IS NULL AND slot IS NOT NULL"
+            " AND slot >= 0)",
+            name="kind_shape",
+        ),
+        CheckConstraint("(status = 'stored') = (file_id IS NOT NULL)", name="file_pair"),
+        UniqueConstraint("attachment_id", name="uq_media_attachment"),
+        Index(
+            "uq_media_message_slot",
+            "message_id",
+            "kind",
+            "slot",
+            unique=True,
+            postgresql_where=text("kind <> 'attachment'"),
+        ),
+        Index(
+            "ix_media_queue",
+            text("message_id DESC"),
+            postgresql_where=text(
+                "status = 'pending' AND claimed_at IS NULL AND NOT needs_refresh"
+            ),
+        ),
+        Index(
+            "ix_media_refresh",
+            text("message_id DESC"),
+            postgresql_where=text("status = 'pending' AND needs_refresh"),
+        ),
+        Index(
+            "ix_media_problem",
+            "status",
+            postgresql_where=text("status IN ('too_large', 'no_space', 'failed')"),
+        ),
+        Index("ix_media_message", "message_id"),
+        Index("ix_media_file", "file_id"),
+    )
+
+
+class MediaSettings(Base):
+    """单行：单个文件上限和总容量上限，字节。"""
+
+    __tablename__ = "media_settings"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, autoincrement=False)
+    max_file_bytes: Mapped[int] = mapped_column(server_default=text("52428800"))
+    quota_bytes: Mapped[int] = mapped_column(server_default=text("53687091200"))
+    updated_at: Mapped[datetime] = _now()
+
+    __table_args__ = (
+        CheckConstraint("id = 1", name="single_row"),
+        CheckConstraint(
+            "max_file_bytes BETWEEN 1048576 AND 1073741824", name="max_file_bytes_range"
+        ),
+        CheckConstraint(
+            "quota_bytes BETWEEN 1073741824 AND 10737418240000", name="quota_bytes_range"
+        ),
+    )
+
+
+# Feature 10 tables (spec 0012).
+class HistoryJob(Base):
+    """一个频道的一段连续时间 `[range_start, range_end)`，从新到旧翻页抓回来。"""
+
+    __tablename__ = "history_job"
+
+    id: Mapped[int] = mapped_column(Identity(always=True), primary_key=True)
+    # 同一次提交拆出来的行共用一个批次号。
+    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channel.id"))
+    account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("discord_account.id", ondelete="SET NULL")
+    )
+    origin: Mapped[HistoryOrigin] = mapped_column(Text)
+    refetch: Mapped[bool] = mapped_column(server_default=text("false"))
+    range_start: Mapped[datetime]
+    range_end: Mapped[datetime]
+    status: Mapped[HistoryJobStatus] = mapped_column(Text, server_default="pending")
+    # 断点：已抓到的最旧一条消息 ID，只往更旧的方向走。
+    cursor_message_id: Mapped[int | None]
+    fetched_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    pages_fetched: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    wait_reason: Mapped[HistoryWaitReason | None] = mapped_column(Text)
+    wait_until: Mapped[datetime | None]
+    not_before: Mapped[datetime | None]
+    preempted_count: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"))
+    error: Mapped[HistoryError | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _now()
+    updated_at: Mapped[datetime] = _now()
+    started_at: Mapped[datetime | None]
+    finished_at: Mapped[datetime | None]
+
+    __table_args__ = (
+        CheckConstraint(_in("origin", get_args(HistoryOrigin)), name="origin"),
+        CheckConstraint(_in("status", get_args(HistoryJobStatus)), name="status"),
+        CheckConstraint(_in("wait_reason", get_args(HistoryWaitReason)), name="wait_reason"),
+        CheckConstraint(_in("error", get_args(HistoryError)), name="error"),
+        CheckConstraint("range_start < range_end", name="range_order"),
+        CheckConstraint("(wait_reason IS NULL) = (wait_until IS NULL)", name="wait_pair"),
+        CheckConstraint("wait_reason IS NULL OR status = 'running'", name="wait_only_running"),
+        CheckConstraint("(error IS NULL) = (status <> 'failed')", name="error_only_failed"),
+        CheckConstraint("fetched_count >= 0 AND pages_fetched >= 0", name="counts_not_negative"),
+        Index(
+            "ix_history_job_claim",
+            text("(origin <> 'gap_auto')"),
+            "id",
+            postgresql_where=text("status = 'pending'"),
+        ),
+        Index(
+            "ix_history_job_channel_open",
+            "channel_id",
+            postgresql_where=text("status IN ('pending', 'running', 'paused')"),
+        ),
+        Index("ix_history_job_batch", "batch_id"),
+        Index(
+            "ix_history_job_finished",
+            "finished_at",
+            postgresql_where=text("finished_at IS NOT NULL"),
+        ),
+        # 同时最多一个任务在跑。
+        Index(
+            "uq_history_job_running",
+            text("(true)"),
+            unique=True,
+            postgresql_where=text("status = 'running'"),
+        ),
+    )
+
+
+class HistorySettings(Base):
+    """单行：节奏、限额、自动补缺口上限和总开关。"""
+
+    __tablename__ = "history_settings"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, autoincrement=False)
+    page_delay_min_s: Mapped[int] = mapped_column(SmallInteger, server_default=text("2"))
+    page_delay_max_s: Mapped[int] = mapped_column(SmallInteger, server_default=text("4"))
+    daily_page_limit: Mapped[int] = mapped_column(Integer, server_default=text("1500"))
+    run_minutes: Mapped[int] = mapped_column(SmallInteger, server_default=text("20"))
+    rest_minutes: Mapped[int] = mapped_column(SmallInteger, server_default=text("5"))
+    auto_gap_max_hours: Mapped[int] = mapped_column(SmallInteger, server_default=text("6"))
+    paused_reason: Mapped[HistoryPausedReason | None] = mapped_column(Text)
+    paused_at: Mapped[datetime | None]
+    updated_at: Mapped[datetime] = _now()
+
+    __table_args__ = (
+        CheckConstraint("id = 1", name="single_row"),
+        CheckConstraint("page_delay_min_s BETWEEN 1 AND 120", name="page_delay_min_range"),
+        CheckConstraint("page_delay_max_s BETWEEN 1 AND 120", name="page_delay_max_range"),
+        CheckConstraint("page_delay_min_s <= page_delay_max_s", name="page_delay_order"),
+        CheckConstraint("daily_page_limit BETWEEN 50 AND 20000", name="daily_page_limit_range"),
+        CheckConstraint("run_minutes BETWEEN 5 AND 240", name="run_minutes_range"),
+        CheckConstraint("rest_minutes BETWEEN 1 AND 120", name="rest_minutes_range"),
+        CheckConstraint("auto_gap_max_hours BETWEEN 0 AND 72", name="auto_gap_max_hours_range"),
+        CheckConstraint(_in("paused_reason", get_args(HistoryPausedReason)), name="paused_reason"),
+        CheckConstraint("(paused_reason IS NULL) = (paused_at IS NULL)", name="paused_pair"),
+    )
+
+
+class HistoryPageHour(Base):
+    """按整点分桶的历史请求页数，滚动 24 小时限额用。"""
+
+    __tablename__ = "history_page_hour"
+
+    hour: Mapped[datetime] = mapped_column(primary_key=True)
+    pages: Mapped[int] = mapped_column(Integer)
+
+    __table_args__ = (CheckConstraint("pages >= 0", name="pages_not_negative"),)

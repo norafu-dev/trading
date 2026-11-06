@@ -6,22 +6,31 @@ export type UiError = Readonly<{
   retryable: boolean;
 }>;
 
+export type ApiFieldError = Readonly<{ loc: readonly string[]; type: string }>;
+
 // 接口返回非 2xx 状态码时，由 query 函数抛出。
 export class ApiResponseError extends Error {
   readonly status: number;
   readonly code: string | null;
   readonly retryAfterSeconds: number | null;
+  /** 校验失败时的具体原因，如搜索关键词的 `term_too_short`（spec 0013）。 */
+  readonly fields: readonly ApiFieldError[];
 
   constructor(
     status: number,
     message?: string,
-    details?: Readonly<{ code?: string; retryAfterSeconds?: number }>,
+    details?: Readonly<{
+      code?: string;
+      retryAfterSeconds?: number;
+      fields?: readonly ApiFieldError[];
+    }>,
   ) {
     super(message ?? `request failed (${status})`);
     this.name = "ApiResponseError";
     this.status = status;
     this.code = details?.code ?? null;
     this.retryAfterSeconds = details?.retryAfterSeconds ?? null;
+    this.fields = details?.fields ?? [];
   }
 }
 
@@ -37,7 +46,20 @@ export function toApiError(status: number, body: unknown): ApiResponseError {
     "retry_after_seconds" in error && typeof error.retry_after_seconds === "number"
       ? error.retry_after_seconds
       : undefined;
-  return new ApiResponseError(status, undefined, { code, retryAfterSeconds });
+  const fields =
+    "fields" in error && Array.isArray(error.fields)
+      ? (error.fields as readonly unknown[]).flatMap((f) =>
+          typeof f === "object" &&
+          f !== null &&
+          "type" in f &&
+          typeof f.type === "string" &&
+          "loc" in f &&
+          Array.isArray(f.loc)
+            ? [{ loc: f.loc.map(String), type: f.type }]
+            : [],
+        )
+      : undefined;
+  return new ApiResponseError(status, undefined, { code, retryAfterSeconds, fields });
 }
 
 function formatWait(seconds: number): string {
@@ -75,6 +97,10 @@ const REJECTED_BY_CODE: Readonly<Record<string, Pick<UiError, "title" | "detail"
   category_not_found: { title: "分类不存在", detail: "刷新页面看看最新的频道列表。" },
   not_a_category: { title: "不是分类", detail: "刷新页面看看最新的频道列表。" },
   bad_origin: { title: "请求被拒绝", detail: "请求来源不被允许，请从 dashboard 的网址打开。" },
+  invalid_range: { title: "时间段不正确", detail: "开始时间要早于结束时间。" },
+  invalid_query: { title: "关键词不正确", detail: "检查一下关键词的写法。" },
+  invalid_filters: { title: "筛选条件不正确", detail: "检查一下筛选条件，或者重新选择。" },
+  too_many_channels: { title: "频道太多了", detail: "每次最多选 50 个频道，分几次建任务。" },
 };
 
 function fromCode(error: ApiResponseError): UiError | null {
@@ -85,6 +111,22 @@ function fromCode(error: ApiResponseError): UiError | null {
       title: "尝试次数太多",
       detail: wait ? `请 ${formatWait(wait)}后再试。` : "请稍后再试。",
       retryable: false,
+    };
+  }
+  if (error.code === "search_timeout") {
+    return {
+      kind: "server",
+      title: "这次搜索太慢了",
+      detail: "试着加上频道、作者或时间筛选。",
+      retryable: true,
+    };
+  }
+  if (error.code === "export_timeout") {
+    return {
+      kind: "server",
+      title: "统计超时",
+      detail: "请缩小范围后再试。",
+      retryable: true,
     };
   }
   const known = error.code ? REJECTED_BY_CODE[error.code] : undefined;

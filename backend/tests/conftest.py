@@ -79,6 +79,9 @@ async def engine(migrated_db: URL) -> AsyncIterator[AsyncEngine]:
     tables = ", ".join(t.name for t in Base.metadata.sorted_tables)
     async with engine.begin() as conn:
         await conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+        # 迁移插入的单行默认设置，清表后要放回去（spec 0011、0012）。
+        await conn.execute(text("INSERT INTO media_settings (id) VALUES (1)"))
+        await conn.execute(text("INSERT INTO history_settings (id) VALUES (1)"))
     await engine.dispose()
 
 
@@ -86,3 +89,11 @@ async def engine(migrated_db: URL) -> AsyncIterator[AsyncEngine]:
 async def session(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
     async with AsyncSession(engine, expire_on_commit=False) as session:
         yield session
+
+
+@pytest.fixture(autouse=True)
+def media_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """附件存储的配置没有默认值（spec 0011 AC-20）：测试统一用本地目录。"""
+    monkeypatch.setenv("MEDIA_STORAGE", "local")
+    monkeypatch.setenv("MEDIA_LOCAL_DIR", str(tmp_path / "media"))
+    monkeypatch.setenv("MEDIA_TMP_DIR", str(tmp_path / "media-tmp"))

@@ -138,3 +138,33 @@ def test_empty_log_dir_means_unset(monkeypatch: pytest.MonkeyPatch) -> None:  # 
 
     monkeypatch.setenv("LOG_DIR", "logs")
     assert Settings(_env_file=None).log_dir == Path("logs")  # pyright: ignore[reportCallIssue]
+
+
+def test_access_log_drops_the_query_string(  # covers: spec 0013 AC-25
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure_logging("INFO")
+
+    logging.getLogger("uvicorn.access").info(
+        '%s - "%s %s HTTP/%s" %d',
+        "127.0.0.1:1",
+        "GET",
+        "/api/search/messages?q=SECRETWORD&author=42",
+        "1.1",
+        422,
+    )
+
+    out = capsys.readouterr().out
+    assert "SECRETWORD" not in out
+    assert "/api/search/messages HTTP/1.1" in out
+
+
+def test_access_log_keeps_only_errors(capsys: pytest.CaptureFixture[str]) -> None:
+    configure_logging("INFO")
+    access = logging.getLogger("uvicorn.access")
+    for status in (200, 304, 404, 500):
+        access.info('%s - "%s %s HTTP/%s" %d', "127.0.0.1:1", "GET", "/api/x", "1.1", status)
+
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 2
+    assert '" 404' in lines[0] and '" 500' in lines[1]

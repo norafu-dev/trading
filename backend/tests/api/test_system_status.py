@@ -36,6 +36,24 @@ async def test_empty_state(logged_in: httpx.AsyncClient) -> None:  # covers: AC-
     assert body == {
         "collector": {"last_heartbeat_at": None, "stale": False, "has_account": False},
         "backup": {"last_run": None, "last_success_at": None, "overdue": False},
+        "media": {
+            "storage_full": False,
+            "last_seen_at": None,
+            "stale": False,
+            "paused_until": None,
+        },
+        "history": {
+            "paused_reason": None,
+            "paused_at": None,
+            "waiting_reason": None,
+            "waiting_until": None,
+            "pages_used_24h": 0,
+            "daily_page_limit": 1500,
+            "quota_resumes_at": None,
+            "last_seen_at": None,
+            "stale": False,
+            "gap_channel_count": 0,
+        },
     }
 
 

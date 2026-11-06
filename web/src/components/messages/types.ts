@@ -1,4 +1,5 @@
 // 消息列表的视图类型（spec 0003）。在这里定死，第 8 项把接口数据转换成它们。
+import type { ExportSelection } from "@/components/export/export-selection";
 import type { UiError } from "@/lib/api/errors";
 
 export type MessageView = Readonly<{
@@ -21,8 +22,8 @@ export type ReplyView =
   | Readonly<{ missing: true }>
   | Readonly<{ missing: false; authorName: string; preview: string; deleted: boolean }>;
 
+/** 只查频道名：@ 提及不显示（spec 0015），不用查用户名。 */
 export type MentionResolver = Readonly<{
-  user: (id: string) => string | undefined;
   channel: (id: string) => string | undefined;
 }>;
 
@@ -38,6 +39,9 @@ export type EmbedView = Readonly<{
   footerText: string | null;
   imageUrl: string | null;
   thumbnailUrl: string | null;
+  // Discord 托管的 embed 图有保存状态；第三方图片没有，继续按 imageUrl 直接加载。
+  imageMedia: MediaView | null;
+  thumbnailMedia: MediaView | null;
 }>;
 
 export type ForwardedView = Readonly<{
@@ -46,7 +50,7 @@ export type ForwardedView = Readonly<{
   guildId: string | null;
   content: string;
   embeds: readonly EmbedView[];
-  attachmentNames: readonly string[];
+  attachments: readonly ForwardedAttachmentView[];
 }>;
 
 export type AttachmentView = Readonly<{
@@ -54,6 +58,27 @@ export type AttachmentView = Readonly<{
   filename: string;
   contentType: string | null;
   sizeBytes: number; // 附件大小在安全整数范围内，可以用 number
+  media: MediaView | null; // 保存状态；没有 media 行时为 null，按原来的文件条显示
+}>;
+
+// 附件或 embed 图的保存状态（spec 0011）。文件通过 /api/media/{id} 读，不再碰 Discord 原链接。
+export type MediaStatus = "pending" | "stored" | "failed" | "too_large" | "no_space" | "gone";
+
+export type MediaView = Readonly<{
+  id: string;
+  status: MediaStatus;
+  filename: string;
+  contentType: string | null; // 已保存的用实际类型，否则是 Discord 给的
+  sizeBytes: number | null;
+  width: number | null;
+  height: number | null;
+  hasThumb: boolean;
+}>;
+
+// 转发里的附件：上线前入库的转发只有文件名，没有 media。
+export type ForwardedAttachmentView = Readonly<{
+  filename: string;
+  media: MediaView | null;
 }>;
 
 export type MessageListProps = Readonly<{
@@ -68,4 +93,15 @@ export type MessageListProps = Readonly<{
   status: "loading" | "ready" | "empty" | "error"; // 只描述首次加载
   error?: UiError; // status 为 error 时必有
   onRetry?: () => void; // 首次加载和旧消息加载共用
+  // 跳到上下文（spec 0013）：都是可选的，不传时和普通消息列表完全一样。
+  centerId?: string | null; // 第一次定位时居中并高亮的消息
+  hasNewer?: boolean; // 还没加载到最新消息：不贴底，滚到底部附近向下加载
+  isLoadingNewer?: boolean;
+  newerError?: UiError; // 向下加载失败，只在底部显示
+  onReachBottom?: () => void;
+  onRetryNewer?: () => void;
+  onJumpLatest?: () => void; // 还没加载到最新时，「回到最新」重新加载最新一页
+  // 导出选择模式（spec 0014）：不传时和普通消息列表完全一样。
+  exportSelection?: ExportSelection | null; // 非空即选择模式
+  onExportPick?: (message: MessageView) => void;
 }>;

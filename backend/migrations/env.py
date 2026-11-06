@@ -12,7 +12,8 @@ from harvester.db import Base
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # 不关掉已有的 logger：测试里迁移和 collector 在同一进程，discord.http 被关掉会让 429 计数失效。
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Every model must be imported via harvester.db so autogenerate sees it.
 target_metadata = Base.metadata

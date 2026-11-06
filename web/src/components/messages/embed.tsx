@@ -1,14 +1,19 @@
 "use client";
 
 import { cn } from "cn";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
+
+import { HighlightedText } from "@/components/search/highlighted-text";
 
 import { MessageContent } from "@/lib/discord-markdown/MessageContent";
 import type { ParserStatus } from "@/lib/discord-markdown/use-markdown-parser";
 import type { TimeFormat } from "@/lib/format/time";
 import { safeUrl } from "@/lib/safe-url";
 
-import type { EmbedView, MentionResolver } from "./types";
+import { MediaImage } from "./media-image";
+import { MediaStatusText } from "./media-status";
+import { RetryMediaButton } from "./retry-media-button";
+import type { EmbedView, MediaView, MentionResolver } from "./types";
 
 type EmbedProps = Readonly<{
   embed: EmbedView;
@@ -16,6 +21,7 @@ type EmbedProps = Readonly<{
   resolver: MentionResolver;
   now: Date;
   format: TimeFormat;
+  highlightTerms?: readonly string[];
 }>;
 
 function colorHex(color: number): string {
@@ -40,11 +46,24 @@ function EmbedImage({ src, className }: Readonly<{ src: string; className: strin
   );
 }
 
+// Discord 托管的 embed 图走自己的存储（spec 0011）：已保存的显示图片，其他显示状态文字。
+function EmbedMedia({ media }: Readonly<{ media: MediaView }>) {
+  if (media.status === "stored") return <MediaImage media={media} fill />;
+  return (
+    <span className="flex size-full flex-col items-center justify-center gap-1 p-2 text-center text-xs">
+      <MediaStatusText status={media.status} />
+      {media.status === "failed" || media.status === "gone" ? (
+        <RetryMediaButton mediaId={media.id} />
+      ) : null}
+    </span>
+  );
+}
+
 function MaybeLink({
   href,
   className,
   children,
-}: Readonly<{ href: string | null; className: string; children: string }>) {
+}: Readonly<{ href: string | null; className: string; children: ReactNode }>) {
   const url = safeUrl(href);
   if (!url) return <span className={className}>{children}</span>;
   return (
@@ -62,8 +81,8 @@ function MaybeLink({
 
 // embed 卡片（AC-11）：左边色带，作者、标题、描述、字段、大图、右上角缩略图、页脚。
 // 图片用固定尺寸的框，加载前后行高不变。
-export function Embed({ embed, parser, resolver, now, format }: EmbedProps) {
-  const contentProps = { parser, resolver, now, format };
+export function Embed({ embed, parser, resolver, now, format, highlightTerms }: EmbedProps) {
+  const contentProps = { parser, resolver, now, format, highlightTerms };
   const footer = [
     embed.footerText,
     embed.timestamp ? format.messageTime(embed.timestamp, now) : null,
@@ -86,7 +105,7 @@ export function Embed({ embed, parser, resolver, now, format }: EmbedProps) {
             href={embed.url}
             className={cn("font-semibold", safeUrl(embed.url) && "text-link")}
           >
-            {embed.title}
+            <HighlightedText text={embed.title} terms={highlightTerms} />
           </MaybeLink>
         ) : null}
         {embed.description ? (
@@ -111,12 +130,20 @@ export function Embed({ embed, parser, resolver, now, format }: EmbedProps) {
       </div>
       {embed.thumbnailUrl ? (
         <div className="size-20 overflow-hidden rounded-md">
-          <EmbedImage src={embed.thumbnailUrl} className="size-full object-cover" />
+          {embed.thumbnailMedia ? (
+            <EmbedMedia media={embed.thumbnailMedia} />
+          ) : (
+            <EmbedImage src={embed.thumbnailUrl} className="size-full object-cover" />
+          )}
         </div>
       ) : null}
       {embed.imageUrl ? (
         <div className="col-span-2 mt-3 aspect-video w-full max-w-[400px] overflow-hidden rounded-md bg-muted">
-          <EmbedImage src={embed.imageUrl} className="size-full object-contain" />
+          {embed.imageMedia ? (
+            <EmbedMedia media={embed.imageMedia} />
+          ) : (
+            <EmbedImage src={embed.imageUrl} className="size-full object-contain" />
+          )}
         </div>
       ) : null}
       {footer.length > 0 ? (

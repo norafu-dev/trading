@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from structlog.testing import capture_logs
 
 from harvester.api.main import create_app
-from tests.api.conftest import ORIGIN, api_settings, crypto_settings
+from tests.api.conftest import ORIGIN, UNUSED_LINK_BASE, api_settings, crypto_settings
 
 SECRET_TEXT = "secret-in-exception"
 
@@ -16,7 +16,7 @@ async def request_raising(exc: Exception) -> httpx.Response:
     async def boom() -> None:
         raise exc
 
-    app: FastAPI = create_app(api_settings(), crypto_settings())
+    app: FastAPI = create_app(api_settings(), crypto_settings(), media_link_base=UNUSED_LINK_BASE)
     app.add_api_route("/boom", boom)
     # Starlette 发完兜底响应后还会重新抛出异常，这里只看响应。
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)

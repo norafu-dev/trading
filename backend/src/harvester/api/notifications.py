@@ -23,6 +23,7 @@ _EVENT_TYPES = {
     raw.MESSAGE_CHANGED_CHANNEL: "message_changed",
     raw.ACCOUNT_CHANGED_CHANNEL: "account_status",
     raw.CHANNELS_CHANGED_CHANNEL: "channels_changed",
+    raw.HISTORY_CHANGED_CHANNEL: "history_changed",
 }
 
 RECONNECT_MIN = 1.0

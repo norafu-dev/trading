@@ -36,11 +36,24 @@ function renderSidebar(overrides: Partial<Parameters<typeof ChannelSidebar>[0]> 
 }
 
 describe("ChannelSidebar 未读", () => {
-  // covers: spec 0008 AC-22
-  it("未读频道和线程都有可读的文字说明", () => {
-    renderSidebar({ unreadChannelIds: new Set(["pixel"]) });
-    expect(screen.getByRole("link", { name: /像素风格求助.*有未读消息/ })).toBeInTheDocument();
-    expect(screen.getAllByText("有未读消息")).toHaveLength(1);
+  // covers: spec 0010 AC-5
+  it("未读频道显示条数，屏幕阅读器读到「N 条未读消息」", () => {
+    renderSidebar({ unreadCounts: new Map([["pixel", 3]]) });
+    expect(screen.getByRole("link", { name: /像素风格求助.*3 条未读消息/ })).toBeInTheDocument();
+    expect(screen.getAllByText("3 条未读消息")).toHaveLength(1);
+  });
+
+  // covers: spec 0010 AC-5
+  it("满 100 条显示 99+，读作「99 条以上未读消息」", () => {
+    renderSidebar({ unreadCounts: new Map([["pixel", 100]]) });
+    expect(screen.getByText("99+")).toBeInTheDocument();
+    expect(screen.getByText("99 条以上未读消息")).toBeInTheDocument();
+  });
+
+  // covers: spec 0010 AC-5
+  it("没有未读时没有徽标", () => {
+    renderSidebar({ unreadCounts: new Map() });
+    expect(screen.queryByText(/条未读消息/)).not.toBeInTheDocument();
   });
 });
 

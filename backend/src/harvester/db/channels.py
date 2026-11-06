@@ -3,16 +3,25 @@
 `collect_enabled` 只由这里改；写操作和通知在同一个事务里。
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
 from sqlalchemy import Row, and_, case, exists, func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from harvester.db import account as accounts
 from harvester.db.channel_sync import notify_channels_changed, notify_collect_changed
-from harvester.db.models import AccountChannelAccess, Channel, DiscordAccount, Guild
+from harvester.db.models import (
+    AccountChannelAccess,
+    Channel,
+    ChannelReadState,
+    DiscordAccount,
+    Guild,
+    Message,
+)
 from harvester.db.snapshots import (
     CATEGORY_CHANNEL_TYPE,
     COLLECTABLE_CHANNEL_TYPES,
@@ -206,6 +215,28 @@ async def _enable_blocker(
     return None
 
 
+async def init_read_state(session: AsyncSession, channel_ids: Sequence[int]) -> None:
+    """给还没有已读记录的频道建一行，位置是当时最新的消息 ID（没有消息则 0）。
+
+    已有记录的频道不改，所以关闭再开启不会重置已读位置（spec 0010 AC-2）。
+    """
+    if not channel_ids:
+        return
+    latest = (
+        select(func.coalesce(func.max(Message.id), 0))
+        .where(Message.channel_id == Channel.id)
+        .scalar_subquery()
+    )
+    await session.execute(
+        pg_insert(ChannelReadState)
+        .from_select(
+            ["channel_id", "last_read_message_id"],
+            select(Channel.id, latest).where(Channel.id.in_(channel_ids)),
+        )
+        .on_conflict_do_nothing(index_elements=["channel_id"])
+    )
+
+
 async def set_collect(
     session: AsyncSession, channel_id: int, enabled: bool
 ) -> ChannelRow | CollectError:
@@ -227,6 +258,8 @@ async def set_collect(
             return blocker
         values["collector_account_id"] = account.id
     await session.execute(update(Channel).where(Channel.id == channel_id).values(**values))
+    if enabled:
+        await init_read_state(session, [channel_id])
     await notify_collect_changed(session)
     await notify_channels_changed(session)
     return await _get_channel_row(session, channel_id)
@@ -277,6 +310,8 @@ async def set_category_collect(
         }
     if changed:
         await session.execute(update(Channel).where(Channel.id.in_(changed)).values(**values))
+        if enabled:
+            await init_read_state(session, changed)
         await notify_collect_changed(session)
         await notify_channels_changed(session)
     return CategoryCollectResult(changed=len(changed), skipped_no_access=skipped)

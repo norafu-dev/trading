@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from harvester.db import channel_sync
+from harvester.db import channel_sync, channels
 from harvester.db.ingest import ingest_message, open_realtime_coverage
 from harvester.db.models import Channel, Guild
 from harvester.db.snapshots import ForwardedData
@@ -218,3 +218,54 @@ async def test_load_threads_without_account(
     response = await logged_in.post(f"/api/discord/guilds/{GUILD.id}/load-threads")
 
     assert (response.status_code, response.json()["error"]["code"]) == (409, "account_not_found")
+
+
+READ = f"{BASE}/read"
+
+
+async def test_unread_and_read_require_login(client: httpx.AsyncClient) -> None:  # spec 0010
+    assert (await client.get("/api/discord/unread")).status_code == 401
+    assert (await client.post(READ, json={"message_id": "1"})).status_code == 401
+
+
+async def test_unread_lists_counts_as_strings_and_mark_read_clears(
+    logged_in: httpx.AsyncClient, factory: Factory
+) -> None:  # AC-3, AC-4
+    await seed(factory)
+    async with factory() as session, session.begin():
+        await session.execute(
+            update(Channel).where(Channel.id == CHANNEL.id).values(collect_enabled=True)
+        )
+        await channels.init_read_state(session, [CHANNEL.id])
+        await ingest_message(session, message(id=MESSAGE_ID + 1), "realtime", at(0))
+        await ingest_message(session, message(id=MESSAGE_ID + 2), "realtime", at(0))
+
+    body = (await logged_in.get("/api/discord/unread")).json()
+    assert body == {"channels": [{"channel_id": str(CHANNEL.id), "count": 2}]}
+
+    response = await logged_in.post(READ, json={"message_id": str(MESSAGE_ID + 2)})
+    assert response.status_code == 200
+    assert response.json() == {"last_read_message_id": str(MESSAGE_ID + 2)}
+    assert (await logged_in.get("/api/discord/unread")).json() == {"channels": []}
+
+
+async def test_mark_read_unknown_channel_is_404(logged_in: httpx.AsyncClient) -> None:  # AC-4
+    response = await logged_in.post("/api/discord/channels/999/read", json={"message_id": "1"})
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "channel_not_found"
+
+
+@pytest.mark.parametrize("message_id", ["abc", "", "-1", "0", TOO_BIG])
+async def test_mark_read_bad_message_id_is_422(
+    logged_in: httpx.AsyncClient, message_id: str
+) -> None:  # AC-4
+    assert (await logged_in.post(READ, json={"message_id": message_id})).status_code == 422
+
+
+async def test_mark_read_bad_path_id_is_422(logged_in: httpx.AsyncClient) -> None:  # AC-4
+    for path in ("abc", TOO_BIG):
+        response = await logged_in.post(
+            f"/api/discord/channels/{path}/read", json={"message_id": "1"}
+        )
+        assert response.status_code == 422

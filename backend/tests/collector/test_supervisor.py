@@ -2,13 +2,14 @@
 
 import asyncio
 import contextlib
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import func, insert, select, text, update
+from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.exc import DataError, OperationalError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from structlog.testing import CapturingLogger
@@ -35,6 +36,7 @@ from harvester.collector.events import (
     ThreadArchived,
 )
 from harvester.collector.failures import ConnectionFailure
+from harvester.collector.refresh import RefreshResult, Unavailable
 from harvester.collector.supervisor import (
     Deps,
     GatewaySession,
@@ -55,6 +57,7 @@ from harvester.db.models import (
     DiscordAccount,
     DiscordLoginAttempt,
     Guild,
+    HistoryJob,
     Message,
 )
 from harvester.db.raw import MESSAGE_CHANGED_CHANNEL, NEW_MESSAGE_CHANNEL
@@ -96,6 +99,9 @@ class FakeSession:
     subscribe_calls: list[frozenset[int]] = field(default_factory=list[frozenset[int]])
     # 不在缓存里的服务器：订阅不算发出去。
     unavailable: frozenset[int] = frozenset()
+
+    async def refresh_attachment_urls(self, urls: Sequence[str]) -> RefreshResult:
+        return Unavailable("not_used")
 
     async def run_session(self, token: str) -> None:
         self.tokens.append(token)
@@ -962,6 +968,65 @@ async def test_full_sync_records_time_and_opens_coverage(harness: Harness) -> No
     assert (await harness.spans())[0].upper is None  # type: ignore[attr-defined]
 
 
+async def _seed_closed_span(harness: Harness, lower: datetime, upper: datetime) -> None:
+    async with harness.factory() as session, session.begin():
+        session.add(
+            ChannelCoverage(channel_id=CHANNEL.id, span=Range(lower, upper), source="realtime")
+        )
+
+
+async def _gap_jobs(harness: Harness) -> list[tuple[str, datetime, datetime]]:
+    async with harness.factory() as session:
+        rows = await session.execute(
+            select(HistoryJob.origin, HistoryJob.range_start, HistoryJob.range_end)
+        )
+        return [(r.origin, r.range_start, r.range_end) for r in rows]
+
+
+async def test_align_creates_an_auto_gap_job_for_the_adjacent_short_gap(
+    harness: Harness,
+) -> None:
+    # covers: spec 0012 AC-16
+    await add_account(harness)
+    await harness.seed_collecting()
+    at = harness.clock()
+    await _seed_closed_span(harness, at - timedelta(hours=3), at - timedelta(hours=1))
+    harness.start()
+
+    async def job_created() -> bool:
+        return len(await _gap_jobs(harness)) > 0
+
+    await harness.wait_spans(2)
+    await harness.wait_until(job_created)
+
+    assert await _gap_jobs(harness) == [("gap_auto", at - timedelta(hours=1), at)]
+
+
+async def test_auto_gap_failure_keeps_the_realtime_coverage(
+    harness: Harness, captured: CapturingLogger, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-16：补缺口这一步出错只记 warning，实时覆盖段照常打开。"""
+    await add_account(harness)
+    await harness.seed_collecting()
+    at = harness.clock()
+    await _seed_closed_span(harness, at - timedelta(hours=3), at - timedelta(hours=1))
+
+    async def boom(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("gap jobs are down")
+
+    monkeypatch.setattr(supervisor.history_db, "create_gap_jobs", boom)
+    harness.start()
+
+    async def warned() -> bool:
+        return len(_logged(captured, "history.auto_gap_failed")) > 0
+
+    await harness.wait_spans(2)
+    await harness.wait_until(warned)
+
+    assert (await harness.spans())[-1].upper is None  # type: ignore[attr-defined]
+    assert await _gap_jobs(harness) == []
+
+
 async def test_channels_wake_aligns_without_reconnecting(harness: Harness) -> None:
     # covers: spec 0006 AC-7
     await add_account(harness)
@@ -1616,3 +1681,28 @@ async def test_guild_sync_does_not_clear_the_request(harness: Harness) -> None: 
 
     async with harness.factory() as session:
         assert await session.scalar(select(Guild.thread_load_requested_at)) is not None
+
+
+async def test_gateway_handle_follows_the_session(
+    harness: Harness,
+) -> None:  # covers: spec 0011 AC-11
+    handle = harness.deps.gateway
+    await add_account(harness)
+    assert handle.session is None
+
+    harness.start()
+    await harness.wait_status("online")
+    session = harness.current
+    assert handle.session is session
+
+    harness.clock.advance(1)
+    session.queue.put_nowait(Disconnected(session.generation, harness.clock()))
+    await harness.wait_status("reconnecting")
+    assert handle.session is None
+
+    assert harness.task is not None
+    harness.task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await harness.task
+    harness.task = None
+    assert handle.session is None

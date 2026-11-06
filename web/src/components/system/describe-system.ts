@@ -1,5 +1,6 @@
 // 系统状态的文字和色调（spec 0009 AC-4、AC-7）。纯函数：时间格式化和当前时间都从参数传入。
 import { STALE_TEXT } from "@/components/discord/account-status";
+import { pausedText, waitingText } from "@/components/history/describe-history";
 
 import type { BackupRun, SystemStatusData } from "./use-system-status";
 
@@ -84,5 +85,65 @@ export function describeBackup(backup: SystemStatusData["backup"], time: TimeTex
     value: "成功",
     detail: `${time.relative(finished)}${size}`,
     title: time.full(finished),
+  };
+}
+
+// 首页「附件下载」一行（spec 0011 AC-22）：心跳的相对时间；任务无响应或暂停时单独说明。
+export function describeMediaWorker(media: SystemStatusData["media"], time: TimeText): StatusLine {
+  const seen = media.last_seen_at;
+  if (media.stale) {
+    return seen
+      ? {
+          tone: "error",
+          value: "附件下载任务无响应",
+          detail: `最近心跳 ${time.relative(seen)}`,
+          title: time.full(seen),
+        }
+      : { tone: "error", value: "附件下载任务无响应", detail: "还没有心跳" };
+  }
+  if (media.paused_until) {
+    return {
+      tone: "pending",
+      value: `已暂停到 ${time.full(media.paused_until)}`,
+      detail: seen ? `最近心跳 ${time.relative(seen)}` : undefined,
+    };
+  }
+  if (!seen) return { tone: "pending", value: "未运行" };
+  return {
+    tone: "ok",
+    value: "正常",
+    detail: `最近心跳 ${time.relative(seen)}`,
+    title: time.full(seen),
+  };
+}
+
+// 首页「历史采集」一行（spec 0012 AC-20）：任务无响应、暂停原因、休息或等限额，否则显示最近心跳。
+export function describeHistoryWorker(
+  history: SystemStatusData["history"],
+  time: TimeText,
+): StatusLine {
+  const seen = history.last_seen_at;
+  if (history.stale) {
+    return seen
+      ? {
+          tone: "error",
+          value: "历史采集任务无响应",
+          detail: `最近心跳 ${time.relative(seen)}`,
+          title: time.full(seen),
+        }
+      : { tone: "error", value: "历史采集任务无响应", detail: "还没有心跳" };
+  }
+  const paused = pausedText(history, time.full);
+  if (paused) {
+    return { tone: history.paused_reason === "manual" ? "pending" : "error", value: paused };
+  }
+  const waiting = waitingText(history, time.full);
+  if (waiting) return { tone: "pending", value: waiting };
+  if (!seen) return { tone: "pending", value: "未运行" };
+  return {
+    tone: "ok",
+    value: "正常",
+    detail: `最近心跳 ${time.relative(seen)}`,
+    title: time.full(seen),
   };
 }

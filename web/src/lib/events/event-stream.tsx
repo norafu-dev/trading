@@ -3,6 +3,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 
+import { SYSTEM_STATUS_KEY } from "@/components/system/use-system-status";
 import { AUTH_STATE_KEY } from "@/lib/auth/use-auth-state";
 
 export const DISCORD_ACCOUNT_KEY = ["discord-account"] as const;
@@ -10,11 +11,18 @@ export const GUILDS_KEY = ["discord-guilds"] as const;
 export const GUILD_CHANNELS_KEY = ["discord-guild-channels"] as const;
 export const COLLECTED_KEY = ["discord-collected"] as const;
 export const CHANNEL_DETAIL_KEY = ["discord-channel-detail"] as const;
+export const UNREAD_KEY = ["discord-unread"] as const;
+export const HISTORY_KEY = ["history"] as const;
+
+// 历史任务变化很频繁（每抓一页一次），合并成 1 秒一次重新取数（spec 0012 AC-14）。
+const HISTORY_COALESCE_MS = 1_000;
 
 // 消息事件只是「该取数了」的提醒，内容都从消息接口取（spec 0008）。ID 是字符串。
 export type MessageStreamEvent =
   | Readonly<{ type: "new_message"; channel_id: string; message_id: string }>
   | Readonly<{ type: "message_changed"; channel_id: string; message_ids: readonly string[] }>
+  // 补采写进了这个频道：正在看这个频道时重新取已加载的范围（spec 0012 AC-17）。
+  | Readonly<{ type: "history_changed"; channel_id: string }>
   | Readonly<{ type: "reconnected" }>;
 
 type MessageListener = (event: MessageStreamEvent) => void;
@@ -32,7 +40,7 @@ const EventStreamContext = createContext<EventStreamState>({
 const MessageEventsContext = createContext<Subscribe>(() => () => {});
 
 // 整个 dashboard 共用一条 SSE 连接。账号状态变化和重新连上时都让账号查询失效（spec 0005）；
-// 频道数据变化和重新连上时，频道查询一起失效（spec 0006 AC-12）。
+// 频道数据变化和重新连上时，频道查询和未读数一起失效（spec 0006 AC-12，spec 0010 AC-7）。
 // 消息事件转发给订阅者，不写进 React 状态，这样每条消息不会让整个外壳重新渲染（spec 0008）。
 export function EventStreamProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [state, setState] = useState<EventStreamState>({ connected: false, lastHeartbeat: null });
@@ -49,12 +57,28 @@ export function EventStreamProvider({ children }: Readonly<{ children: ReactNode
       void queryClient.invalidateQueries({ queryKey: CHANNEL_DETAIL_KEY });
     };
     const refreshChannels = () => {
-      for (const queryKey of [GUILDS_KEY, GUILD_CHANNELS_KEY, COLLECTED_KEY, CHANNEL_DETAIL_KEY]) {
+      for (const queryKey of [
+        GUILDS_KEY,
+        GUILD_CHANNELS_KEY,
+        COLLECTED_KEY,
+        CHANNEL_DETAIL_KEY,
+        UNREAD_KEY,
+      ]) {
         void queryClient.invalidateQueries({ queryKey });
       }
     };
     const emit = (event: MessageStreamEvent) => {
       for (const listener of listeners.current) listener(event);
+    };
+    let historyTimer: ReturnType<typeof setTimeout> | null = null;
+    const refreshHistory = () => {
+      if (historyTimer !== null) return;
+      historyTimer = setTimeout(() => {
+        historyTimer = null;
+        void queryClient.invalidateQueries({ queryKey: HISTORY_KEY });
+        // 总开关、休息和用量在系统状态里，红点和首页一起刷新（AC-7、AC-20）。
+        void queryClient.invalidateQueries({ queryKey: SYSTEM_STATUS_KEY });
+      }, HISTORY_COALESCE_MS);
     };
     let opened = false;
     const source = new EventSource("/api/events");
@@ -62,6 +86,7 @@ export function EventStreamProvider({ children }: Readonly<{ children: ReactNode
       setState((current) => ({ ...current, connected: true }));
       refreshAccount();
       refreshChannels();
+      refreshHistory();
       // 第一次连上时页面正在取数，只有之后的重连才可能漏了消息。
       if (opened) emit({ type: "reconnected" });
       opened = true;
@@ -77,10 +102,21 @@ export function EventStreamProvider({ children }: Readonly<{ children: ReactNode
     });
     source.addEventListener("account_status", refreshAccount);
     source.addEventListener("channels_changed", refreshChannels);
+    source.addEventListener("history_changed", (event) => {
+      refreshHistory();
+      // 设置和总开关的通知没有频道 ID，只有补采进度才需要通知消息列表。
+      const payload = JSON.parse(event.data) as Readonly<{ channel_id?: string }>;
+      if (payload.channel_id) {
+        emit({ type: "history_changed", channel_id: payload.channel_id });
+      }
+    });
     for (const name of ["new_message", "message_changed"]) {
       source.addEventListener(name, (event) => emit(JSON.parse(event.data) as MessageStreamEvent));
     }
-    return () => source.close();
+    return () => {
+      source.close();
+      if (historyTimer !== null) clearTimeout(historyTimer);
+    };
   }, [queryClient]);
 
   return (

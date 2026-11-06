@@ -39,6 +39,17 @@ LoginOutcome = Literal[
 # 备份记录（spec 0009）：状态和失败步骤，都由 deploy/backup.sh 写入。
 BackupStatus = Literal["running", "succeeded", "failed"]
 BackupError = Literal["dump", "encrypt", "upload", "interrupted"]
+# 附件保存（spec 0011）：每个要下载的东西一行 media。
+MediaKind = Literal["attachment", "forwarded_attachment", "embed_image", "embed_thumbnail"]
+MediaStatus = Literal["pending", "stored", "failed", "too_large", "no_space", "gone"]
+# 历史采集（spec 0012）：任务状态、来源、失败原因、单个任务的等待原因。
+HistoryJobStatus = Literal["pending", "running", "paused", "done", "failed", "cancelled"]
+HistoryOrigin = Literal["manual", "gap_manual", "gap_auto"]
+HistoryError = Literal["no_access", "channel_deleted", "suspect_empty", "unexpected"]
+HistoryWaitReason = Literal["rate_limited", "retrying"]
+# 总开关的暂停原因；历史采集整体在休息或等限额时的原因（写在 collector_heartbeat 上）。
+HistoryPausedReason = Literal["manual", "rate_limited", "account_risk"]
+HistoryWaitingReason = Literal["rest", "quota"]
 
 # Text (0), announcement (5), announcement thread (10), public thread (11), private thread (12).
 # Must match the `ck_channel_collectable_type` constraint; a test keeps the two in sync.
@@ -161,10 +172,10 @@ class MessageSnapshot:
     reply_to_id: int | None
     edited_at: datetime | None
     attachments: tuple[AttachmentSnapshot, ...]
-    # 被提及的用户：和作者在同一个事务里写入 discord_user（spec 0008）。
-    mentions: tuple[UserSnapshot, ...] = ()
     # 编辑事件的原始载荷没有 attachments 键时为假：不同步附件，已有附件不会被标成已移除。
     attachments_known: bool = True
+    # 转发消息里的附件（spec 0011）：只用来建 media 行，不改 ForwardedData 的结构。
+    forwarded_attachments: tuple[AttachmentSnapshot, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -260,3 +271,13 @@ def classify_update(
     if embeds_differ:
         return RefreshEmbeds()
     return NoWrite("unchanged")
+
+
+def snowflake_floor(moment: datetime) -> int:
+    """`snowflake_time` 的反函数：这个时刻之前的所有 ID 都小于返回值（整数运算，截到毫秒）。
+
+    早于 Discord 纪元按纪元算；超出 bigint 的按上限算。
+    """
+    delta = moment - DISCORD_EPOCH
+    millis = delta.days * 86_400_000 + delta.seconds * 1000 + delta.microseconds // 1000
+    return min(max(millis, 0) << 22, 2**63 - 1)

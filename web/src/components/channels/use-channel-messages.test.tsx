@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventStreamProvider } from "@/lib/events/event-stream";
 
 import type { MessagesPage } from "./message-pages";
-import { useChannelMessages } from "./use-channel-messages";
+import { HISTORY_COALESCE_MS, useChannelMessages } from "./use-channel-messages";
 
 const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("@/lib/api/client", () => ({ api: { GET: get } }));
@@ -38,6 +38,7 @@ const row = (id: string, content = "c"): MessagesPage["messages"][number] => ({
   author_id: "2",
   author_name: "a",
   author_avatar_hash: null,
+  media: [],
   created_at: "2026-11-02T00:00:00Z",
   content,
   embeds: [],
@@ -48,14 +49,24 @@ const row = (id: string, content = "c"): MessagesPage["messages"][number] => ({
   reply: null,
 });
 
-const page = (ids: readonly string[], has_more = false): MessagesPage => ({
+const page = (
+  ids: readonly string[],
+  has_more = false,
+  has_newer: boolean | null = null,
+): MessagesPage => ({
   messages: ids.map((id) => row(id)),
   has_more,
-  users: [],
+  has_newer,
   channels: [],
 });
 
-type Query = Readonly<{ before?: string; after?: string; ids?: string; limit?: number }>;
+type Query = Readonly<{
+  before?: string;
+  after?: string;
+  ids?: string;
+  around?: string;
+  limit?: number;
+}>;
 type Handler = (query: Query) => MessagesPage | Promise<MessagesPage>;
 
 function serve(handler: Handler) {
@@ -65,14 +76,14 @@ function serve(handler: Handler) {
   });
 }
 
-function setup() {
+function setup(center: string | null = null) {
   const client = new QueryClient();
   const wrapper = ({ children }: Readonly<{ children: ReactNode }>) => (
     <QueryClientProvider client={client}>
       <EventStreamProvider>{children}</EventStreamProvider>
     </QueryClientProvider>
   );
-  return renderHook(() => useChannelMessages(CHANNEL), { wrapper });
+  return renderHook(() => useChannelMessages(CHANNEL, center), { wrapper });
 }
 
 function emit(name: string, payload: object, channelId = CHANNEL) {
@@ -230,6 +241,42 @@ describe("useChannelMessages", () => {
     expect(result.current.hasOlder).toBe(false);
   });
 
+  // covers: spec 0012 AC-17
+  it("history_changed 攒 5 秒合并成一次，补进来的旧消息插到位置上且不跳动", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let round = 0;
+    serve(() => (round++ === 0 ? page(["10"]) : page(["8", "9", "10"])));
+    const { result } = setup();
+    await waitFor(() => expect(idsOf(result)).toEqual(["10"]));
+    const before = get.mock.calls.length;
+
+    emit("history_changed", {});
+    emit("history_changed", {});
+    emit("history_changed", {});
+    await act(() => vi.advanceTimersByTimeAsync(HISTORY_COALESCE_MS - 1));
+    expect(get.mock.calls.length).toBe(before);
+
+    await act(() => vi.advanceTimersByTimeAsync(1));
+
+    await waitFor(() => expect(idsOf(result)).toEqual(["8", "9", "10"]));
+    expect(get.mock.calls.length).toBe(before + 1);
+    expect(result.current.epoch).toBe(0);
+  });
+
+  // covers: spec 0012 AC-17
+  it("别的频道的 history_changed 不取数", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    serve(() => page(["10"]));
+    const { result } = setup();
+    await waitFor(() => expect(idsOf(result)).toEqual(["10"]));
+    const before = get.mock.calls.length;
+
+    emit("history_changed", {}, "999");
+    await act(() => vi.advanceTimersByTimeAsync(HISTORY_COALESCE_MS));
+
+    expect(get.mock.calls.length).toBe(before);
+  });
+
   // covers: spec 0008 AC-16
   it("首次加载失败是 error 状态，可以重试", async () => {
     get.mockResolvedValueOnce({ error: {}, response: { status: 500 } });
@@ -240,5 +287,102 @@ describe("useChannelMessages", () => {
     act(() => result.current.retry());
 
     await waitFor(() => expect(result.current.status).toBe("ready"));
+  });
+  // covers: spec 0013 AC-17
+  it("以某条为中心：第一页用 around 取，has_more 管更早、has_newer 管更新", async () => {
+    serve((q) => (q.around ? page(["8", "9", "10"], true, true) : page([])));
+    const { result } = setup("9");
+    await waitFor(() => expect(idsOf(result)).toEqual(["8", "9", "10"]));
+
+    expect(get.mock.calls[0]?.[1].params.query).toEqual({ around: "9" });
+    expect(result.current.hasOlder).toBe(true);
+    expect(result.current.hasNewer).toBe(true);
+    expect(result.current.initialCenter).toBe("9");
+  });
+
+  // covers: spec 0013 AC-17, AC-19
+  it("向下翻页用 after；某次 has_more 为假就恢复普通行为", async () => {
+    serve((q) => {
+      if (q.around) return page(["8", "9", "10"], false, true);
+      if (q.after === "10") return page(["11", "12"], true);
+      if (q.after === "12") return page(["13"], false);
+      return page(["13", "14"]);
+    });
+    const { result } = setup("9");
+    await waitFor(() => expect(idsOf(result)).toEqual(["8", "9", "10"]));
+
+    act(() => result.current.loadNewer());
+    await waitFor(() => expect(idsOf(result)).toEqual(["8", "9", "10", "11", "12"]));
+    expect(result.current.hasNewer).toBe(true);
+
+    act(() => result.current.loadNewer());
+    await waitFor(() => expect(idsOf(result)).toEqual(["8", "9", "10", "11", "12", "13"]));
+    expect(result.current.hasNewer).toBe(false);
+
+    // 回到普通模式：实时新消息照常追加。
+    emit("new_message", { message_id: "14" });
+    await waitFor(() => expect(idsOf(result).at(-1)).toBe("14"));
+  });
+
+  // covers: spec 0013 AC-19
+  it("还没到最新时：实时消息、重连和缺口检查都不取数，已加载消息的编辑照常刷新", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    serve((q) => {
+      if (q.ids) return { ...page([]), messages: [row("9", "edited")] };
+      return page(["8", "9", "10"], false, true);
+    });
+    const { result } = setup("9");
+    await waitFor(() => expect(idsOf(result)).toEqual(["8", "9", "10"]));
+    const calls = get.mock.calls.length;
+
+    emit("new_message", { message_id: "500" });
+    act(() => FakeEventSource.last.onopen?.());
+    act(() => FakeEventSource.last.onopen?.());
+    await act(() => vi.advanceTimersByTimeAsync(31_000));
+    expect(get.mock.calls.length).toBe(calls);
+
+    emit("message_changed", { message_ids: ["9", "500"] });
+    await waitFor(() => expect(result.current.messages[1]?.content).toBe("edited"));
+    const kinds = get.mock.calls.slice(calls).map((call) => Object.keys(call[1].params.query));
+    expect(kinds).toEqual([["ids"]]);
+    expect(result.current.epoch).toBe(0);
+  });
+
+  // covers: spec 0013 AC-19
+  it("补采完成后按当前的中心重新取", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let round = 0;
+    serve(() =>
+      round++ === 0 ? page(["9", "10"], false, true) : page(["7", "8", "9", "10"], false, true),
+    );
+    const { result } = setup("9");
+    await waitFor(() => expect(idsOf(result)).toEqual(["9", "10"]));
+
+    emit("history_changed", {});
+    await act(() => vi.advanceTimersByTimeAsync(HISTORY_COALESCE_MS));
+
+    await waitFor(() => expect(idsOf(result)).toEqual(["7", "8", "9", "10"]));
+    expect(get.mock.calls.at(-1)?.[1].params.query).toEqual({ around: "9" });
+  });
+
+  // covers: spec 0013 AC-18
+  it("中心消息找不到时 centerMissing 为真，状态保持 loading", async () => {
+    get.mockResolvedValue({
+      error: { error: { code: "message_not_found", message: "x" } },
+      response: { status: 404 },
+    });
+    const { result } = setup("9");
+
+    await waitFor(() => expect(result.current.centerMissing).toBe(true));
+    expect(result.current.status).toBe("loading");
+  });
+
+  // covers: spec 0013 AC-19
+  it("第一次加载时 has_newer 就为假：直接是普通模式", async () => {
+    serve((q) => (q.around ? page(["9", "10"], false, false) : page([])));
+    const { result } = setup("10");
+    await waitFor(() => expect(idsOf(result)).toEqual(["9", "10"]));
+
+    expect(result.current.hasNewer).toBe(false);
   });
 });

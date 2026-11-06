@@ -20,3 +20,7 @@ deploy/.image-tag
 .DS_Store
 .idea/
 .vscode/
+
+# 本地附件存储目录（spec 0011）
+media-dev/
+backend/media-dev/

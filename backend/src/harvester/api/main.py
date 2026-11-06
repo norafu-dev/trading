@@ -10,14 +10,20 @@ from harvester.api.errors import register_error_handlers
 from harvester.api.middleware import origin_check
 from harvester.api.notifications import Broadcaster, listen_forever
 from harvester.api.routes import router
+from harvester.api.search_backfill import run_search_backfill
 from harvester.config import (
+    ApiR2MediaSettings,
     ApiSettings,
     CryptoSettings,
+    LocalMediaSettings,
     get_api_settings,
     get_crypto_settings,
     is_local_origin,
+    load_media_settings,
 )
-from harvester.db import get_engine
+from harvester.db import get_engine, get_sessionmaker
+from harvester.media.storage import MediaStore, R2Store, build_local_store, build_r2_client
+from harvester.media.urls import MediaLinkBase, link_base_from_settings
 
 
 @asynccontextmanager
@@ -25,16 +31,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     broadcaster = Broadcaster()
     app.state.broadcaster = broadcaster
     listener = asyncio.create_task(listen_forever(broadcaster), name="pg-listen")
+    backfill = asyncio.create_task(run_search_backfill(get_sessionmaker()), name="search-backfill")
     try:
         yield
     finally:
-        listener.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await listener
+        for task in (listener, backfill):
+            task.cancel()
+        for task in (listener, backfill):
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         await get_engine().dispose()
 
 
-def create_app(settings: ApiSettings, crypto: CryptoSettings) -> FastAPI:
+def create_app(
+    settings: ApiSettings,
+    crypto: CryptoSettings,
+    media_store: MediaStore | None = None,
+    *,
+    media_link_base: MediaLinkBase,
+) -> FastAPI:
     # 生产环境不提供文档路由。
     docs_enabled = is_local_origin(settings.site_origin)
     app = FastAPI(
@@ -47,6 +62,8 @@ def create_app(settings: ApiSettings, crypto: CryptoSettings) -> FastAPI:
     )
     app.state.api_settings = settings
     app.state.key_ring = crypto.key_ring
+    app.state.media_store = media_store
+    app.state.media_link_base = media_link_base
     register_error_handlers(app)
     app.add_middleware(origin_check, site_origin=settings.site_origin)
     app.include_router(public_router)
@@ -56,4 +73,23 @@ def create_app(settings: ApiSettings, crypto: CryptoSettings) -> FastAPI:
 
 def create_app_from_env() -> FastAPI:
     """uvicorn 的工厂入口；配置不全时启动就报错退出。"""
-    return create_app(get_api_settings(), get_crypto_settings())
+    media = load_media_settings("api")
+    return create_app(
+        get_api_settings(),
+        get_crypto_settings(),
+        _build_media_store(media),
+        media_link_base=link_base_from_settings(media),
+    )
+
+
+def _build_media_store(settings: LocalMediaSettings | ApiR2MediaSettings) -> MediaStore:
+    """媒体设置只在 create_app_from_env 里读一次：没设置或 R2 配置不全时抛校验错误，
+    api 启动失败（spec 0011 AC-20，spec 0014 AC-17）。"""
+    if isinstance(settings, LocalMediaSettings):
+        return build_local_store(settings.media_local_dir)
+    client = build_r2_client(
+        settings.endpoint_url,
+        settings.media_r2_read_access_key_id.get_secret_value(),
+        settings.media_r2_read_secret_access_key.get_secret_value(),
+    )
+    return R2Store(client=client, bucket=settings.media_r2_bucket)

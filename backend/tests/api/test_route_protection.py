@@ -6,7 +6,7 @@ from fastapi.routing import APIRoute, APIWebSocketRoute, iter_route_contexts
 
 from harvester.api.deps import PUBLIC_API_PATHS, require_session
 from harvester.api.main import create_app
-from tests.api.conftest import api_settings, crypto_settings
+from tests.api.conftest import UNUSED_LINK_BASE, api_settings, crypto_settings
 
 
 def unguarded_api_routes(app: FastAPI) -> list[str]:
@@ -81,7 +81,9 @@ async def test_livez_is_public_and_needs_no_database(
 
 async def test_production_has_no_docs() -> None:  # covers: AC-1
     app = create_app(
-        api_settings(secure=True, origin="https://dash.example.com"), crypto_settings()
+        api_settings(secure=True, origin="https://dash.example.com"),
+        crypto_settings(),
+        media_link_base=UNUSED_LINK_BASE,
     )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="https://dash.example.com"

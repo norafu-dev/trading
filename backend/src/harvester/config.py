@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal, overload
 from urllib.parse import urlsplit
 
 from pydantic import SecretStr, field_validator, model_validator
@@ -126,3 +127,87 @@ def get_crypto_settings() -> CryptoSettings:
 @lru_cache
 def get_api_settings() -> ApiSettings:
     return ApiSettings()  # pyright: ignore[reportCallIssue]  # 必填项来自环境变量
+
+
+# 附件存储（spec 0011）。MEDIA_STORAGE 必填：没有默认值，写错也直接报错退出。
+MediaRole = Literal["api", "collector"]
+
+
+class MediaStorageChoice(BaseSettings):
+    model_config = _ENV_CONFIG
+
+    media_storage: Literal["local", "r2"]
+
+
+class LocalMediaSettings(BaseSettings):
+    """本地开发：文件放在目录里，api 直接返回内容。"""
+
+    model_config = _ENV_CONFIG
+
+    media_local_dir: Path = Path("./media-dev")
+    # 只有 collector 用：下载中的临时文件，启动时清空。
+    media_tmp_dir: Path = Path("/tmp/harvester-media")
+
+
+class _R2Common(BaseSettings):
+    model_config = _ENV_CONFIG
+
+    media_r2_account_id: str
+    media_r2_bucket: str
+
+    @property
+    def endpoint_url(self) -> str:
+        return f"https://{self.media_r2_account_id}.r2.cloudflarestorage.com"
+
+
+class CollectorR2MediaSettings(_R2Common):
+    """collector 拿读写 token，拿不到 api 的只读 token。"""
+
+    media_r2_write_access_key_id: SecretStr
+    media_r2_write_secret_access_key: SecretStr
+    media_tmp_dir: Path = Path("/tmp/harvester-media")
+
+
+class ApiR2MediaSettings(_R2Common):
+    """api 只拿只读 token，没有任何写 token 的字段。"""
+
+    media_r2_read_access_key_id: SecretStr
+    media_r2_read_secret_access_key: SecretStr
+    # 桶的公开域名，只有导出用它拼文件链接（spec 0014 AC-17）。
+    media_public_base_url: str
+
+    @field_validator("media_public_base_url")
+    @classmethod
+    def _check_public_base_url(cls, value: str) -> str:
+        return normalize_public_base_url(value)
+
+
+def normalize_public_base_url(raw: str) -> str:
+    """只接受 `https://<主机名>`：R2 自定义域名不支持路径前缀，带了链接会全部 404。"""
+    stripped = raw.strip()
+    parts = urlsplit(stripped)
+    if parts.scheme != "https" or not parts.hostname:
+        raise ValueError("MEDIA_PUBLIC_BASE_URL must look like https://media.example.com")
+    has_extra = "?" in stripped or "#" in stripped or parts.username or parts.password
+    if parts.path not in ("", "/") or has_extra:
+        raise ValueError("MEDIA_PUBLIC_BASE_URL must not have a path, query, fragment or user")
+    return stripped.rstrip("/")
+
+
+MediaSettings = LocalMediaSettings | CollectorR2MediaSettings | ApiR2MediaSettings
+
+
+@overload
+def load_media_settings(role: Literal["api"]) -> LocalMediaSettings | ApiR2MediaSettings: ...
+@overload
+def load_media_settings(
+    role: Literal["collector"],
+) -> LocalMediaSettings | CollectorR2MediaSettings: ...
+def load_media_settings(role: MediaRole) -> MediaSettings:
+    """先读 MEDIA_STORAGE，再实例化对应的类；缺任何一项必填配置都会抛校验错误。"""
+    choice = MediaStorageChoice()  # pyright: ignore[reportCallIssue]  # 必填项来自环境变量
+    if choice.media_storage == "local":
+        return LocalMediaSettings()
+    if role == "collector":
+        return CollectorR2MediaSettings()  # pyright: ignore[reportCallIssue]
+    return ApiR2MediaSettings()  # pyright: ignore[reportCallIssue]

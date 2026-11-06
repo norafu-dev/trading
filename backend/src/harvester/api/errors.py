@@ -30,13 +30,19 @@ _DATABASE_UNAVAILABLE_ERRORS: tuple[type[Exception], ...] = (
 
 class ApiError(Exception):
     def __init__(
-        self, status_code: int, code: str, message: str, retry_after_seconds: int | None = None
+        self,
+        status_code: int,
+        code: str,
+        message: str,
+        retry_after_seconds: int | None = None,
+        fields: list[dict[str, Any]] | None = None,
     ) -> None:
         super().__init__(code)
         self.status_code = status_code
         self.code = code
         self.message = message
         self.retry_after_seconds = retry_after_seconds
+        self.fields = fields
 
 
 class UnauthenticatedError(ApiError):
@@ -75,7 +81,11 @@ def error_response(
 async def _handle_api_error(_request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, ApiError)
     return error_response(
-        exc.status_code, exc.code, exc.message, retry_after_seconds=exc.retry_after_seconds
+        exc.status_code,
+        exc.code,
+        exc.message,
+        retry_after_seconds=exc.retry_after_seconds,
+        fields=exc.fields,
     )
 
 

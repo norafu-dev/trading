@@ -5,7 +5,7 @@
 # pyright: reportPrivateUsage=false
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any, Protocol, cast
 
@@ -13,7 +13,9 @@ import aiohttp
 import discord
 import structlog
 from curl_cffi import CurlError
+from curl_cffi.requests import RequestsError
 from discord.gateway import DiscordWebSocket, ReconnectWebSocket
+from discord.http import Route
 
 from harvester.collector.events import (
     ChannelRemoved,
@@ -36,6 +38,17 @@ from harvester.collector.events import (
     ThreadArchived,
 )
 from harvester.collector.failures import ConnectionFailure
+from harvester.collector.history_page import (
+    AccountRisk,
+    Fetched,
+    Forbidden,
+    HistoryPage,
+    NotFound,
+    Unexpected,
+)
+from harvester.collector.history_page import RateLimited as HistoryRateLimited
+from harvester.collector.history_page import Unavailable as HistoryUnavailable
+from harvester.collector.refresh import RateLimited, Refreshed, RefreshResult, Unavailable
 from harvester.collector.wake_guard import WakeGuard
 from harvester.db.snapshots import (
     ACCESS_CHANNEL_TYPES,
@@ -53,6 +66,7 @@ from harvester.db.snapshots import (
     UserSnapshot,
     normalize_embeds,
 )
+from harvester.media.urls import strip_query
 
 log = structlog.get_logger("harvester.collector.discord_client")
 
@@ -82,6 +96,100 @@ def _retry_after_header(exc: discord.HTTPException) -> float | None:
         return float(raw) if raw is not None else None
     except ValueError:
         return None
+
+
+def _parse_refreshed(data: object) -> Mapping[str, str] | None:
+    """`{"refreshed_urls": [{"original": ..., "refreshed": ...}]}`；格式不对返回 None。"""
+    if not isinstance(data, dict):
+        return None
+    items: object = cast(dict[str, object], data).get("refreshed_urls")
+    if not isinstance(items, list):
+        return None
+    mapping: dict[str, str] = {}
+    for item in cast(list[object], items):
+        if not isinstance(item, dict):
+            return None
+        entry = cast(dict[str, object], item)
+        original, refreshed = entry.get("original"), entry.get("refreshed")
+        if not isinstance(original, str) or not isinstance(refreshed, str):
+            return None
+        mapping[strip_query(original)] = refreshed
+    return mapping
+
+
+async def refresh_attachment_urls(client: discord.Client, urls: Sequence[str]) -> RefreshResult:
+    """用已登录会话的 HTTP 客户端换新链接；走 discord.py-self 的限速（spec 0011 AC-11）。"""
+    http = cast(Any, client).http
+    try:
+        data = await http.request(
+            Route("POST", "/attachments/refresh-urls"), json={"attachment_urls": list(urls)}
+        )
+    except discord.HTTPException as exc:
+        if exc.status == 429:
+            return RateLimited(_retry_after_header(exc) or 60.0)
+        return Unavailable(f"http_{exc.status}")
+    except (discord.DiscordException, aiohttp.ClientError, CurlError, OSError, TimeoutError):
+        return Unavailable("network")
+    mapping = _parse_refreshed(data)
+    return Refreshed(mapping) if mapping is not None else Unavailable("parse")
+
+
+# 一页最多 100 条：库在 limit=100 且给了 before 时只调用一次 logs_from（spec 0012）。
+HISTORY_PAGE_LIMIT = 100
+
+
+def _history_http_failure(exc: discord.HTTPException) -> HistoryPage:
+    """按 AC-12 的表把 HTTP 异常换成结果；子类要先于父类判断。"""
+    if isinstance(exc, discord.CaptchaRequired):
+        return AccountRisk("captcha_required")
+    if isinstance(exc, discord.Forbidden):
+        return Forbidden()
+    if isinstance(exc, discord.NotFound):
+        return NotFound()
+    if isinstance(exc, discord.DiscordServerError):
+        return HistoryUnavailable(f"http_{exc.status}")
+    if exc.status == 401:
+        return AccountRisk("unauthorized")
+    if "Cloudflare ban" in str(exc.text):
+        return AccountRisk("cloudflare_ban")
+    return Unexpected(f"HTTPException_{exc.status}")
+
+
+async def fetch_history_page(
+    client: discord.Client, channel_id: int, before_id: int
+) -> HistoryPage:
+    """取 `before_id` 之前最多 100 条消息，从新到旧。缓存里没有频道对象时先 fetch_channel 一次。"""
+    requests = 0
+    try:
+        channel: Any = client.get_channel(channel_id)
+        if channel is None:
+            requests += 1
+            channel = await client.fetch_channel(channel_id)
+        if not isinstance(channel, discord.abc.Messageable):
+            return Unexpected("not_messageable")
+        requests += 1
+        raw = [
+            m
+            async for m in cast(Any, channel).history(
+                limit=HISTORY_PAGE_LIMIT, before=discord.Object(id=before_id), oldest_first=False
+            )
+        ]
+    except discord.RateLimited as exc:
+        return HistoryRateLimited(exc.retry_after)
+    except discord.HTTPException as exc:
+        return _history_http_failure(exc)
+    except (RequestsError, CurlError, aiohttp.ClientError, OSError, TimeoutError):
+        return HistoryUnavailable("network")
+    except Exception as exc:
+        return Unexpected(type(exc).__name__)
+    messages = cast(list[discord.Message], raw)
+    snapshots = tuple(s for s in (snapshot_message(m) for m in messages) if s is not None)
+    return Fetched(
+        messages=snapshots,
+        returned_ids=tuple(m.id for m in messages),
+        raw_count=len(messages),
+        request_count=requests,
+    )
 
 
 def to_failure(exc: Exception, *, during_login: bool = False) -> ConnectionFailure | None:
@@ -239,6 +347,13 @@ def _forwarded(message: discord.Message) -> ForwardedData | None:
     )
 
 
+def _forwarded_attachments(message: discord.Message) -> tuple[AttachmentSnapshot, ...]:
+    """转发消息里的附件，序号就是 media.slot；不是转发时为空（spec 0011）。"""
+    if _forwarded(message) is None:
+        return ()
+    return tuple(_attachment_snapshot(a) for a in message.message_snapshots[0].attachments)
+
+
 def snapshot_message(
     message: discord.Message, *, attachments_known: bool = True
 ) -> MessageSnapshot | None:
@@ -266,10 +381,8 @@ def snapshot_message(
         reply_to_id=reference.message_id if is_reply and reference is not None else None,
         edited_at=message.edited_at,
         attachments=tuple(_attachment_snapshot(a) for a in message.attachments),
-        mentions=tuple(
-            _user_snapshot(user, "bot" if user.bot else "user") for user in message.mentions
-        ),
         attachments_known=attachments_known,
+        forwarded_attachments=_forwarded_attachments(message),
     )
 
 
@@ -360,6 +473,12 @@ class HarvesterClient(discord.Client):
             self._schedule_guild(int(data["guild_id"]))
 
         state.parsers["THREAD_LIST_SYNC"] = parse
+
+    async def refresh_attachment_urls(self, urls: Sequence[str]) -> RefreshResult:
+        return await refresh_attachment_urls(self, urls)
+
+    async def fetch_history_page(self, channel_id: int, before_id: int) -> HistoryPage:
+        return await fetch_history_page(self, channel_id, before_id)
 
     async def subscribe_guilds(self, guild_ids: frozenset[int]) -> frozenset[int]:
         """返回实际发出的服务器；库会把多个服务器合并成一条网关指令发送。"""

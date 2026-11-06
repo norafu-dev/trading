@@ -4,6 +4,7 @@ import base64
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import httpx
 import pyotp
@@ -18,10 +19,13 @@ from harvester.api.deps import get_clock
 from harvester.api.main import create_app
 from harvester.config import ApiSettings, CryptoSettings
 from harvester.db import get_session_factory
+from harvester.media.urls import LocalMediaDir
 
 ORIGIN = "http://localhost:8080"
 PASSWORD = "correct horse battery"
 TEST_KEY = f"1:{base64.b64encode(bytes(range(32))).decode()}"
+# 不看导出链接的测试用这个占位；看链接的测试用 `app` fixture 里的 tmp_path。
+UNUSED_LINK_BASE = LocalMediaDir(Path("/nonexistent/harvester-media"))
 
 
 @dataclass
@@ -66,8 +70,9 @@ def wire(app: FastAPI, factory: async_sessionmaker[AsyncSession], clock: FakeClo
 
 
 @pytest.fixture
-def app(factory: async_sessionmaker[AsyncSession], clock: FakeClock) -> FastAPI:
-    return wire(create_app(api_settings(), crypto_settings()), factory, clock)
+def app(factory: async_sessionmaker[AsyncSession], clock: FakeClock, tmp_path: Path) -> FastAPI:
+    app = create_app(api_settings(), crypto_settings(), media_link_base=LocalMediaDir(tmp_path))
+    return wire(app, factory, clock)
 
 
 def make_client(app: FastAPI, ip: str = "203.0.113.7") -> httpx.AsyncClient:
@@ -123,3 +128,13 @@ async def do_login(
     return await client.post(
         "/api/auth/login", json={"password": password, "totp_code": code_for(secret, clock())}
     )
+
+
+@pytest.fixture
+async def logged_in(
+    app: FastAPI, factory: async_sessionmaker[AsyncSession], clock: FakeClock
+) -> AsyncIterator[httpx.AsyncClient]:
+    async with make_client(app) as client:
+        secret = await complete_setup(client, factory, clock)
+        assert (await do_login(client, secret, clock)).status_code == 204
+        yield client

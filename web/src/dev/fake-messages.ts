@@ -34,17 +34,12 @@ const AUTHORS: readonly FakeAuthor[] = [
   { id: "800000000000000010", names: [""], avatarUrl: null },
 ];
 
-const USER_NAMES: ReadonlyMap<string, string> = new Map(
-  AUTHORS.map((author) => [author.id, author.names[0] || "无名氏"]),
-);
-
 const CHANNEL_NAMES: ReadonlyMap<string, string> = new Map([
   ["910000000000000006", "闲聊"],
   ["910000000000000009", "程序"],
 ]);
 
 export const FAKE_RESOLVER: MentionResolver = {
-  user: (id) => USER_NAMES.get(id),
   channel: (id) => CHANNEL_NAMES.get(id),
 };
 
@@ -134,6 +129,8 @@ const EMBEDS: readonly EmbedView[] = [
     footerText: "godotengine.org",
     imageUrl: "https://picsum.photos/seed/harvester/800/450",
     thumbnailUrl: "https://picsum.photos/seed/thumb/160/160",
+    imageMedia: null,
+    thumbnailMedia: null,
   },
   {
     type: "link",
@@ -147,6 +144,8 @@ const EMBEDS: readonly EmbedView[] = [
     footerText: null,
     imageUrl: null,
     thumbnailUrl: null,
+    imageMedia: null,
+    thumbnailMedia: null,
   },
 ];
 
@@ -185,7 +184,7 @@ function attachmentsFor(random: () => number, id: string): readonly AttachmentVi
   const count = 1 + Math.floor(random() * 2);
   return Array.from({ length: count }, (_, index) => {
     const [filename, contentType, sizeBytes] = pick(random, FILES);
-    return { id: `${id}${index}`, filename, contentType, sizeBytes };
+    return { id: `${id}${index}`, filename, contentType, sizeBytes, media: null };
   });
 }
 
@@ -197,7 +196,7 @@ function forwardedFor(random: () => number, id: string): ForwardedView | null {
     guildId: "900000000000000001",
     content: "被转发的原文：**周五** 发版，记得提前测一下",
     embeds: random() < 0.5 ? [pick(random, EMBEDS)] : [],
-    attachmentNames: random() < 0.5 ? ["changelog.md"] : [],
+    attachments: random() < 0.5 ? [{ filename: "changelog.md", media: null }] : [],
   };
 }
 
@@ -295,15 +294,27 @@ export function sampleMessages(endMs: number): MessageView[] {
         guildId: null,
         content: "被转发的原文：**周五** 发版",
         embeds: [],
-        attachmentNames: ["changelog.md"],
+        attachments: [{ filename: "changelog.md", media: null }],
       },
     },
     {
       ...base(n + 3, "附件大小：1023 B、1.0 KB、1.5 MB"),
       attachments: [
-        { id: "a1", filename: "notes.txt", contentType: "text/plain", sizeBytes: 1023 },
-        { id: "a2", filename: "设计稿-v3.fig", contentType: null, sizeBytes: 1024 },
-        { id: "a3", filename: "screenshot.png", contentType: "image/png", sizeBytes: 1_572_864 },
+        {
+          id: "a1",
+          filename: "notes.txt",
+          contentType: "text/plain",
+          sizeBytes: 1023,
+          media: null,
+        },
+        { id: "a2", filename: "设计稿-v3.fig", contentType: null, sizeBytes: 1024, media: null },
+        {
+          id: "a3",
+          filename: "screenshot.png",
+          contentType: "image/png",
+          sizeBytes: 1_572_864,
+          media: null,
+        },
       ],
     },
     { ...base(n + 4, "这条被编辑过"), editedAt: new Date(endMs - 30_000).toISOString() },

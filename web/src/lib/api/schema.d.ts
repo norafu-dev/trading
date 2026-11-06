@@ -365,6 +365,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/discord/unread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Unread */
+        get: operations["list_unread_api_discord_unread_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discord/channels/{channel_id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark Read */
+        post: operations["mark_read_api_discord_channels__channel_id__read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/discord/guilds/{guild_id}/load-threads": {
         parameters: {
             query?: never;
@@ -376,6 +410,364 @@ export interface paths {
         put?: never;
         /** Load Threads */
         post: operations["load_threads_api_discord_guilds__guild_id__load_threads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/media/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Media Settings */
+        get: operations["get_media_settings_api_media_settings_get"];
+        /** Put Media Settings */
+        put: operations["put_media_settings_api_media_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/media/retry-failed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Failed */
+        post: operations["retry_failed_api_media_retry_failed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/media/{media_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Media */
+        post: operations["retry_media_api_media__media_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/media/{media_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Media */
+        get: operations["get_media_api_media__media_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/history/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List History Jobs */
+        get: operations["list_history_jobs_api_history_jobs_get"];
+        put?: never;
+        /**
+         * Create History Jobs
+         * @description 建任务：去重、按频道创建时间截断起点、扣掉已覆盖和已排队的时间（AC-1、AC-2）。
+         */
+        post: operations["create_history_jobs_api_history_jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/history/gaps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List History Gaps
+         * @description 有缺口的频道；给了 `channel_id` 就只看这一个（AC-15）。
+         */
+        get: operations["list_history_gaps_api_history_gaps_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/history/gaps/fill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fill History Gaps
+         * @description 一键补缺口：一段缺口一行，`origin = 'gap_manual'`（AC-15）。
+         */
+        post: operations["fill_history_gaps_api_history_gaps_fill_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/history/jobs/{job_id}/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Act On History Job
+         * @description 暂停、继续、取消、重试一个任务；状态不符合返回 409（AC-9）。
+         */
+        post: operations["act_on_history_job_api_history_jobs__job_id___action__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/history/batches/{batch_id}/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Act On History Batch
+         * @description 整批暂停、继续、取消，只作用于状态符合的行，返回实际改了几行（AC-9）。
+         */
+        post: operations["act_on_history_batch_api_history_batches__batch_id___action__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/history/batches/{batch_id}/channels/{channel_id}/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Act On History Batch Channel
+         * @description 批次里一个频道的所有子任务一起暂停、继续、取消，只改状态符合的行。
+         */
+        post: operations["act_on_history_batch_channel_api_history_batches__batch_id__channels__channel_id___action__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/history/control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Control History
+         * @description 总开关（AC-8）。暂停时已经是自动暂停的原因保留不覆盖；继续时清空原因并唤醒 collector。
+         */
+        post: operations["control_history_api_history_control_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/history/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get History Settings */
+        get: operations["get_history_settings_api_history_settings_get"];
+        /** Put History Settings */
+        put: operations["put_history_settings_api_history_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/search/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Messages */
+        get: operations["search_messages_api_search_messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/search/count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Count */
+        get: operations["search_count_api_search_count_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/search/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Status */
+        get: operations["search_status_api_search_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/search/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Channels */
+        get: operations["search_channels_api_search_channels_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/search/authors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Authors
+         * @description `q`（1 到 50 字符）和 `ids`（最多 20 个）二选一。
+         */
+        get: operations["search_authors_api_search_authors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/{channel_id}/export/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Preview
+         * @description 下载前的条数和缺口（AC-6 到 AC-9）。
+         *
+         *     超过上限时 `over_limit` 为真，频道没消息时 `count` 为 0。
+         */
+        get: operations["export_preview_api_channels__channel_id__export_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/{channel_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Messages
+         * @description 写文件之前的问题都返回 JSON 错误；之后的错误只能断开连接（AC-18、AC-19）。
+         */
+        get: operations["export_messages_api_channels__channel_id__export_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -473,6 +865,22 @@ export interface components {
              */
             state: "setup_required" | "unauthenticated" | "authenticated";
         };
+        /** AuthorOut */
+        AuthorOut: {
+            /** Id */
+            id: string;
+            /** Username */
+            username: string;
+            /** Global Name */
+            global_name: string | null;
+            /** Avatar Hash */
+            avatar_hash: string | null;
+        };
+        /** AuthorsOut */
+        AuthorsOut: {
+            /** Authors */
+            authors: components["schemas"]["AuthorOut"][];
+        };
         /** BackupRunOut */
         BackupRunOut: {
             /**
@@ -501,6 +909,11 @@ export interface components {
             last_success_at: string | null;
             /** Overdue */
             overdue: boolean;
+        };
+        /** BatchChangedOut */
+        BatchChangedOut: {
+            /** Changed */
+            changed: number;
         };
         /** CategoryCollectOut */
         CategoryCollectOut: {
@@ -576,6 +989,34 @@ export interface components {
             /** Has Account */
             has_account: boolean;
         };
+        /** ControlIn */
+        ControlIn: {
+            /** Paused */
+            paused: boolean;
+        };
+        /** CreateJobsIn */
+        CreateJobsIn: {
+            /** Channel Ids */
+            channel_ids: string[];
+            /** Range Start */
+            range_start?: string | null;
+            /** Range End */
+            range_end?: string | null;
+            /**
+             * Refetch
+             * @default false
+             */
+            refetch: boolean;
+        };
+        /** CreateJobsOut */
+        CreateJobsOut: {
+            /** Batch Id */
+            batch_id: string | null;
+            /** Jobs */
+            jobs: components["schemas"]["HistoryJobOut"][];
+            /** Skipped */
+            skipped: components["schemas"]["SkippedChannelOut"][];
+        };
         /** DiscordAccountOut */
         DiscordAccountOut: {
             /** Id */
@@ -648,6 +1089,45 @@ export interface components {
             /** Inline */
             inline?: boolean;
         };
+        /** ExportGapOut */
+        ExportGapOut: {
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+        };
+        /** ExportPointOut */
+        ExportPointOut: {
+            /** Id */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** ExportPreviewOut */
+        ExportPreviewOut: {
+            /** Count */
+            count: number;
+            /** Over Limit */
+            over_limit: boolean;
+            range_start: components["schemas"]["ExportPointOut"] | null;
+            range_end: components["schemas"]["ExportPointOut"] | null;
+            /** Gaps */
+            gaps: components["schemas"]["ExportGapOut"][];
+        };
+        /** FillGapsIn */
+        FillGapsIn: {
+            /** Channel Ids */
+            channel_ids: string[];
+        };
         /** ForwardedOut */
         ForwardedOut: {
             /** Message Id */
@@ -662,6 +1142,32 @@ export interface components {
             embeds: components["schemas"]["EmbedData"][];
             /** Attachment Names */
             attachment_names: string[];
+        };
+        /** GapOut */
+        GapOut: {
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+        };
+        /** GapSummaryOut */
+        GapSummaryOut: {
+            /** Channel Id */
+            channel_id: string;
+            /** Guild Name */
+            guild_name: string;
+            /** Channel Name */
+            channel_name: string;
+            /** Gaps */
+            gaps: components["schemas"]["GapOut"][];
+            /** Total Seconds */
+            total_seconds: number;
         };
         /** GuildBriefOut */
         GuildBriefOut: {
@@ -717,6 +1223,155 @@ export interface components {
             /** Database Time */
             database_time?: string | null;
         };
+        /** HistoryBatchOut */
+        HistoryBatchOut: {
+            /** Batch Id */
+            batch_id: string;
+            /** Channel Count */
+            channel_count: number;
+            /** Fetched Count */
+            fetched_count: number;
+            status_counts: components["schemas"]["HistoryStatusCountsOut"];
+        };
+        /** HistoryJobOut */
+        HistoryJobOut: {
+            /** Id */
+            id: string;
+            /** Batch Id */
+            batch_id: string;
+            /** Channel Id */
+            channel_id: string;
+            /** Guild Name */
+            guild_name: string;
+            /** Channel Name */
+            channel_name: string;
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "manual" | "gap_manual" | "gap_auto";
+            /** Refetch */
+            refetch: boolean;
+            /**
+             * Range Start
+             * Format: date-time
+             */
+            range_start: string;
+            /**
+             * Range End
+             * Format: date-time
+             */
+            range_end: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "running" | "paused" | "done" | "failed" | "cancelled";
+            /** Fetched Count */
+            fetched_count: number;
+            /** Pages Fetched */
+            pages_fetched: number;
+            /** Cursor At */
+            cursor_at: string | null;
+            /** Progress */
+            progress: number;
+            /** Wait Reason */
+            wait_reason: ("rate_limited" | "retrying") | null;
+            /** Wait Until */
+            wait_until: string | null;
+            /** Not Before */
+            not_before: string | null;
+            /** Error */
+            error: ("no_access" | "channel_deleted" | "suspect_empty" | "unexpected") | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Started At */
+            started_at: string | null;
+            /** Finished At */
+            finished_at: string | null;
+        };
+        /** HistoryJobPageOut */
+        HistoryJobPageOut: {
+            /** Jobs */
+            jobs: components["schemas"]["HistoryJobOut"][];
+            /** Batches */
+            batches: components["schemas"]["HistoryBatchOut"][];
+            /** Next Before Id */
+            next_before_id: string | null;
+        };
+        /** HistorySettingsIn */
+        HistorySettingsIn: {
+            /** Page Delay Min S */
+            page_delay_min_s: number;
+            /** Page Delay Max S */
+            page_delay_max_s: number;
+            /** Daily Page Limit */
+            daily_page_limit: number;
+            /** Run Minutes */
+            run_minutes: number;
+            /** Rest Minutes */
+            rest_minutes: number;
+            /** Auto Gap Max Hours */
+            auto_gap_max_hours: number;
+        };
+        /** HistorySettingsOut */
+        HistorySettingsOut: {
+            /** Page Delay Min S */
+            page_delay_min_s: number;
+            /** Page Delay Max S */
+            page_delay_max_s: number;
+            /** Daily Page Limit */
+            daily_page_limit: number;
+            /** Run Minutes */
+            run_minutes: number;
+            /** Rest Minutes */
+            rest_minutes: number;
+            /** Auto Gap Max Hours */
+            auto_gap_max_hours: number;
+            /** Pages Used 24H */
+            pages_used_24h: number;
+        };
+        /** HistoryStatusCountsOut */
+        HistoryStatusCountsOut: {
+            /** Pending */
+            pending: number;
+            /** Running */
+            running: number;
+            /** Paused */
+            paused: number;
+            /** Done */
+            done: number;
+            /** Failed */
+            failed: number;
+            /** Cancelled */
+            cancelled: number;
+        };
+        /** HistoryStatusOut */
+        HistoryStatusOut: {
+            /** Paused Reason */
+            paused_reason: ("manual" | "rate_limited" | "account_risk") | null;
+            /** Paused At */
+            paused_at: string | null;
+            /** Waiting Reason */
+            waiting_reason: ("rest" | "quota") | null;
+            /** Waiting Until */
+            waiting_until: string | null;
+            /** Pages Used 24H */
+            pages_used_24h: number;
+            /** Daily Page Limit */
+            daily_page_limit: number;
+            /** Quota Resumes At */
+            quota_resumes_at: string | null;
+            /** Last Seen At */
+            last_seen_at: string | null;
+            /** Stale */
+            stale: boolean;
+            /** Gap Channel Count */
+            gap_channel_count: number;
+        };
         /** LabelUpdate */
         LabelUpdate: {
             /** Label */
@@ -754,6 +1409,94 @@ export interface components {
              */
             outcome: "success" | "bad_credentials" | "rate_limited" | "setup_bad_code" | "setup_completed" | "logout" | "reset";
         };
+        /** MarkReadIn */
+        MarkReadIn: {
+            /** Message Id */
+            message_id: string;
+        };
+        /** MarkReadOut */
+        MarkReadOut: {
+            /** Last Read Message Id */
+            last_read_message_id: string;
+        };
+        /** MediaCountsOut */
+        MediaCountsOut: {
+            /** Pending */
+            pending: number;
+            /** Stored */
+            stored: number;
+            /** Failed */
+            failed: number;
+            /** Too Large */
+            too_large: number;
+            /** No Space */
+            no_space: number;
+            /** Gone */
+            gone: number;
+        };
+        /** MediaOut */
+        MediaOut: {
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "attachment" | "forwarded_attachment" | "embed_image" | "embed_thumbnail";
+            /** Attachment Id */
+            attachment_id: string | null;
+            /** Slot */
+            slot: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "stored" | "failed" | "too_large" | "no_space" | "gone";
+            /** Filename */
+            filename: string;
+            /** Content Type */
+            content_type: string | null;
+            /** Size Bytes */
+            size_bytes: number | null;
+            /** Width */
+            width: number | null;
+            /** Height */
+            height: number | null;
+            /** Has Thumb */
+            has_thumb: boolean;
+        };
+        /** MediaSettingsIn */
+        MediaSettingsIn: {
+            /** Max File Mb */
+            max_file_mb: number;
+            /** Quota Gb */
+            quota_gb: number;
+        };
+        /** MediaSettingsOut */
+        MediaSettingsOut: {
+            /** Max File Mb */
+            max_file_mb: number;
+            /** Quota Gb */
+            quota_gb: number;
+            /** Used Bytes */
+            used_bytes: number;
+            counts: components["schemas"]["MediaCountsOut"];
+            /** Pending Channel Off */
+            pending_channel_off: number;
+            /** Storage Full */
+            storage_full: boolean;
+        };
+        /** MediaWorkerStatusOut */
+        MediaWorkerStatusOut: {
+            /** Storage Full */
+            storage_full: boolean;
+            /** Last Seen At */
+            last_seen_at: string | null;
+            /** Stale */
+            stale: boolean;
+            /** Paused Until */
+            paused_until: string | null;
+        };
         /** MessageOut */
         MessageOut: {
             /** Id */
@@ -775,6 +1518,8 @@ export interface components {
             forwarded: components["schemas"]["ForwardedOut"] | null;
             /** Attachments */
             attachments: components["schemas"]["AttachmentOut"][];
+            /** Media */
+            media: components["schemas"]["MediaOut"][];
             /** Edited At */
             edited_at: string | null;
             /** Deleted At */
@@ -787,8 +1532,8 @@ export interface components {
             messages: components["schemas"]["MessageOut"][];
             /** Has More */
             has_more: boolean;
-            /** Users */
-            users: components["schemas"]["NamedRefOut"][];
+            /** Has Newer */
+            has_newer?: boolean | null;
             /** Channels */
             channels: components["schemas"]["NamedRefOut"][];
         };
@@ -798,6 +1543,39 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+        };
+        /** PickerChannelOut */
+        PickerChannelOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Type */
+            type: number;
+            /** Parent Id */
+            parent_id: string | null;
+            /** Category Name */
+            category_name: string | null;
+            /** Status */
+            status: string;
+            /** Collect Enabled */
+            collect_enabled: boolean;
+        };
+        /** PickerGuildOut */
+        PickerGuildOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Status */
+            status: string;
+            /** Channels */
+            channels: components["schemas"]["PickerChannelOut"][];
+        };
+        /** PickerOut */
+        PickerOut: {
+            /** Guilds */
+            guilds: components["schemas"]["PickerGuildOut"][];
         };
         /** ReplyOut */
         ReplyOut: {
@@ -811,6 +1589,66 @@ export interface components {
             preview?: string | null;
             /** Deleted */
             deleted?: boolean | null;
+        };
+        /** RequeuedOut */
+        RequeuedOut: {
+            /** Requeued */
+            requeued: number;
+        };
+        /** SearchChannelOut */
+        SearchChannelOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Type */
+            type: number;
+            /** Status */
+            status: string;
+            /** Collect Enabled */
+            collect_enabled: boolean;
+            parent: components["schemas"]["SearchParentOut"] | null;
+        };
+        /** SearchCountOut */
+        SearchCountOut: {
+            /** Count */
+            count: number | null;
+            /** Capped */
+            capped: boolean;
+        };
+        /** SearchGuildOut */
+        SearchGuildOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** SearchHitOut */
+        SearchHitOut: {
+            message: components["schemas"]["MessageOut"];
+            guild: components["schemas"]["SearchGuildOut"];
+            channel: components["schemas"]["SearchChannelOut"];
+        };
+        /** SearchMessagesOut */
+        SearchMessagesOut: {
+            /** Items */
+            items: components["schemas"]["SearchHitOut"][];
+            /** Next Before */
+            next_before: string | null;
+            /** Channels */
+            channels: components["schemas"]["NamedRefOut"][];
+        };
+        /** SearchParentOut */
+        SearchParentOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** SearchStatusOut */
+        SearchStatusOut: {
+            /** Index Pending */
+            index_pending: number;
         };
         /** SetupBeginBody */
         SetupBeginBody: {
@@ -833,10 +1671,22 @@ export interface components {
             /** Totp Code */
             totp_code: string;
         };
+        /** SkippedChannelOut */
+        SkippedChannelOut: {
+            /** Channel Id */
+            channel_id: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "not_found" | "channel_deleted" | "not_collectable" | "no_access" | "nothing_to_fetch";
+        };
         /** SystemStatusOut */
         SystemStatusOut: {
             collector: components["schemas"]["CollectorStatusOut"];
             backup: components["schemas"]["BackupStatusOut"];
+            media: components["schemas"]["MediaWorkerStatusOut"];
+            history: components["schemas"]["HistoryStatusOut"];
         };
         /** ThreadLoadOut */
         ThreadLoadOut: {
@@ -850,6 +1700,18 @@ export interface components {
              * Format: password
              */
             token: string;
+        };
+        /** UnreadChannelOut */
+        UnreadChannelOut: {
+            /** Channel Id */
+            channel_id: string;
+            /** Count */
+            count: number;
+        };
+        /** UnreadOut */
+        UnreadOut: {
+            /** Channels */
+            channels: components["schemas"]["UnreadChannelOut"][];
         };
         /** ValidationError */
         ValidationError: {
@@ -1434,6 +2296,7 @@ export interface operations {
                 before?: string | null;
                 after?: string | null;
                 ids?: string | null;
+                around?: string | null;
                 limit?: number;
             };
             header?: never;
@@ -1451,6 +2314,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessagesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_unread_api_discord_unread_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnreadOut"];
+                };
+            };
+        };
+    };
+    mark_read_api_discord_channels__channel_id__read_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkReadIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarkReadOut"];
                 };
             };
             /** @description Validation Error */
@@ -1483,6 +2401,677 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ThreadLoadOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_media_settings_api_media_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaSettingsOut"];
+                };
+            };
+        };
+    };
+    put_media_settings_api_media_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MediaSettingsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaSettingsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_failed_api_media_retry_failed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequeuedOut"];
+                };
+            };
+        };
+    };
+    retry_media_api_media__media_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                media_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_media_api_media__media_id__get: {
+        parameters: {
+            query?: {
+                variant?: "original" | "thumb";
+                download?: boolean;
+            };
+            header?: never;
+            path: {
+                media_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 本地模式：直接返回文件内容 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 跳到存储里这个文件的签名链接 */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_history_jobs_api_history_jobs_get: {
+        parameters: {
+            query?: {
+                view?: "active" | "finished";
+                since_days?: number;
+                before_id?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryJobPageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_history_jobs_api_history_jobs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateJobsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateJobsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_history_gaps_api_history_gaps_get: {
+        parameters: {
+            query?: {
+                channel_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GapSummaryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fill_history_gaps_api_history_gaps_fill_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FillGapsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateJobsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    act_on_history_job_api_history_jobs__job_id___action__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+                action: "pause" | "resume" | "cancel" | "retry";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryJobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    act_on_history_batch_api_history_batches__batch_id___action__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+                action: "pause" | "resume" | "cancel";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchChangedOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    act_on_history_batch_channel_api_history_batches__batch_id__channels__channel_id___action__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+                channel_id: string;
+                action: "pause" | "resume" | "cancel";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchChangedOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    control_history_api_history_control_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ControlIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryStatusOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_history_settings_api_history_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistorySettingsOut"];
+                };
+            };
+        };
+    };
+    put_history_settings_api_history_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HistorySettingsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistorySettingsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_messages_api_search_messages_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                guild?: string | null;
+                channel?: string | null;
+                author?: string | null;
+                from?: string | null;
+                to?: string | null;
+                before?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchMessagesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_count_api_search_count_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                guild?: string | null;
+                channel?: string | null;
+                author?: string | null;
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchCountOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_status_api_search_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchStatusOut"];
+                };
+            };
+        };
+    };
+    search_channels_api_search_channels_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PickerOut"];
+                };
+            };
+        };
+    };
+    search_authors_api_search_authors_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                ids?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_preview_api_channels__channel_id__export_preview_get: {
+        parameters: {
+            query?: {
+                start?: string | null;
+                end?: string | null;
+            };
+            header?: never;
+            path: {
+                channel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportPreviewOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_messages_api_channels__channel_id__export_get: {
+        parameters: {
+            query?: {
+                start?: string | null;
+                end?: string | null;
+                format?: string | null;
+                tz?: string | null;
+            };
+            header?: never;
+            path: {
+                channel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description CSV 或 JSONL 文件，边查边写 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

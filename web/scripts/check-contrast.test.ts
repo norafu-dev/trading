@@ -10,10 +10,10 @@ const css = readFileSync(fileURLToPath(new URL("../src/app/globals.css", import.
 
 describe("对比度检查", () => {
   // covers: AC-14
-  it.each(["light", "dark"] as const)("%s 主题的 25 组前景和背景全部达标", (theme) => {
+  it.each(["light", "dark"] as const)("%s 主题的 27 组前景和背景全部达标", (theme) => {
     const tokens = themesFromCss(css)[theme];
     const results = checkTheme(theme, tokens);
-    expect(results).toHaveLength(25);
+    expect(results).toHaveLength(27);
     const failed = results
       .filter((result) => !result.ok)
       .map((result) => `${result.pair.fg}/${result.pair.bg}`);

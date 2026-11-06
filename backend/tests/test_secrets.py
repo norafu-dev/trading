@@ -4,6 +4,7 @@ import base64
 import json
 import logging
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -13,6 +14,7 @@ from pydantic import SecretStr
 from harvester.api.main import create_app
 from harvester.config import ApiSettings, CryptoSettings
 from harvester.logging import configure_logging
+from harvester.media.urls import LocalMediaDir
 
 
 @pytest.fixture
@@ -50,6 +52,7 @@ def test_no_api_schema_exposes_a_token_field() -> None:  # covers: AC-9
     app = create_app(
         ApiSettings(site_origin="http://localhost:8080", session_cookie_secure=False),
         CryptoSettings(token_encryption_key=SecretStr(f"1:{base64.b64encode(bytes(32)).decode()}")),
+        media_link_base=LocalMediaDir(Path("/nonexistent/harvester-media")),
     )
     schema = app.openapi()
     # 只有这两个请求体可以有 token 字段：token 只写不读（spec 0005）。

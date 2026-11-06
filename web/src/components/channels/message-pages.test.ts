@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  aroundFrom,
   chunk,
   flatten,
   hasGap,
+  hasNewerPages,
   type MessagesData,
   type MessagesPage,
   mergeIntoPages,
@@ -19,6 +21,7 @@ const row = (id: string, content = "c"): Row => ({
   author_id: "2",
   author_name: "a",
   author_avatar_hash: null,
+  media: [],
   created_at: "2026-11-02T00:00:00Z",
   content,
   embeds: [],
@@ -32,7 +35,6 @@ const row = (id: string, content = "c"): Row => ({
 const page = (ids: readonly string[], overrides: Partial<MessagesPage> = {}): MessagesPage => ({
   messages: ids.map((id) => row(id)),
   has_more: false,
-  users: [],
   channels: [],
   ...overrides,
 });
@@ -59,10 +61,10 @@ describe("mergeIntoPages", () => {
   });
 
   // covers: spec 0008 AC-21
-  it("提及的名字合并，不丢旧的", () => {
-    const base = pageFrom(page(["1"], { users: [{ id: "u1", name: "甲" }] }));
-    const merged = mergeIntoPages(base, page(["2"], { users: [{ id: "u2", name: "乙" }] }));
-    expect(merged.pages[0]?.users.map((u) => u.name)).toEqual(["甲", "乙"]);
+  it("提及的频道名合并，不丢旧的", () => {
+    const base = pageFrom(page(["1"], { channels: [{ id: "c1", name: "甲" }] }));
+    const merged = mergeIntoPages(base, page(["2"], { channels: [{ id: "c2", name: "乙" }] }));
+    expect(merged.pages[0]?.channels.map((c) => c.name)).toEqual(["甲", "乙"]);
   });
 });
 
@@ -93,5 +95,39 @@ describe("planChanged", () => {
 describe("chunk", () => {
   it("按大小切开", () => {
     expect(chunk([1, 2, 3], 2)).toEqual([[1, 2], [3]]);
+  });
+});
+
+// covers: spec 0013 AC-19
+describe("hasNewerPages", () => {
+  const aroundPage = (has_newer: boolean): MessagesPage => ({
+    messages: [row("10")],
+    has_more: false,
+    has_newer,
+    channels: [],
+  });
+
+  it("普通加载永远是 false，哪怕 has_more 为真", () => {
+    expect(hasNewerPages(pageFrom({ ...aroundPage(true), has_more: true, has_newer: null }))).toBe(
+      false,
+    );
+  });
+
+  it("around 取的页看 has_newer", () => {
+    expect(hasNewerPages(aroundFrom(aroundPage(true), "10"))).toBe(true);
+    expect(hasNewerPages(aroundFrom(aroundPage(false), "10"))).toBe(false);
+  });
+
+  it("最新的一页是 after 取的，看它的 has_more", () => {
+    const base = aroundFrom(aroundPage(true), "10");
+    const newer = { ...aroundPage(false), messages: [row("11")], has_more: true };
+    const data: MessagesData = {
+      pages: [newer, ...base.pages],
+      pageParams: [{ after: "10" }, ...base.pageParams],
+    };
+    expect(hasNewerPages(data)).toBe(true);
+    expect(hasNewerPages({ ...data, pages: [{ ...newer, has_more: false }, ...base.pages] })).toBe(
+      false,
+    );
   });
 });

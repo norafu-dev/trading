@@ -19,6 +19,7 @@ from harvester.db.models import DashboardCredential, DashboardSession, LoginEven
 from tests.api.conftest import (
     ORIGIN,
     PASSWORD,
+    UNUSED_LINK_BASE,
     FakeClock,
     api_settings,
     code_for,
@@ -130,7 +131,13 @@ async def test_cookie_attributes_production(
 ) -> None:  # covers: AC-6
     origin = "https://dash.example.com"
     app = wire(
-        create_app(api_settings(secure=True, origin=origin), crypto_settings()), factory, clock
+        create_app(
+            api_settings(secure=True, origin=origin),
+            crypto_settings(),
+            media_link_base=UNUSED_LINK_BASE,
+        ),
+        factory,
+        clock,
     )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app, client=("203.0.113.7", 1)),
@@ -346,7 +353,7 @@ async def test_sse_stops_after_session_deleted(
 async def test_database_down_is_503_not_401(clock: FakeClock) -> None:  # covers: AC-13
     dead = create_async_engine("postgresql+asyncpg://nobody:x@127.0.0.1:1/none")
     app = wire(
-        create_app(api_settings(), crypto_settings()),
+        create_app(api_settings(), crypto_settings(), media_link_base=UNUSED_LINK_BASE),
         async_sessionmaker(dead, expire_on_commit=False),
         clock,
     )

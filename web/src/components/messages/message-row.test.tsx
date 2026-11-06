@@ -1,5 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 
 import { createTimeFormat } from "@/lib/format/time";
 
@@ -8,7 +9,7 @@ import { MessageRow } from "./message-row";
 import type { EmbedView, MentionResolver, MessageView } from "./types";
 
 const format = createTimeFormat("Asia/Shanghai");
-const resolver: MentionResolver = { user: () => undefined, channel: () => undefined };
+const resolver: MentionResolver = { channel: () => undefined };
 const NOW = new Date("2026-10-30T10:00:00Z");
 
 function message(overrides: Partial<MessageView> = {}): MessageView {
@@ -42,20 +43,38 @@ function embed(overrides: Partial<EmbedView> = {}): EmbedView {
     footerText: null,
     imageUrl: null,
     thumbnailUrl: null,
+    imageMedia: null,
+    thumbnailMedia: null,
     ...overrides,
   };
 }
 
 // 解析器传 failed，正文按纯文本显示，不需要加载 WASM
-function renderRow(overrides: Partial<MessageView> = {}, groupStart = true) {
+function renderRow(overrides: Partial<MessageView> = {}, groupStart = true, highlighted = false) {
   const msg = message(overrides);
   const row: MessageRowItem = { kind: "message", key: msg.id, message: msg, groupStart };
   return render(
-    <MessageRow row={row} format={format} now={NOW} resolver={resolver} parser="failed" />,
+    <MessageRow
+      row={row}
+      format={format}
+      now={NOW}
+      resolver={resolver}
+      parser="failed"
+      highlighted={highlighted}
+    />,
   );
 }
 
 describe("MessageRow", () => {
+  // covers: spec 0013 AC-17
+  it("highlighted 时背景高亮，否则没有", () => {
+    const { unmount } = renderRow({}, true, true);
+    expect(screen.getByRole("article").className).toContain("bg-primary/15");
+    unmount();
+    renderRow();
+    expect(screen.getByRole("article").className).not.toContain("bg-primary/15");
+  });
+
   // covers: spec 0008 AC-20
   it("回复显示引用行，摘要是纯文字；原消息没采集和已删除各有说明", () => {
     const { unmount } = renderRow({
@@ -125,9 +144,9 @@ describe("MessageRow", () => {
   it("附件显示文件名和按 1024 进位的大小", () => {
     renderRow({
       attachments: [
-        { id: "a", filename: "a.txt", contentType: null, sizeBytes: 1023 },
-        { id: "b", filename: "b.png", contentType: null, sizeBytes: 1024 },
-        { id: "c", filename: "c.zip", contentType: null, sizeBytes: 1_572_864 },
+        { id: "a", filename: "a.txt", contentType: null, sizeBytes: 1023, media: null },
+        { id: "b", filename: "b.png", contentType: null, sizeBytes: 1024, media: null },
+        { id: "c", filename: "c.zip", contentType: null, sizeBytes: 1_572_864, media: null },
       ],
     });
     for (const [name, size] of [
@@ -175,11 +194,62 @@ describe("MessageRow", () => {
         guildId: null,
         content: "被转发的话",
         embeds: [],
-        attachmentNames: ["设计稿.fig"],
+        attachments: [{ filename: "设计稿.fig", media: null }],
       },
     });
     expect(screen.getByText("转发")).toBeInTheDocument();
     expect(screen.getByText("被转发的话")).toBeInTheDocument();
     expect(screen.getByText("设计稿.fig")).toBeInTheDocument();
+  });
+});
+
+describe("导出选择模式（spec 0014）", () => {
+  function renderExport(props: Partial<React.ComponentProps<typeof MessageRow>> = {}) {
+    const msg = message({
+      attachments: [
+        { id: "9", filename: "clip.mp4", contentType: "video/mp4", sizeBytes: 5, media: null },
+      ],
+    });
+    const row: MessageRowItem = { kind: "message", key: msg.id, message: msg, groupStart: true };
+    return render(
+      <MessageRow
+        row={row}
+        format={format}
+        now={NOW}
+        resolver={resolver}
+        parser="failed"
+        exportMode
+        {...props}
+      />,
+    );
+  }
+
+  it("整行盖一层按钮，点击只选中这条（AC-2）", async () => {
+    const onExportPick = vi.fn();
+    renderExport({ onExportPick });
+    await userEvent.click(screen.getByRole("button", { name: /选中这条消息/ }));
+    expect(onExportPick).toHaveBeenCalledTimes(1);
+    expect(onExportPick.mock.calls[0]?.[0].id).toBe("1");
+  });
+
+  it("起点和终点有文字标记，范围内的没有（AC-4）", () => {
+    const { unmount } = renderExport({ exportMark: "start" });
+    expect(screen.getByText("起点")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /选中这条消息/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    unmount();
+    renderExport({ exportMark: "range" });
+    expect(screen.queryByText("起点")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /选中这条消息/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("不在选择模式时没有覆盖按钮", () => {
+    renderExport({ exportMode: false });
+    expect(screen.queryByRole("button", { name: /选中这条消息/ })).not.toBeInTheDocument();
   });
 });

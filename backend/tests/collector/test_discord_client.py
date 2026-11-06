@@ -17,6 +17,7 @@ from discord.state import ConnectionState
 import harvester
 from harvester.collector.discord_client import (
     HarvesterClient,
+    fetch_history_page,
     new_client,
     reconnect_failure,
     snapshot_guild,
@@ -42,6 +43,15 @@ from harvester.collector.events import (
     ThreadArchived,
 )
 from harvester.collector.failures import ConnectionFailure
+from harvester.collector.history_page import (
+    AccountRisk,
+    Fetched,
+    Forbidden,
+    NotFound,
+    Unexpected,
+)
+from harvester.collector.history_page import RateLimited as HistoryRateLimited
+from harvester.collector.history_page import Unavailable as HistoryUnavailable
 from harvester.collector.wake_guard import SETTLE_SECONDS, WakeGuard
 from harvester.db.snapshots import AccessSnapshot
 
@@ -795,7 +805,6 @@ def fake_message(**changes: Any) -> Any:
         "embeds": [],
         "edited_at": None,
         "attachments": [],
-        "mentions": [],
     }
     return SimpleNamespace(**{**fields, **changes})
 
@@ -804,12 +813,11 @@ def make_client(queue: "asyncio.Queue[SupervisorEvent]") -> HarvesterClient:
     return HarvesterClient(1, queue, lambda: datetime(2026, 1, 1, tzinfo=UTC))
 
 
-def test_snapshot_converts_author_reply_and_mentions() -> None:  # covers: AC-1, AC-6
+def test_snapshot_converts_author_and_reply() -> None:  # covers: AC-1, AC-6
     snap = snapshot_message(
         fake_message(
             type=SimpleNamespace(value=19),
             reference=SimpleNamespace(type=discord.MessageReferenceType.reply, message_id=9),
-            mentions=[fake_user(7, bot=True)],
         )
     )
 
@@ -817,7 +825,6 @@ def test_snapshot_converts_author_reply_and_mentions() -> None:  # covers: AC-1,
     assert (snap.channel_id, snap.guild_id, snap.reply_to_id) == (2, 1, 9)
     assert snap.author_display_name == "昵称"
     assert (snap.author.kind, snap.author.avatar_hash) == ("user", "hash")
-    assert [(u.id, u.kind) for u in snap.mentions] == [(7, "bot")]
     assert snap.attachments_known
 
 
@@ -843,7 +850,19 @@ def test_snapshot_reads_forwarded_message() -> None:  # covers: AC-1
             ),
             message_snapshots=[
                 SimpleNamespace(
-                    content="fwd", embeds=[embed], attachments=[SimpleNamespace(filename="a.png")]
+                    content="fwd",
+                    embeds=[embed],
+                    attachments=[
+                        SimpleNamespace(
+                            id=9,
+                            filename="a.png",
+                            content_type="image/png",
+                            size=5,
+                            url="https://cdn.discordapp.com/attachments/4/9/a.png?ex=1",
+                            width=2,
+                            height=3,
+                        )
+                    ],
                 )
             ],
         )
@@ -852,6 +871,7 @@ def test_snapshot_reads_forwarded_message() -> None:  # covers: AC-1
     assert snap is not None and snap.forwarded is not None
     assert snap.forwarded["message_id"] == 3
     assert snap.forwarded["attachment_names"] == ["a.png"]
+    assert [a.id for a in snap.forwarded_attachments] == [9]  # covers: spec 0011 AC-2
     assert snap.forwarded["embeds"][0].get("title") == "t"
     assert snap.reply_to_id is None
 
@@ -927,3 +947,69 @@ async def test_thread_list_sync_schedules_a_snapshot() -> None:  # covers: AC-12
 
     assert guild_id in client._pending_guilds  # pyright: ignore[reportPrivateUsage]
     await client.close()
+
+
+# ---- 历史消息边界函数（spec 0012 AC-12）--------------------------------------------------
+
+
+class FakeHistoryChannel(discord.abc.Messageable):
+    """`history` 直接抛出给定的异常，或者返回空列表。"""
+
+    def __init__(self, error: BaseException | None) -> None:
+        self.error = error
+        self.calls: list[dict[str, Any]] = []
+
+    async def _get_channel(self) -> Any:
+        return self
+
+    async def history(self, **kwargs: Any) -> Any:  # pyright: ignore[reportIncompatibleMethodOverride]
+        self.calls.append(kwargs)
+        if self.error is not None:
+            raise self.error
+        if False:  # 让它成为异步生成器
+            yield None
+
+
+def history_client(channel: Any, *, cached: bool = True) -> Any:
+    async def fetch_channel(_channel_id: int) -> Any:
+        return channel
+
+    return SimpleNamespace(
+        get_channel=lambda _channel_id: channel if cached else None, fetch_channel=fetch_channel
+    )
+
+
+def cloudflare_ban() -> discord.HTTPException:
+    return discord.HTTPException(FakeResponse(429), "Cloudflare ban (code: 1015)")  # pyright: ignore[reportArgumentType]
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (discord.Forbidden(FakeResponse(403), "no"), Forbidden()),  # pyright: ignore[reportArgumentType]
+        (discord.NotFound(FakeResponse(404), "gone"), NotFound()),  # pyright: ignore[reportArgumentType]
+        (discord.DiscordServerError(FakeResponse(502), "x"), HistoryUnavailable("http_502")),  # pyright: ignore[reportArgumentType]
+        (http_error(401), AccountRisk("unauthorized")),
+        (cloudflare_ban(), AccountRisk("cloudflare_ban")),
+        (http_error(400), Unexpected("HTTPException_400")),
+        (OSError(), HistoryUnavailable("network")),
+        (TimeoutError(), HistoryUnavailable("network")),
+        (ValueError(), Unexpected("ValueError")),
+    ],
+)
+async def test_fetch_history_page_maps_errors(error: BaseException, expected: object) -> None:
+    channel = FakeHistoryChannel(error)
+    assert await fetch_history_page(history_client(channel), 201, 999) == expected
+
+
+async def test_fetch_history_page_rate_limited_and_counts_requests() -> None:
+    limited = await fetch_history_page(
+        history_client(FakeHistoryChannel(discord.RateLimited(12.5))), 201, 999
+    )
+    assert limited == HistoryRateLimited(12.5)
+
+    channel = FakeHistoryChannel(None)
+    page = await fetch_history_page(history_client(channel, cached=False), 201, 999)
+    assert page == Fetched(messages=(), returned_ids=(), raw_count=0, request_count=2)
+    assert channel.calls[0]["limit"] == 100 and channel.calls[0]["before"].id == 999
+    assert channel.calls[0]["oldest_first"] is False

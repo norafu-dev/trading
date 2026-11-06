@@ -22,13 +22,14 @@ _这些都是让构建保持有序的建议，不是硬性要求。不合适的�
 | 7   | 频道管理             | Slice 1    | in-progress |
 | 8   | 实时消息流           | Slice 1    | in-progress |
 | 9   | 部署与常驻运行       | Slice 1    | in-progress |
-| 10  | 按时间段采集历史消息 | Slice 2    | planned     |
+| 10  | 按时间段采集历史消息 | Slice 2    | in-progress |
 | 11  | 编辑与删除留痕       | Slice 3    | planned     |
-| 12  | 附件与图片保存       | Slice 4    | planned     |
-| 13  | 消息搜索与筛选       | Slice 5    | planned     |
-| 14  | 导出                 | Slice 6    | planned     |
+| 12  | 附件与图片保存       | Slice 4    | in-progress |
+| 13  | 消息搜索与筛选       | Slice 5    | in-progress |
+| 14  | 导出                 | Slice 6    | in-progress |
 | 15  | 关键词提醒           | Slice 7    | planned     |
 | 16  | 睡眠登录保护和日志文件 | Slice 1    | in-progress |
+| 17  | 数据库版频道未读数   | Slice 1    | in-progress |
 
 ## Foundations
 
@@ -169,14 +170,37 @@ spec [0007](../specs/0007-sleep-login-guard-log-files/index.md) · code in `back
 - [ ] Verify it: `/check verify 睡眠登录保护和日志文件`
 - [ ] Test it: `/test 睡眠登录保护和日志文件`
 
+### 17. 数据库版频道未读数 · done
+
+频道的未读状态改成存在数据库里的已读位置，侧栏显示每个频道的未读条数（满 100 显示 99+），刷新和断线重连都不丢。取代 spec 0008 的 AC-22。(from spec 0008)
+**Done when:** 刷新页面后未读数保持；断线期间到达的消息在重连后出现在侧栏；打开频道后徽标消失；开启采集的新频道只从开启那刻起算未读。
+spec [0010](../specs/0010-database-unread-counts.md) · code in `backend/src/harvester/db/`, `backend/src/harvester/api/message_routes.py`, `web/src/components/channels/`, `web/src/components/shell/`
+
+- [x] Design it (spec): `/architect 数据库版频道未读数`
+- [x] Build it: `/develop 数据库版频道未读数`
+  - [x] 表和未读接口：`channel_read_state` 迁移回填、开启采集建行、`GET /unread`，AC-1 到 AC-3
+  - [x] 前端接上未读接口：徽标和 99+、服务器圆点、删除内存逻辑，AC-5, AC-9
+  - [x] 标已读：`POST .../read`、频道页上报和可见性处理，AC-4, AC-6, AC-8
+  - [x] 刷新时机和收口：事件合并、重连、轮询、OpenAPI 同步、0008 的 AC-22 标注，AC-7, AC-9
+- [x] Verify it: `/check verify 数据库版频道未读数`
+
 ## Slice 2: 历史采集
 
-### 10. 按时间段采集历史消息 · needs a decision · Beta
+### 10. 按时间段采集历史消息 · Beta · in-progress
 
 选频道和起止时间，后台把这段时间的消息抓回来，和实时采集的数据合在一起。也用来补齐断线期间漏掉的消息。
 **Done when:** 能为一个或多个频道建立指定时间段的采集任务；dashboard 显示进度、可暂停或取消；中断后能从断点继续；和实时消息不重复；请求节奏受限速保护。
+spec [0012](../specs/0012-history-message-backfill/index.md) · code in `backend/src/harvester/db/history.py`, `backend/src/harvester/collector/history_worker.py`, `web/src/components/history/`, `web/src/components/channels/`
 
-- [ ] Design it (spec): `/architect 按时间段采集历史消息`
+- [x] Design it (spec): `/architect 按时间段采集历史消息`
+- [ ] Build it: `/develop 按时间段采集历史消息`
+  - [x] 打通细线：迁移，建任务和范围扣减，collector 领取、从新到旧翻页、入库、`done` 写覆盖段，空页保护，`history_changed`，最小的历史页，AC-1 到 AC-4, AC-3a, AC-14a, AC-22
+  - [x] 节奏和安全：随机间隔、休息、滚动限额，429 日志计数和账号风险自动暂停，总开关，抢先和断点，设置页和系统状态，AC-5 到 AC-8, AC-10, AC-19, AC-20
+  - [x] 操作和失败：暂停、继续、取消、重试，部分覆盖段，异常映射和重试上限，整段重抓逐页对账，按频道合并显示和频道级操作，清理，AC-9, AC-11 到 AC-14, AC-14a, AC-21
+  - [x] 缺口：缺口计算、一键补、自动补短缺口，频道页提示和按钮，补采后频道页刷新，AC-15 到 AC-18
+  - [ ] 测试和收口：集成测试、前端测试、OpenAPI 同步、更新 spec 0002 被改动的三处，AC-1 到 AC-22
+- [ ] Verify it: `/check verify 按时间段采集历史消息`
+- [ ] Test it: `/test 按时间段采集历史消息`
 
 ## Slice 3: 编辑与删除留痕
 
@@ -189,30 +213,54 @@ spec [0007](../specs/0007-sleep-login-guard-log-files/index.md) · code in `back
 
 ## Slice 4: 附件保存
 
-### 12. 附件与图片保存 · needs a decision
+### 12. 附件与图片保存 · in-progress
 
 把消息里的图片和文件下载到自己的存储里，因为 Discord 的附件链接会过期。(basis: Discord CDN 链接带过期签名)
 **Done when:** 新消息的附件自动下载保存；dashboard 里图片能预览、文件能下载，不依赖 Discord 的原链接；有单个文件大小上限和总容量的设置。
+spec [0011](../specs/0011-attachment-media-storage/index.md)
 
-- [ ] Design it (spec): `/architect 附件与图片保存`
+- [x] Design it (spec): `/architect 附件与图片保存`
+- [ ] Build it: `/develop 附件与图片保存`
+  - [x] 打通细线：三张表的迁移和补建、本地存储、附件建行、最简下载任务、`GET /api/media/{id}`、消息里显示图片，AC-1, AC-4, AC-12, AC-16, AC-20
+  - [x] 下载可靠性：准入和退避、领取校验、403 熔断、异常兜底和心跳、`GatewayHandle`、换链接循环（每小时 600 个）、频道关闭时暂停，AC-6, AC-7, AC-10, AC-11, AC-18, AC-22, AC-23
+  - [x] 覆盖范围：转发附件、Discord 托管的 embed 图、换图重置、地址检查、缩略图，AC-2, AC-3, AC-5, AC-13
+  - [x] 界面和设置：设置和重试接口、大图和播放器、状态文字、设置页「附件存储」、图标栏红点、首页「附件下载」，AC-7 到 AC-9, AC-14, AC-15, AC-17, AC-21, AC-22
+  - [ ] 上线 R2 和收口：`R2Store`、按进程分发密钥、建桶和 token、部署手册、测试和各项检查，AC-14, AC-19, AC-20, AC-1 到 AC-23
+- [ ] Verify it: `/check verify 附件与图片保存`
 
 ## Slice 5: 搜索与筛选
 
-### 13. 消息搜索与筛选 · needs a decision
+### 13. 消息搜索与筛选 · in-progress
 
 在已采集的消息里按关键词、频道、作者、时间范围查找。
 **Done when:** 关键词搜索在大量消息里也很快返回；能叠加频道、作者、时间筛选；结果能跳到上下文。
+spec [0013](../specs/0013-message-search-filter/index.md)
 
-- [ ] Design it (spec): `/architect 消息搜索与筛选`
+- [x] Design it (spec): `/architect 消息搜索与筛选`
+- [x] Build it: `/develop 消息搜索与筛选`
+  - [x] 打通细线：迁移和 `search_text` 写入、最简关键词搜索接口、`/search` 页和图标栏入口，AC-1, AC-5, AC-6, AC-12, AC-20, AC-21
+  - [x] 筛选和完整语法：前后端解析和共用用例、错误 `fields`、服务器频道作者时间筛选、选择器和作者联想、网址同步，AC-2 到 AC-4, AC-7 到 AC-11, AC-26
+  - [x] 跳到上下文：`around` 取法、频道页以某条为中心的双向加载和高亮、回到最新，AC-17 到 AC-19
+  - [x] 补建、总数和体验收口：后台补建、总数和进度接口、超时、高亮、快照刷新、各状态和窄屏，AC-13 到 AC-16, AC-22 到 AC-25
+  - [x] 测试和检查：集成测试（含固定计划的 `EXPLAIN`）、前端测试、更新 spec 0001 和 0002，AC-1 到 AC-26
+- [x] Verify it: `/check verify 消息搜索与筛选`
 
 ## Slice 6: 导出
 
-### 14. 导出
+### 14. 导出 · in-progress
 
 把当前筛选结果导出成文件。
 **Done when:** 能把筛选后的消息导出为 CSV 和 JSON；大量数据导出不会卡死页面；导出内容包含编辑和删除标记。
+spec [0014](../specs/0014-channel-message-export/index.md) · code in `backend/src/harvester/api/export_*.py`, `backend/src/harvester/db/export.py`, `backend/src/harvester/media/urls.py`, `web/src/components/export/`
 
-- [ ] Build it: `/develop 导出`
+- [x] Design it (spec): `/architect 导出`
+- [x] Build it: `/develop 导出`
+  - [x] 打通细线：拆出 `strip_markup`，选两条消息下载最简 CSV（快照事务、键集分页、文件名），频道页导出按钮和选择模式，AC-1, AC-2, AC-4, AC-5, AC-10 到 AC-15, AC-22
+  - [x] 开放端和预览：「从最早」「到最新」、封顶计数和 10 万条上限、缺口提示、空频道和错误状态，AC-3, AC-6 到 AC-9, AC-18
+  - [x] 内容加粗：CSV 的转发、embed、附件列和防公式注入，JSONL 和旧版本，附件链接，格式选择，AC-13, AC-15 到 AC-17
+  - [x] 失败和收口：超时、中途断开、提前断开不漏连接、三种日志事件、会话保护，测试和 `verify.md`，AC-19 到 AC-21
+  - [x] 公开文件链接（spec 0014 第 9 步）：`MEDIA_PUBLIC_BASE_URL`，导出写 `media.norafu.com` 公开链接（本地写绝对路径），测试和部署文件，先完成 spec 0011 Follow-up 的 Cloudflare 步骤，AC-17
+- [ ] Verify it: `/check verify 导出`
 
 ## Slice 7: 关键词提醒
 
@@ -235,6 +283,8 @@ spec [0007](../specs/0007-sleep-login-guard-log-files/index.md) · code in `back
 - **身份组名字**：采集服务器的身份组，让消息里的 @身份组 显示真名（新表 `role`）· from spec 0003
 - **查看已关闭频道的消息**：关掉开关的频道从侧栏消失后，在管理页提供入口查看已存的消息 · from spec 0008
 - **新线程提示**：醒目标出新出现的线程和论坛帖子，并能一键开启某频道下的全部线程 · from spec 0006
+- **一键重试一个频道的全部失败段**：历史采集现在只能展开后逐段点「重试」· from spec 0012
+- **去掉 dashboard 里的 @ 提及显示**：频道页和搜索页不再渲染用户提及，接口里为此批量加载的 `users` 也可以去掉 · from spec 0014
 
 ## Legend
 

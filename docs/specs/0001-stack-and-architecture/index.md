@@ -38,7 +38,7 @@ Reasoning and options: see [rationale.md](rationale.md).
 | 后台任务 | PostgreSQL 任务表，collector 用 `SELECT ... FOR UPDATE SKIP LOCKED` 领取 | 历史采集必须用 collector 里已登录的账号执行；进度和断点天然存在库里 |
 | 认证 | 由第 5 项「Dashboard 访问保护」的 spec 决定 | 约束：认证在 FastAPI 一侧完成，前后端同源，用 cookie 会话（见下方不变量） |
 | 文件存储 | 由第 12 项「附件与图片保存」的 spec 决定 | 这一轮不需要 |
-| 搜索 | 由第 13 项「消息搜索与筛选」的 spec 决定 | 默认先用 PostgreSQL 自带能力，中文分词在那里单独决定 |
+| 搜索 | PostgreSQL 自带的二元切片数组索引（GIN），不装扩展 | 不分词，两个字的中文词和短英文词都能走索引；详见 [spec 0013](../0013-message-search-filter/index.md) |
 | 配置与密钥 | `pydantic-settings` 读取环境变量；服务器上是 `.env` 文件（权限 600，不进 git） | 单人单机最实用；加了下单之后可以重新评估 |
 | 日志 | `structlog` 输出 JSON 到 stdout，由 Docker 收集 | 结构化字段方便查；在一处统一过滤 token 和密钥 |
 | 错误发现 | 先只看日志 + dashboard 心跳（心跳由第 9 项实现） | 单人工具先不接外部服务；加下单时再引入告警 |

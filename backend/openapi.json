@@ -750,6 +750,23 @@
             }
           },
           {
+            "name": "around",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]{1,19}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Around"
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "required": false,
@@ -769,6 +786,80 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MessagesOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/unread": {
+      "get": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "List Unread",
+        "operationId": "list_unread_api_discord_unread_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnreadOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/discord/channels/{channel_id}/read": {
+      "post": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Mark Read",
+        "operationId": "mark_read_api_discord_channels__channel_id__read_post",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Channel Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkReadIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkReadOut"
                 }
               }
             }
@@ -815,6 +906,1278 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/media/settings": {
+      "get": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Get Media Settings",
+        "operationId": "get_media_settings_api_media_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaSettingsOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Put Media Settings",
+        "operationId": "put_media_settings_api_media_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaSettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaSettingsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/media/retry-failed": {
+      "post": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Retry Failed",
+        "operationId": "retry_failed_api_media_retry_failed_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequeuedOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/media/{media_id}/retry": {
+      "post": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Retry Media",
+        "operationId": "retry_media_api_media__media_id__retry_post",
+        "parameters": [
+          {
+            "name": "media_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Media Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/media/{media_id}": {
+      "get": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Get Media",
+        "operationId": "get_media_api_media__media_id__get",
+        "parameters": [
+          {
+            "name": "media_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Media Id"
+            }
+          },
+          {
+            "name": "variant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "original",
+                "thumb"
+              ],
+              "type": "string",
+              "default": "original",
+              "title": "Variant"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Download"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "本地模式：直接返回文件内容"
+          },
+          "302": {
+            "description": "跳到存储里这个文件的签名链接"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history/jobs": {
+      "get": {
+        "tags": [
+          "history"
+        ],
+        "summary": "List History Jobs",
+        "operationId": "list_history_jobs_api_history_jobs_get",
+        "parameters": [
+          {
+            "name": "view",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "active",
+                "finished"
+              ],
+              "type": "string",
+              "default": "active",
+              "title": "View"
+            }
+          },
+          {
+            "name": "since_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 30,
+              "minimum": 1,
+              "default": 7,
+              "title": "Since Days"
+            }
+          },
+          {
+            "name": "before_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]{1,19}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryJobPageOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "history"
+        ],
+        "summary": "Create History Jobs",
+        "description": "建任务：去重、按频道创建时间截断起点、扣掉已覆盖和已排队的时间（AC-1、AC-2）。",
+        "operationId": "create_history_jobs_api_history_jobs_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateJobsIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateJobsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history/gaps": {
+      "get": {
+        "tags": [
+          "history"
+        ],
+        "summary": "List History Gaps",
+        "description": "有缺口的频道；给了 `channel_id` 就只看这一个（AC-15）。",
+        "operationId": "list_history_gaps_api_history_gaps_get",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]{1,19}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Channel Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GapSummaryOut"
+                  },
+                  "title": "Response List History Gaps Api History Gaps Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history/gaps/fill": {
+      "post": {
+        "tags": [
+          "history"
+        ],
+        "summary": "Fill History Gaps",
+        "description": "一键补缺口：一段缺口一行，`origin = 'gap_manual'`（AC-15）。",
+        "operationId": "fill_history_gaps_api_history_gaps_fill_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FillGapsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateJobsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history/jobs/{job_id}/{action}": {
+      "post": {
+        "tags": [
+          "history"
+        ],
+        "summary": "Act On History Job",
+        "description": "暂停、继续、取消、重试一个任务；状态不符合返回 409（AC-9）。",
+        "operationId": "act_on_history_job_api_history_jobs__job_id___action__post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "pause",
+                "resume",
+                "cancel",
+                "retry"
+              ],
+              "type": "string",
+              "title": "Action"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryJobOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history/batches/{batch_id}/{action}": {
+      "post": {
+        "tags": [
+          "history"
+        ],
+        "summary": "Act On History Batch",
+        "description": "整批暂停、继续、取消，只作用于状态符合的行，返回实际改了几行（AC-9）。",
+        "operationId": "act_on_history_batch_api_history_batches__batch_id___action__post",
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F-]{36}$",
+              "title": "Batch Id"
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "pause",
+                "resume",
+                "cancel"
+              ],
+              "type": "string",
+              "title": "Action"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchChangedOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history/batches/{batch_id}/channels/{channel_id}/{action}": {
+      "post": {
+        "tags": [
+          "history"
+        ],
+        "summary": "Act On History Batch Channel",
+        "description": "批次里一个频道的所有子任务一起暂停、继续、取消，只改状态符合的行。",
+        "operationId": "act_on_history_batch_channel_api_history_batches__batch_id__channels__channel_id___action__post",
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F-]{36}$",
+              "title": "Batch Id"
+            }
+          },
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Channel Id"
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "pause",
+                "resume",
+                "cancel"
+              ],
+              "type": "string",
+              "title": "Action"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchChangedOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history/control": {
+      "post": {
+        "tags": [
+          "history"
+        ],
+        "summary": "Control History",
+        "description": "总开关（AC-8）。暂停时已经是自动暂停的原因保留不覆盖；继续时清空原因并唤醒 collector。",
+        "operationId": "control_history_api_history_control_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryStatusOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history/settings": {
+      "get": {
+        "tags": [
+          "history"
+        ],
+        "summary": "Get History Settings",
+        "operationId": "get_history_settings_api_history_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistorySettingsOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "history"
+        ],
+        "summary": "Put History Settings",
+        "operationId": "put_history_settings_api_history_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HistorySettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistorySettingsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search/messages": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search Messages",
+        "operationId": "search_messages_api_search_messages_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "guild",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Guild"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Channel"
+            }
+          },
+          {
+            "name": "author",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Author"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchMessagesOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search/count": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search Count",
+        "operationId": "search_count_api_search_count_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "guild",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Guild"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Channel"
+            }
+          },
+          {
+            "name": "author",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Author"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchCountOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search/status": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search Status",
+        "operationId": "search_status_api_search_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchStatusOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search/channels": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search Channels",
+        "operationId": "search_channels_api_search_channels_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PickerOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search/authors": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search Authors",
+        "description": "`q`（1 到 50 字符）和 `ids`（最多 20 个）二选一。",
+        "operationId": "search_authors_api_search_authors_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ids"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/{channel_id}/export/preview": {
+      "get": {
+        "tags": [
+          "export"
+        ],
+        "summary": "Export Preview",
+        "description": "下载前的条数和缺口（AC-6 到 AC-9）。\n\n超过上限时 `over_limit` 为真，频道没消息时 `count` 为 0。",
+        "operationId": "export_preview_api_channels__channel_id__export_preview_get",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Channel Id"
+            }
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportPreviewOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/{channel_id}/export": {
+      "get": {
+        "tags": [
+          "export"
+        ],
+        "summary": "Export Messages",
+        "description": "写文件之前的问题都返回 JSON 错误；之后的错误只能断开连接（AC-18、AC-19）。",
+        "operationId": "export_messages_api_channels__channel_id__export_get",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Channel Id"
+            }
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
+          },
+          {
+            "name": "tz",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tz"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "CSV 或 JSONL 文件，边查边写"
           },
           "422": {
             "description": "Validation Error",
@@ -1005,6 +2368,64 @@
         ],
         "title": "AuthState"
       },
+      "AuthorOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "global_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Global Name"
+          },
+          "avatar_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "global_name",
+          "avatar_hash"
+        ],
+        "title": "AuthorOut"
+      },
+      "AuthorsOut": {
+        "properties": {
+          "authors": {
+            "items": {
+              "$ref": "#/components/schemas/AuthorOut"
+            },
+            "type": "array",
+            "title": "Authors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "authors"
+        ],
+        "title": "AuthorsOut"
+      },
       "BackupRunOut": {
         "properties": {
           "started_at": {
@@ -1120,6 +2541,19 @@
           "overdue"
         ],
         "title": "BackupStatusOut"
+      },
+      "BatchChangedOut": {
+        "properties": {
+          "changed": {
+            "type": "integer",
+            "title": "Changed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "changed"
+        ],
+        "title": "BatchChangedOut"
       },
       "CategoryCollectOut": {
         "properties": {
@@ -1356,6 +2790,102 @@
         ],
         "title": "CollectorStatusOut"
       },
+      "ControlIn": {
+        "properties": {
+          "paused": {
+            "type": "boolean",
+            "title": "Paused"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paused"
+        ],
+        "title": "ControlIn"
+      },
+      "CreateJobsIn": {
+        "properties": {
+          "channel_ids": {
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Channel Ids"
+          },
+          "range_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Range Start"
+          },
+          "range_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Range End"
+          },
+          "refetch": {
+            "type": "boolean",
+            "title": "Refetch",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "channel_ids"
+        ],
+        "title": "CreateJobsIn"
+      },
+      "CreateJobsOut": {
+        "properties": {
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryJobOut"
+            },
+            "type": "array",
+            "title": "Jobs"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/SkippedChannelOut"
+            },
+            "type": "array",
+            "title": "Skipped"
+          }
+        },
+        "type": "object",
+        "required": [
+          "batch_id",
+          "jobs",
+          "skipped"
+        ],
+        "title": "CreateJobsOut"
+      },
       "DiscordAccountOut": {
         "properties": {
           "id": {
@@ -1552,6 +3082,112 @@
         ],
         "title": "EmbedField"
       },
+      "ExportGapOut": {
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "ExportGapOut"
+      },
+      "ExportPointOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at"
+        ],
+        "title": "ExportPointOut"
+      },
+      "ExportPreviewOut": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "over_limit": {
+            "type": "boolean",
+            "title": "Over Limit"
+          },
+          "range_start": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportPointOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "range_end": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportPointOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "gaps": {
+            "items": {
+              "$ref": "#/components/schemas/ExportGapOut"
+            },
+            "type": "array",
+            "title": "Gaps"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count",
+          "over_limit",
+          "range_start",
+          "range_end",
+          "gaps"
+        ],
+        "title": "ExportPreviewOut"
+      },
+      "FillGapsIn": {
+        "properties": {
+          "channel_ids": {
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Channel Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channel_ids"
+        ],
+        "title": "FillGapsIn"
+      },
       "ForwardedOut": {
         "properties": {
           "message_id": {
@@ -1602,6 +3238,62 @@
           "attachment_names"
         ],
         "title": "ForwardedOut"
+      },
+      "GapOut": {
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "GapOut"
+      },
+      "GapSummaryOut": {
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "title": "Channel Id"
+          },
+          "guild_name": {
+            "type": "string",
+            "title": "Guild Name"
+          },
+          "channel_name": {
+            "type": "string",
+            "title": "Channel Name"
+          },
+          "gaps": {
+            "items": {
+              "$ref": "#/components/schemas/GapOut"
+            },
+            "type": "array",
+            "title": "Gaps"
+          },
+          "total_seconds": {
+            "type": "number",
+            "title": "Total Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channel_id",
+          "guild_name",
+          "channel_name",
+          "gaps",
+          "total_seconds"
+        ],
+        "title": "GapSummaryOut"
       },
       "GuildBriefOut": {
         "properties": {
@@ -1763,6 +3455,518 @@
         ],
         "title": "Health"
       },
+      "HistoryBatchOut": {
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "title": "Batch Id"
+          },
+          "channel_count": {
+            "type": "integer",
+            "title": "Channel Count"
+          },
+          "fetched_count": {
+            "type": "integer",
+            "title": "Fetched Count"
+          },
+          "status_counts": {
+            "$ref": "#/components/schemas/HistoryStatusCountsOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "batch_id",
+          "channel_count",
+          "fetched_count",
+          "status_counts"
+        ],
+        "title": "HistoryBatchOut"
+      },
+      "HistoryJobOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "batch_id": {
+            "type": "string",
+            "title": "Batch Id"
+          },
+          "channel_id": {
+            "type": "string",
+            "title": "Channel Id"
+          },
+          "guild_name": {
+            "type": "string",
+            "title": "Guild Name"
+          },
+          "channel_name": {
+            "type": "string",
+            "title": "Channel Name"
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "gap_manual",
+              "gap_auto"
+            ],
+            "title": "Origin"
+          },
+          "refetch": {
+            "type": "boolean",
+            "title": "Refetch"
+          },
+          "range_start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Range Start"
+          },
+          "range_end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Range End"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "paused",
+              "done",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "fetched_count": {
+            "type": "integer",
+            "title": "Fetched Count"
+          },
+          "pages_fetched": {
+            "type": "integer",
+            "title": "Pages Fetched"
+          },
+          "cursor_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor At"
+          },
+          "progress": {
+            "type": "number",
+            "title": "Progress"
+          },
+          "wait_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "rate_limited",
+                  "retrying"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wait Reason"
+          },
+          "wait_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wait Until"
+          },
+          "not_before": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Not Before"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "no_access",
+                  "channel_deleted",
+                  "suspect_empty",
+                  "unexpected"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "batch_id",
+          "channel_id",
+          "guild_name",
+          "channel_name",
+          "origin",
+          "refetch",
+          "range_start",
+          "range_end",
+          "status",
+          "fetched_count",
+          "pages_fetched",
+          "cursor_at",
+          "progress",
+          "wait_reason",
+          "wait_until",
+          "not_before",
+          "error",
+          "created_at",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "HistoryJobOut"
+      },
+      "HistoryJobPageOut": {
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryJobOut"
+            },
+            "type": "array",
+            "title": "Jobs"
+          },
+          "batches": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryBatchOut"
+            },
+            "type": "array",
+            "title": "Batches"
+          },
+          "next_before_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Before Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "jobs",
+          "batches",
+          "next_before_id"
+        ],
+        "title": "HistoryJobPageOut"
+      },
+      "HistorySettingsIn": {
+        "properties": {
+          "page_delay_min_s": {
+            "type": "integer",
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Page Delay Min S"
+          },
+          "page_delay_max_s": {
+            "type": "integer",
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Page Delay Max S"
+          },
+          "daily_page_limit": {
+            "type": "integer",
+            "maximum": 20000.0,
+            "minimum": 50.0,
+            "title": "Daily Page Limit"
+          },
+          "run_minutes": {
+            "type": "integer",
+            "maximum": 240.0,
+            "minimum": 5.0,
+            "title": "Run Minutes"
+          },
+          "rest_minutes": {
+            "type": "integer",
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Rest Minutes"
+          },
+          "auto_gap_max_hours": {
+            "type": "integer",
+            "maximum": 72.0,
+            "minimum": 0.0,
+            "title": "Auto Gap Max Hours"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_delay_min_s",
+          "page_delay_max_s",
+          "daily_page_limit",
+          "run_minutes",
+          "rest_minutes",
+          "auto_gap_max_hours"
+        ],
+        "title": "HistorySettingsIn"
+      },
+      "HistorySettingsOut": {
+        "properties": {
+          "page_delay_min_s": {
+            "type": "integer",
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Page Delay Min S"
+          },
+          "page_delay_max_s": {
+            "type": "integer",
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Page Delay Max S"
+          },
+          "daily_page_limit": {
+            "type": "integer",
+            "maximum": 20000.0,
+            "minimum": 50.0,
+            "title": "Daily Page Limit"
+          },
+          "run_minutes": {
+            "type": "integer",
+            "maximum": 240.0,
+            "minimum": 5.0,
+            "title": "Run Minutes"
+          },
+          "rest_minutes": {
+            "type": "integer",
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Rest Minutes"
+          },
+          "auto_gap_max_hours": {
+            "type": "integer",
+            "maximum": 72.0,
+            "minimum": 0.0,
+            "title": "Auto Gap Max Hours"
+          },
+          "pages_used_24h": {
+            "type": "integer",
+            "title": "Pages Used 24H"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_delay_min_s",
+          "page_delay_max_s",
+          "daily_page_limit",
+          "run_minutes",
+          "rest_minutes",
+          "auto_gap_max_hours",
+          "pages_used_24h"
+        ],
+        "title": "HistorySettingsOut"
+      },
+      "HistoryStatusCountsOut": {
+        "properties": {
+          "pending": {
+            "type": "integer",
+            "title": "Pending"
+          },
+          "running": {
+            "type": "integer",
+            "title": "Running"
+          },
+          "paused": {
+            "type": "integer",
+            "title": "Paused"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "cancelled": {
+            "type": "integer",
+            "title": "Cancelled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pending",
+          "running",
+          "paused",
+          "done",
+          "failed",
+          "cancelled"
+        ],
+        "title": "HistoryStatusCountsOut"
+      },
+      "HistoryStatusOut": {
+        "properties": {
+          "paused_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "manual",
+                  "rate_limited",
+                  "account_risk"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused Reason"
+          },
+          "paused_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused At"
+          },
+          "waiting_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "rest",
+                  "quota"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waiting Reason"
+          },
+          "waiting_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waiting Until"
+          },
+          "pages_used_24h": {
+            "type": "integer",
+            "title": "Pages Used 24H"
+          },
+          "daily_page_limit": {
+            "type": "integer",
+            "title": "Daily Page Limit"
+          },
+          "quota_resumes_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota Resumes At"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale"
+          },
+          "gap_channel_count": {
+            "type": "integer",
+            "title": "Gap Channel Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paused_reason",
+          "paused_at",
+          "waiting_reason",
+          "waiting_until",
+          "pages_used_24h",
+          "daily_page_limit",
+          "quota_resumes_at",
+          "last_seen_at",
+          "stale",
+          "gap_channel_count"
+        ],
+        "title": "HistoryStatusOut"
+      },
       "LabelUpdate": {
         "properties": {
           "label": {
@@ -1863,6 +4067,293 @@
         ],
         "title": "LoginEventOut"
       },
+      "MarkReadIn": {
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "title": "Message Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message_id"
+        ],
+        "title": "MarkReadIn"
+      },
+      "MarkReadOut": {
+        "properties": {
+          "last_read_message_id": {
+            "type": "string",
+            "title": "Last Read Message Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "last_read_message_id"
+        ],
+        "title": "MarkReadOut"
+      },
+      "MediaCountsOut": {
+        "properties": {
+          "pending": {
+            "type": "integer",
+            "title": "Pending"
+          },
+          "stored": {
+            "type": "integer",
+            "title": "Stored"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "too_large": {
+            "type": "integer",
+            "title": "Too Large"
+          },
+          "no_space": {
+            "type": "integer",
+            "title": "No Space"
+          },
+          "gone": {
+            "type": "integer",
+            "title": "Gone"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pending",
+          "stored",
+          "failed",
+          "too_large",
+          "no_space",
+          "gone"
+        ],
+        "title": "MediaCountsOut"
+      },
+      "MediaOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "attachment",
+              "forwarded_attachment",
+              "embed_image",
+              "embed_thumbnail"
+            ],
+            "title": "Kind"
+          },
+          "attachment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachment Id"
+          },
+          "slot": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slot"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "stored",
+              "failed",
+              "too_large",
+              "no_space",
+              "gone"
+            ],
+            "title": "Status"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "has_thumb": {
+            "type": "boolean",
+            "title": "Has Thumb"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "attachment_id",
+          "slot",
+          "status",
+          "filename",
+          "content_type",
+          "size_bytes",
+          "width",
+          "height",
+          "has_thumb"
+        ],
+        "title": "MediaOut"
+      },
+      "MediaSettingsIn": {
+        "properties": {
+          "max_file_mb": {
+            "type": "integer",
+            "maximum": 1024.0,
+            "minimum": 1.0,
+            "title": "Max File Mb"
+          },
+          "quota_gb": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Quota Gb"
+          }
+        },
+        "type": "object",
+        "required": [
+          "max_file_mb",
+          "quota_gb"
+        ],
+        "title": "MediaSettingsIn"
+      },
+      "MediaSettingsOut": {
+        "properties": {
+          "max_file_mb": {
+            "type": "integer",
+            "title": "Max File Mb"
+          },
+          "quota_gb": {
+            "type": "integer",
+            "title": "Quota Gb"
+          },
+          "used_bytes": {
+            "type": "integer",
+            "title": "Used Bytes"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/MediaCountsOut"
+          },
+          "pending_channel_off": {
+            "type": "integer",
+            "title": "Pending Channel Off"
+          },
+          "storage_full": {
+            "type": "boolean",
+            "title": "Storage Full"
+          }
+        },
+        "type": "object",
+        "required": [
+          "max_file_mb",
+          "quota_gb",
+          "used_bytes",
+          "counts",
+          "pending_channel_off",
+          "storage_full"
+        ],
+        "title": "MediaSettingsOut"
+      },
+      "MediaWorkerStatusOut": {
+        "properties": {
+          "storage_full": {
+            "type": "boolean",
+            "title": "Storage Full"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale"
+          },
+          "paused_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused Until"
+          }
+        },
+        "type": "object",
+        "required": [
+          "storage_full",
+          "last_seen_at",
+          "stale",
+          "paused_until"
+        ],
+        "title": "MediaWorkerStatusOut"
+      },
       "MessageOut": {
         "properties": {
           "id": {
@@ -1924,6 +4415,13 @@
             "type": "array",
             "title": "Attachments"
           },
+          "media": {
+            "items": {
+              "$ref": "#/components/schemas/MediaOut"
+            },
+            "type": "array",
+            "title": "Media"
+          },
           "edited_at": {
             "anyOf": [
               {
@@ -1969,6 +4467,7 @@
           "embeds",
           "forwarded",
           "attachments",
+          "media",
           "edited_at",
           "deleted_at",
           "reply"
@@ -1988,12 +4487,16 @@
             "type": "boolean",
             "title": "Has More"
           },
-          "users": {
-            "items": {
-              "$ref": "#/components/schemas/NamedRefOut"
-            },
-            "type": "array",
-            "title": "Users"
+          "has_newer": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Newer"
           },
           "channels": {
             "items": {
@@ -2007,7 +4510,6 @@
         "required": [
           "messages",
           "has_more",
-          "users",
           "channels"
         ],
         "title": "MessagesOut"
@@ -2029,6 +4531,110 @@
           "name"
         ],
         "title": "NamedRefOut"
+      },
+      "PickerChannelOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "type": {
+            "type": "integer",
+            "title": "Type"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "category_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "collect_enabled": {
+            "type": "boolean",
+            "title": "Collect Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "type",
+          "parent_id",
+          "category_name",
+          "status",
+          "collect_enabled"
+        ],
+        "title": "PickerChannelOut"
+      },
+      "PickerGuildOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/PickerChannelOut"
+            },
+            "type": "array",
+            "title": "Channels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status",
+          "channels"
+        ],
+        "title": "PickerGuildOut"
+      },
+      "PickerOut": {
+        "properties": {
+          "guilds": {
+            "items": {
+              "$ref": "#/components/schemas/PickerGuildOut"
+            },
+            "type": "array",
+            "title": "Guilds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "guilds"
+        ],
+        "title": "PickerOut"
       },
       "ReplyOut": {
         "properties": {
@@ -2080,6 +4686,193 @@
           "missing"
         ],
         "title": "ReplyOut"
+      },
+      "RequeuedOut": {
+        "properties": {
+          "requeued": {
+            "type": "integer",
+            "title": "Requeued"
+          }
+        },
+        "type": "object",
+        "required": [
+          "requeued"
+        ],
+        "title": "RequeuedOut"
+      },
+      "SearchChannelOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "type": {
+            "type": "integer",
+            "title": "Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "collect_enabled": {
+            "type": "boolean",
+            "title": "Collect Enabled"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchParentOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "type",
+          "status",
+          "collect_enabled",
+          "parent"
+        ],
+        "title": "SearchChannelOut"
+      },
+      "SearchCountOut": {
+        "properties": {
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count"
+          },
+          "capped": {
+            "type": "boolean",
+            "title": "Capped"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count",
+          "capped"
+        ],
+        "title": "SearchCountOut"
+      },
+      "SearchGuildOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "SearchGuildOut"
+      },
+      "SearchHitOut": {
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/MessageOut"
+          },
+          "guild": {
+            "$ref": "#/components/schemas/SearchGuildOut"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/SearchChannelOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message",
+          "guild",
+          "channel"
+        ],
+        "title": "SearchHitOut"
+      },
+      "SearchMessagesOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHitOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Before"
+          },
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/NamedRefOut"
+            },
+            "type": "array",
+            "title": "Channels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "next_before",
+          "channels"
+        ],
+        "title": "SearchMessagesOut"
+      },
+      "SearchParentOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "SearchParentOut"
+      },
+      "SearchStatusOut": {
+        "properties": {
+          "index_pending": {
+            "type": "integer",
+            "title": "Index Pending"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index_pending"
+        ],
+        "title": "SearchStatusOut"
       },
       "SetupBeginBody": {
         "properties": {
@@ -2138,6 +4931,31 @@
         ],
         "title": "SetupCompleteBody"
       },
+      "SkippedChannelOut": {
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "title": "Channel Id"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "not_found",
+              "channel_deleted",
+              "not_collectable",
+              "no_access",
+              "nothing_to_fetch"
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channel_id",
+          "reason"
+        ],
+        "title": "SkippedChannelOut"
+      },
       "SystemStatusOut": {
         "properties": {
           "collector": {
@@ -2145,12 +4963,20 @@
           },
           "backup": {
             "$ref": "#/components/schemas/BackupStatusOut"
+          },
+          "media": {
+            "$ref": "#/components/schemas/MediaWorkerStatusOut"
+          },
+          "history": {
+            "$ref": "#/components/schemas/HistoryStatusOut"
           }
         },
         "type": "object",
         "required": [
           "collector",
-          "backup"
+          "backup",
+          "media",
+          "history"
         ],
         "title": "SystemStatusOut"
       },
@@ -2181,6 +5007,40 @@
           "token"
         ],
         "title": "TokenUpdate"
+      },
+      "UnreadChannelOut": {
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "title": "Channel Id"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channel_id",
+          "count"
+        ],
+        "title": "UnreadChannelOut"
+      },
+      "UnreadOut": {
+        "properties": {
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/UnreadChannelOut"
+            },
+            "type": "array",
+            "title": "Channels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channels"
+        ],
+        "title": "UnreadOut"
       },
       "ValidationError": {
         "properties": {

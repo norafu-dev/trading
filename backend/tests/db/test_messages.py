@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from harvester.db.ingest import ingest_message, mark_messages_deleted, upsert_user
+from harvester.db.ingest import ingest_message, mark_messages_deleted
 from harvester.db.messages import (
     BIGINT_MAX,
     After,
@@ -16,9 +16,10 @@ from harvester.db.messages import (
     MessagePage,
     ReplyFound,
     ReplyMissing,
-    extract_mentions,
+    extract_channel_mentions,
     get_message_page,
     reply_preview,
+    strip_at_mentions,
 )
 from harvester.db.models import DiscordUser
 from harvester.db.snapshots import UserSnapshot
@@ -174,6 +175,8 @@ async def test_reply_three_states(session: AsyncSession) -> None:  # AC-20
         ("", None, True, None, "[附件]"),
         ("", None, False, {"content": ""}, "[转发]"),
         ("", [{"description": "d"}], False, None, "[无文字内容]"),
+        ("<@1> <@&2> 看这里", None, False, None, "看这里"),
+        ("<@!1> @everyone", None, True, None, "[附件]"),
     ],
 )
 def test_reply_preview_fallbacks(
@@ -182,41 +185,40 @@ def test_reply_preview_fallbacks(
     assert reply_preview(content, embeds, has_attachment, forwarded) == expected  # pyright: ignore[reportArgumentType]
 
 
-def test_extract_mentions_skips_roles_and_oversized_ids() -> None:  # AC-14
-    users, channels = extract_mentions(
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("hi <@1> there <#4>", "hi there <#4>"),
+        ("<@1> <@!2> <@&3> @everyone @here 早上好", "早上好"),
+        ("第一行 <@1>\n<@2>\n  - 缩进 <@3> 保留", "第一行\n  - 缩进 保留"),
+        ("mail a@here.com", "mail a@here.com"),
+        ("  原样  保留  ", "  原样  保留  "),
+        ("<@1>", ""),
+    ],
+)
+def test_strip_at_mentions(text: str, expected: str) -> None:  # spec 0015
+    assert strip_at_mentions(text) == expected
+
+
+def test_extract_channel_mentions_skips_users_roles_and_oversized_ids() -> None:  # AC-14
+    channels = extract_channel_mentions(
         ["<@1> <@!2> <@&3> <#4>", f"<@{BIGINT_MAX + 1}> <#99999999999999999999999>"]
     )
 
-    assert users == {1, 2}
     assert channels == {4}
 
 
-async def test_mentions_are_stored_and_resolved(session: AsyncSession) -> None:  # AC-6, AC-21
+async def test_only_channel_mentions_are_resolved(session: AsyncSession) -> None:  # spec 0015
     await seed_channel(session)
     content = f"<@{MENTIONED.id}> <@{USER.id}> <#{CHANNEL.id}> <@&{BOT.id}>"
-    await ingest_message(
-        session, message(content=content, mentions=(MENTIONED, USER)), "realtime", at(0)
-    )
+    await ingest_message(session, message(content=content), "realtime", at(0))
 
     page = await page_of(session, Latest(1))
 
-    assert {(u.id, u.name) for u in page.users} == {(MENTIONED.id, "ann"), (USER.id, "KOL")}
     assert [(c.id, c.name) for c in page.channels] == [(CHANNEL.id, CHANNEL.name)]
-
-
-async def test_mention_never_overwrites_a_webhook_row(session: AsyncSession) -> None:  # AC-6
-    await seed_channel(session)
-    webhook = UserSnapshot(
-        id=500, kind="webhook", username="hook", global_name=None, avatar_hash=None
-    )
-    await upsert_user(session, webhook)
-
-    await ingest_message(
-        session, message(mentions=(replace(webhook, kind="user", username="x"),)), "realtime", at(0)
-    )
-
-    row = (await session.execute(select(DiscordUser).where(DiscordUser.id == 500))).scalar_one()
-    assert (row.kind, row.username) == ("webhook", "hook")
+    # 被提及的人不再写进 discord_user（spec 0015）。
+    mentioned = await session.scalar(select(DiscordUser.id).where(DiscordUser.id == MENTIONED.id))
+    assert mentioned is None
 
 
 @pytest.mark.parametrize(

@@ -15,6 +15,13 @@ const PAIRS: readonly Pair[] = [
   ...["background", "muted", "card", "accent"].map((bg) => ({ fg: "foreground", bg, min: TEXT })),
   // 提及的底色是半透明的，叠在 background 上再算。
   { fg: "foreground", bg: "mention", over: "background", min: TEXT },
+  // 搜索命中词的底色也是半透明的，可能叠在背景或 embed 的卡片底色上。
+  ...["background", "card"].map((over) => ({
+    fg: "foreground",
+    bg: "highlight",
+    over,
+    min: TEXT,
+  })),
   ...["background", "muted", "card"].map((bg) => ({ fg: "muted-foreground", bg, min: TEXT })),
   { fg: "primary-foreground", bg: "primary", min: TEXT },
   { fg: "secondary-foreground", bg: "secondary", min: TEXT },

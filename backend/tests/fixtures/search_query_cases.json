@@ -1,0 +1,190 @@
+[
+ {
+  "q": "空投 btc",
+  "include": [
+   "空投",
+   "btc"
+  ],
+  "exclude": []
+ },
+ {
+  "q": "BTC   ETH",
+  "include": [
+   "btc",
+   "eth"
+  ],
+  "exclude": []
+ },
+ {
+  "q": "ＢＴ　空投",
+  "include": [
+   "ｂｔ",
+   "空投"
+  ],
+  "exclude": []
+ },
+ {
+  "q": "\"止损 位\" 空投",
+  "include": [
+   "止损 位",
+   "空投"
+  ],
+  "exclude": []
+ },
+ {
+  "q": "\"止损   位\"",
+  "include": [
+   "止损 位"
+  ],
+  "exclude": []
+ },
+ {
+  "q": "-\"止损 位\" btc",
+  "include": [
+   "btc"
+  ],
+  "exclude": [
+   "止损 位"
+  ]
+ },
+ {
+  "q": "--foo bar",
+  "include": [
+   "bar"
+  ],
+  "exclude": [
+   "-foo"
+  ]
+ },
+ {
+  "q": "BTC-USDT",
+  "include": [
+   "btc-usdt"
+  ],
+  "exclude": []
+ },
+ {
+  "q": "a\"b",
+  "include": [
+   "a\"b"
+  ],
+  "exclude": []
+ },
+ {
+  "q": "“空投”",
+  "include": [
+   "“空投”"
+  ],
+  "exclude": []
+ },
+ {
+  "q": "\"abc def",
+  "include": [
+   "abc def"
+  ],
+  "exclude": []
+ },
+ {
+  "q": "btc - eth",
+  "include": [
+   "btc",
+   "eth"
+  ],
+  "exclude": []
+ },
+ {
+  "q": "btc \"\"",
+  "include": [
+   "btc"
+  ],
+  "exclude": []
+ },
+ {
+  "q": "btc btc BTC",
+  "include": [
+   "btc"
+  ],
+  "exclude": []
+ },
+ {
+  "q": "btc -eth -ETH",
+  "include": [
+   "btc"
+  ],
+  "exclude": [
+   "eth"
+  ]
+ },
+ {
+  "q": "50%",
+  "include": [
+   "50%"
+  ],
+  "exclude": []
+ },
+ {
+  "q": "-",
+  "include": [],
+  "exclude": []
+ },
+ {
+  "q": "",
+  "include": [],
+  "exclude": []
+ },
+ {
+  "q": "a",
+  "error": "term_too_short",
+  "term": "a"
+ },
+ {
+  "q": "btc -a",
+  "error": "term_too_short",
+  "term": "a"
+ },
+ {
+  "q": "\"a \"",
+  "error": "term_too_short",
+  "term": "a"
+ },
+ {
+  "q": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "error": "too_long"
+ },
+ {
+  "q": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "include": [
+   "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  ],
+  "exclude": []
+ },
+ {
+  "q": "w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 w10",
+  "error": "too_many_terms"
+ },
+ {
+  "q": "w0 w1 w2 w3 w4 w5 w6 w7 w8 w9",
+  "include": [
+   "w0",
+   "w1",
+   "w2",
+   "w3",
+   "w4",
+   "w5",
+   "w6",
+   "w7",
+   "w8",
+   "w9"
+  ],
+  "exclude": []
+ },
+ {
+  "q": "ab -cd",
+  "include": [
+   "ab"
+  ],
+  "exclude": [
+   "cd"
+  ]
+ }
+]

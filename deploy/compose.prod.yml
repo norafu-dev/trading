@@ -7,14 +7,22 @@ x-logging: &logging
     max-size: "10m"
     max-file: "5"
 
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+  TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?set in .env}
+  TOKEN_ENCRYPTION_OLD_KEYS: ${TOKEN_ENCRYPTION_OLD_KEYS:-}
+  SITE_ORIGIN: https://${SITE_DOMAIN:?set in .env}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+# 附件存储（spec 0011）：两个进程共用的部分。线上只能是 r2，两个 token 各给各的进程。
+x-media-env: &media-env
+  MEDIA_STORAGE: r2
+  MEDIA_R2_ACCOUNT_ID: ${MEDIA_R2_ACCOUNT_ID:?set in .env}
+  MEDIA_R2_BUCKET: ${MEDIA_R2_BUCKET:?set in .env}
+
 x-backend: &backend
   image: ${IMAGE_PREFIX:?set in .env}-backend:${IMAGE_TAG:?set by deploy.sh}
-  environment:
-    DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-    TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?set in .env}
-    TOKEN_ENCRYPTION_OLD_KEYS: ${TOKEN_ENCRYPTION_OLD_KEYS:-}
-    SITE_ORIGIN: https://${SITE_DOMAIN:?set in .env}
-    LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  environment: *backend-env
   logging: *logging
 
 services:
@@ -44,6 +52,13 @@ services:
 
   api:
     <<: *backend
+    environment:
+      <<: [*backend-env, *media-env]
+      # 只读 token：api 只签发读取链接，拿不到写权限。
+      MEDIA_R2_READ_ACCESS_KEY_ID: ${MEDIA_R2_READ_ACCESS_KEY_ID:?set in .env}
+      MEDIA_R2_READ_SECRET_ACCESS_KEY: ${MEDIA_R2_READ_SECRET_ACCESS_KEY:?set in .env}
+      # 桶的公开域名，只有导出用它写文件链接（spec 0014 AC-17）；collector 不需要。
+      MEDIA_PUBLIC_BASE_URL: ${MEDIA_PUBLIC_BASE_URL:?set in .env}
     command: ["python", "-m", "harvester.api"]
     restart: unless-stopped
     depends_on:
@@ -52,6 +67,11 @@ services:
 
   collector:
     <<: *backend
+    environment:
+      <<: [*backend-env, *media-env]
+      # 读写 token：只有 collector 往桶里写文件。
+      MEDIA_R2_WRITE_ACCESS_KEY_ID: ${MEDIA_R2_WRITE_ACCESS_KEY_ID:?set in .env}
+      MEDIA_R2_WRITE_SECRET_ACCESS_KEY: ${MEDIA_R2_WRITE_SECRET_ACCESS_KEY:?set in .env}
     command: ["python", "-m", "harvester.collector"]
     restart: unless-stopped
     depends_on:

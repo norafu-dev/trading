@@ -4,6 +4,7 @@ import { cn } from "cn";
 import { Fragment, type KeyboardEvent, type ReactNode, useState } from "react";
 
 import type { MentionResolver } from "@/components/messages/types";
+import { HighlightedText } from "@/components/search/highlighted-text";
 import { emojiUrl } from "@/lib/discord-cdn";
 import type { TimeFormat } from "@/lib/format/time";
 import { hostDiffers, looksLikeUrl, safeUrl } from "@/lib/safe-url";
@@ -17,6 +18,8 @@ export type RenderContext = Readonly<{
   /** 已经显示出来的剧透 id；拆到多个块里的同一个剧透共用一个 id，一起显示。 */
   revealed: ReadonlySet<number>;
   reveal: (id: number) => void;
+  /** 搜索命中词，只在普通文字节点里高亮（spec 0013 AC-13）。 */
+  highlightTerms?: readonly string[];
 }>;
 
 type NodeOf<T extends MarkdownNodeType> = Extract<MarkdownNode, { type: T }>;
@@ -127,22 +130,18 @@ function renderLink(node: NodeOf<"link">, ctx: RenderContext): ReactNode {
   );
 }
 
-function mentionText(mention: MentionValue, resolver: MentionResolver): string {
+// @用户、@身份组、@everyone、@here 不显示（spec 0015）：正文在解析前已经去掉，这里兜底返回 null。
+function mentionText(mention: MentionValue, resolver: MentionResolver): string | null {
   switch (mention.type) {
-    case "user": {
-      const name = resolver.user(String(mention.value));
-      return name ? `@${name}` : "@未知用户";
-    }
+    case "user":
+    case "role":
+    case "everyone":
+    case "here":
+      return null;
     case "channel": {
       const name = resolver.channel(String(mention.value));
       return name ? `#${name}` : "#未知频道";
     }
-    case "role":
-      return "@身份组";
-    case "everyone":
-      return "@everyone";
-    case "here":
-      return "@here";
     case "command": {
       const value = mention.value as { name?: unknown } | undefined;
       return typeof value?.name === "string" ? `/${value.name}` : "/命令";
@@ -160,7 +159,12 @@ const HEADING_CLASSES: Readonly<Record<number, string>> = {
 
 // 每种语法节点对应一个渲染函数；类型表保证解析器类型里的每一种节点都有（穷举检查）。
 const RENDERERS = {
-  text: (node) => node.value,
+  text: (node, ctx) =>
+    ctx.highlightTerms?.length ? (
+      <HighlightedText text={node.value} terms={ctx.highlightTerms} />
+    ) : (
+      node.value
+    ),
   empty: () => (
     <div aria-hidden>
       <br />
@@ -218,9 +222,10 @@ const RENDERERS = {
     </div>
   ),
   link: renderLink,
-  mention: (node, ctx) => (
-    <span className={MENTION_CLASS}>{mentionText(node.value, ctx.resolver)}</span>
-  ),
+  mention: (node, ctx) => {
+    const text = mentionText(node.value, ctx.resolver);
+    return text === null ? null : <span className={MENTION_CLASS}>{text}</span>;
+  },
   emoji: (node) =>
     node.value.type === "custom" ? (
       <CustomEmoji
