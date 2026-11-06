@@ -15,13 +15,19 @@ from harvester.config import (
     load_media_settings,
 )
 from harvester.media.storage import LocalStore, MemoryStore, R2Store, build_r2_client
+from harvester.media.urls import LocalMediaDir, PublicMediaBase, link_base_from_settings
 
 R2_COMMON = {"MEDIA_R2_ACCOUNT_ID": "acct123", "MEDIA_R2_BUCKET": "harvester-media"}
 WRITE = {
     "MEDIA_R2_WRITE_ACCESS_KEY_ID": "write-id",
     "MEDIA_R2_WRITE_SECRET_ACCESS_KEY": "write-secret",
 }
-READ = {"MEDIA_R2_READ_ACCESS_KEY_ID": "read-id", "MEDIA_R2_READ_SECRET_ACCESS_KEY": "read-secret"}
+READ = {
+    "MEDIA_R2_READ_ACCESS_KEY_ID": "read-id",
+    "MEDIA_R2_READ_SECRET_ACCESS_KEY": "read-secret",
+    # 只有 api 读（spec 0014 AC-17）；collector 的测试不设它，也能启动。
+    "MEDIA_PUBLIC_BASE_URL": "https://media.example.com",
+}
 
 
 @pytest.fixture(autouse=True)
@@ -91,6 +97,53 @@ def test_each_process_only_sees_its_own_token(monkeypatch: pytest.MonkeyPatch) -
     assert not any("write" in field for field in ApiR2MediaSettings.model_fields)
     assert not any("read_" in field for field in CollectorR2MediaSettings.model_fields)
     assert api.endpoint_url == "https://acct123.r2.cloudflarestorage.com"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "http://media.example.com",
+        "https://media.example.com/files",
+        "https://media.example.com/?x=1",
+        "https://media.example.com?x=1",
+        "https://media.example.com#top",
+        "https://user@media.example.com",
+        "media.example.com",
+        "https://",
+    ],
+)
+def test_public_base_url_rejects_anything_but_https_host(  # spec 0014 AC-17
+    monkeypatch: pytest.MonkeyPatch, raw: str
+) -> None:
+    set_env(monkeypatch, {"MEDIA_STORAGE": "r2", **R2_COMMON, **READ, "MEDIA_PUBLIC_BASE_URL": raw})
+
+    with pytest.raises(ValidationError):
+        load_media_settings("api")
+
+
+@pytest.mark.parametrize("raw", ["https://media.example.com/", " https://media.example.com "])
+def test_public_base_url_drops_trailing_slash(  # spec 0014 AC-17
+    monkeypatch: pytest.MonkeyPatch, raw: str
+) -> None:
+    set_env(monkeypatch, {"MEDIA_STORAGE": "r2", **R2_COMMON, **READ, "MEDIA_PUBLIC_BASE_URL": raw})
+
+    settings = load_media_settings("api")
+
+    assert isinstance(settings, ApiR2MediaSettings)
+    assert settings.media_public_base_url == "https://media.example.com"
+    assert link_base_from_settings(settings) == PublicMediaBase("https://media.example.com")
+
+
+def test_local_link_base_is_absolute(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:  # spec 0014 AC-17
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("MEDIA_LOCAL_DIR", "./media-dev")
+
+    settings = load_media_settings("api")
+
+    assert isinstance(settings, LocalMediaSettings)
+    assert link_base_from_settings(settings) == LocalMediaDir(tmp_path.resolve() / "media-dev")
 
 
 def test_secrets_are_not_in_the_repr(monkeypatch: pytest.MonkeyPatch) -> None:  # covers: AC-19

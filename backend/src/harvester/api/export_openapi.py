@@ -11,6 +11,7 @@ from pydantic import SecretStr
 
 from harvester.api.main import create_app
 from harvester.config import ApiSettings, CryptoSettings
+from harvester.media.urls import LocalMediaDir
 
 OUTPUT = Path(__file__).resolve().parents[3] / "openapi.json"
 
@@ -22,6 +23,8 @@ def main() -> None:
     app = create_app(
         ApiSettings(site_origin="http://localhost:8080", session_cookie_secure=False),
         CryptoSettings(token_encryption_key=SecretStr(_PLACEHOLDER_KEY)),
+        # 只生成接口描述，链接用不到。
+        media_link_base=LocalMediaDir(Path("media-dev").resolve()),
     )
     OUTPUT.write_text(json.dumps(app.openapi(), indent=2, ensure_ascii=False) + "\n")
     print(f"wrote {OUTPUT}")

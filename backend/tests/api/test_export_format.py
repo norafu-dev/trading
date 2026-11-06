@@ -1,9 +1,11 @@
 """spec 0014：导出文件生成的纯函数（不连数据库）。"""
 
 import csv
+import dataclasses
 import io
 import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -12,8 +14,21 @@ import pytest
 from harvester.api import export_format as fmt
 from harvester.db.export import ExportAttachment, ExportMedia, ExportMessage, ExportRevision
 from harvester.db.search_text import build_search_text, clean_text, strip_markup
+from harvester.media.urls import LocalMediaDir, PublicMediaBase
 
-SITE = "https://harvester.example"
+PUBLIC = "https://media.example"
+BASE = PublicMediaBase(PUBLIC)
+
+
+def key(id: int) -> str:
+    """测试里每个 media 行指向自己的文件：`<频道>/<年月>/<哈希>.png`。"""
+    return f"201/2026-11/sha{id}.png"
+
+
+def link(id: int) -> str:
+    return f"{PUBLIC}/{key(id)}"
+
+
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 T = datetime(2026, 11, 6, 7, 30, 0, 123456, tzinfo=UTC)
 
@@ -59,6 +74,7 @@ def media(id: int, status: str, *, attachment_id: int | None = None, slot: int |
         status=status,  # type: ignore[arg-type]
         declared_content_type="image/jpeg",
         declared_size_bytes=99,
+        object_key=key(id) if status == "stored" else None,
     )
 
 
@@ -71,6 +87,7 @@ def embed_media(id: int, kind: str, slot: int, status: str = "stored") -> Export
         status=status,  # type: ignore[arg-type]
         declared_content_type=None,
         declared_size_bytes=None,
+        object_key=key(id) if status == "stored" else None,
     )
 
 
@@ -129,10 +146,56 @@ def test_format_time_offset_and_seconds() -> None:
 
 
 def test_media_link_only_when_stored() -> None:
-    assert fmt.media_link(media(42, "stored", attachment_id=1), SITE) == f"{SITE}/api/media/42"
+    assert fmt.media_link(media(42, "stored", attachment_id=1), BASE) == link(42)
     for status in ("pending", "too_large", "failed", "gone", "no_space"):
-        assert fmt.media_link(media(42, status, attachment_id=1), SITE) is None
-    assert fmt.media_link(None, SITE) is None
+        assert fmt.media_link(media(42, status, attachment_id=1), BASE) is None
+    assert fmt.media_link(None, BASE) is None
+
+
+def test_file_link_public_points_at_original_file() -> None:
+    assert fmt.media_link(media(42, "stored", attachment_id=1), BASE) == (
+        "https://media.example/201/2026-11/sha42.png"
+    )
+    assert "/api/media/" not in link(42)
+    assert "thumbs" not in link(42)  # 原文件，不是缩略图
+
+
+def test_file_link_local_is_absolute_path_without_url_encoding(tmp_path: Path) -> None:
+    root = tmp_path / "开发" / "media-dev"
+    got = fmt.media_link(media(42, "stored", attachment_id=1), LocalMediaDir(root))
+    assert got == str(root / key(42))
+    assert Path(got).is_absolute()
+    assert "开发" in got and "%" not in got
+
+
+def test_two_media_rows_on_same_file_share_one_link() -> None:
+    shared = ExportMedia(
+        id=50,
+        kind="attachment",
+        attachment_id=1,
+        slot=None,
+        status="stored",
+        declared_content_type=None,
+        declared_size_bytes=None,
+        object_key=key(7),
+    )
+    other = ExportMedia(
+        id=51,
+        kind="forwarded_attachment",
+        attachment_id=None,
+        slot=0,
+        status="stored",
+        declared_content_type=None,
+        declared_size_bytes=None,
+        object_key=key(7),
+    )
+    assert fmt.media_link(shared, BASE) == fmt.media_link(other, BASE) == link(7)
+
+
+def test_stored_row_without_object_key_gets_no_link() -> None:
+    """数据库约束保证不会出现，这里只确认类型收窄的分支不会拼出半截链接。"""
+    row = dataclasses.replace(media(42, "stored", attachment_id=1), object_key=None)
+    assert fmt.media_link(row, BASE) is None
 
 
 def test_clip_gaps() -> None:
@@ -194,7 +257,7 @@ def test_csv_row_basic_columns() -> None:
             deleted_at=T + timedelta(minutes=1),
         ),
         SHANGHAI,
-        SITE,
+        BASE,
     )
     assert row.endswith("\r\n")
     cells = parse_csv_row(row)
@@ -209,7 +272,7 @@ def test_csv_row_basic_columns() -> None:
 
 @pytest.mark.parametrize("content", ['=HYPERLINK("x")', "-1", "+1", "@x", "\tx", "\rx"])
 def test_csv_formula_guard(content: str) -> None:
-    cells = parse_csv_row(fmt.csv_row(msg(content=content, author_name="=bad"), UTC, SITE))
+    cells = parse_csv_row(fmt.csv_row(msg(content=content, author_name="=bad"), UTC, BASE))
     assert cells["content"] == "'" + content
     assert cells["author_name"] == "'=bad"
     assert cells["id"] == "1300000000000000001"
@@ -241,10 +304,10 @@ def test_csv_embeds_attachments_and_forwarded() -> None:
             media(21, "stored", slot=1),
         ),
     )
-    cells = parse_csv_row(fmt.csv_row(message, UTC, SITE))  # type: ignore[arg-type]
+    cells = parse_csv_row(fmt.csv_row(message, UTC, BASE))  # type: ignore[arg-type]
     assert cells["embeds"] == "Bot\nTitle \nDesc\nPrice: :up: 65k\nFoot\n\nSecond"
-    assert cells["attachments"] == f"f1.png {SITE}/api/media/11\nf2.png"
-    assert cells["forwarded"] == f"fwd \na.png\nb.png {SITE}/api/media/21"
+    assert cells["attachments"] == f"f1.png {link(11)}\nf2.png"
+    assert cells["forwarded"] == f"fwd \na.png\nb.png {link(21)}"
 
 
 # --- embed 图片副本（AC-17） -------------------------------------------------
@@ -261,10 +324,10 @@ def test_embed_media_urls_match_slot_and_status() -> None:
         embed_media(32, "embed_thumbnail", 1),
         embed_media(33, "embed_image", 2, "pending"),
     )
-    result = fmt.with_embed_media_urls(embeds, rows, SITE)  # type: ignore[arg-type]
+    result = fmt.with_embed_media_urls(embeds, rows, BASE)  # type: ignore[arg-type]
     assert "image_media_url" not in result[0]
-    assert result[1]["image_media_url"] == f"{SITE}/api/media/31"  # type: ignore[typeddict-item]
-    assert result[1]["thumbnail_media_url"] == f"{SITE}/api/media/32"  # type: ignore[typeddict-item]
+    assert result[1]["image_media_url"] == link(31)  # type: ignore[typeddict-item]
+    assert result[1]["thumbnail_media_url"] == link(32)  # type: ignore[typeddict-item]
     assert result[1]["image_url"] == "https://cdn/b.png"
     assert "image_media_url" not in result[2]
     assert "image_media_url" not in embeds[1]  # 不改入参
@@ -284,22 +347,22 @@ def test_embed_media_urls_in_jsonl_and_csv_but_not_revisions_or_forwarded() -> N
         media=(embed_media(31, "embed_image", 0), embed_media(32, "embed_thumbnail", 0)),
         revisions=(ExportRevision(1, "old", ({"image_url": "https://cdn/o.png"},), T),),
     )
-    record = json.loads(fmt.jsonl_line(message, UTC, SITE))  # type: ignore[arg-type]
+    record = json.loads(fmt.jsonl_line(message, UTC, BASE))  # type: ignore[arg-type]
     assert record["embeds"][0]["image_url"] == "https://cdn/a.png"
-    assert record["embeds"][0]["image_media_url"] == f"{SITE}/api/media/31"
-    assert record["embeds"][0]["thumbnail_media_url"] == f"{SITE}/api/media/32"
+    assert record["embeds"][0]["image_media_url"] == link(31)
+    assert record["embeds"][0]["thumbnail_media_url"] == link(32)
     assert "image_media_url" not in record["forwarded"]["embeds"][0]
     assert "image_media_url" not in record["revisions"][0]["embeds"][0]
-    cells = parse_csv_row(fmt.csv_row(message, UTC, SITE))  # type: ignore[arg-type]
-    assert cells["embeds"] == f"d\n图片: {SITE}/api/media/31\n缩略图: {SITE}/api/media/32"
+    cells = parse_csv_row(fmt.csv_row(message, UTC, BASE))  # type: ignore[arg-type]
+    assert cells["embeds"] == f"d\n图片: {link(31)}\n缩略图: {link(32)}"
 
 
 def test_csv_embed_with_only_image_copy() -> None:
     message = msg(
         embeds=({"image_url": "https://cdn/a.png"},), media=(embed_media(31, "embed_image", 0),)
     )
-    cells = parse_csv_row(fmt.csv_row(message, UTC, SITE))  # type: ignore[arg-type]
-    assert cells["embeds"] == f"图片: {SITE}/api/media/31"
+    cells = parse_csv_row(fmt.csv_row(message, UTC, BASE))  # type: ignore[arg-type]
+    assert cells["embeds"] == f"图片: {link(31)}"
 
 
 # --- JSONL（AC-16、AC-17） --------------------------------------------------
@@ -325,7 +388,7 @@ def test_jsonl_line_shape() -> None:
             ExportRevision(2, "v2", ({"title": "t"},), T + timedelta(minutes=1)),
         ),
     )
-    line = fmt.jsonl_line(message, SHANGHAI, SITE)  # type: ignore[arg-type]
+    line = fmt.jsonl_line(message, SHANGHAI, BASE)  # type: ignore[arg-type]
     assert line.endswith("\n") and line.count("\n") == 1
     assert "中文" in line  # 不转义
     record = json.loads(line)
@@ -337,7 +400,7 @@ def test_jsonl_line_shape() -> None:
         {"title": ":x:", "timestamp": "2026-01-01T00:00:00Z", "image_url": "u"}
     ]
     assert [a["id"] for a in record["attachments"]] == ["1", "3"]
-    assert record["attachments"][0]["url"] == f"{SITE}/api/media/11"
+    assert record["attachments"][0]["url"] == link(11)
     assert record["attachments"][0]["media_status"] == "stored"
     assert record["attachments"][1]["removed_at"] == "2026-11-06T15:30:00+08:00"
     assert record["attachments"][1]["media_status"] is None
@@ -357,7 +420,7 @@ def test_jsonl_line_shape() -> None:
 
 
 def test_jsonl_no_formula_guard_and_empty_revisions() -> None:
-    record = json.loads(fmt.jsonl_line(msg(content="=1"), UTC, SITE))
+    record = json.loads(fmt.jsonl_line(msg(content="=1"), UTC, BASE))
     assert record["content"] == "=1"
     assert record["revisions"] == []
     assert record["forwarded"] is None

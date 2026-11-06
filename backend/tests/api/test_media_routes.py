@@ -14,6 +14,7 @@ from harvester.db.ingest import ingest_message
 from harvester.db.models import Media, StoredFile
 from harvester.media.storage import LocalStore, MediaStore, MemoryStore
 from tests.api.conftest import (
+    UNUSED_LINK_BASE,
     FakeClock,
     api_settings,
     complete_setup,
@@ -58,7 +59,11 @@ async def seed_stored(factory: Factory, *, thumb: bool = True, filename: str = "
 
 
 def build(store: MediaStore, factory: Factory, clock: FakeClock) -> FastAPI:
-    return wire(create_app(api_settings(), crypto_settings(), store), factory, clock)
+    return wire(
+        create_app(api_settings(), crypto_settings(), store, media_link_base=UNUSED_LINK_BASE),
+        factory,
+        clock,
+    )
 
 
 @pytest.fixture

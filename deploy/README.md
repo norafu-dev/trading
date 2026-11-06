@@ -212,7 +212,7 @@ cd ~/harvester && docker compose -f compose.prod.yml --env-file .env exec -T pos
 
 第一次上线前，在 Cloudflare 里做一次（你来做，我不会替你点）：
 
-1. 建一个私有桶 `harvester-media`，不开公开访问，**不加生命周期规则**（程序任何时候都不会删文件，桶里的文件就是附件的唯一副本）。
+1. 建一个桶 `harvester-media`。桶本身不开 `r2.dev`，只通过自定义域名 `media.norafu.com` 公开读（见下面「附件的公开域名」）；**不加生命周期规则**（程序任何时候都不会删文件，桶里的文件就是附件的唯一副本）。
 2. 建两个只作用于这个桶的 API token：
    * 对象读写：给 collector，写进 `.env` 的 `MEDIA_R2_WRITE_ACCESS_KEY_ID` 和 `MEDIA_R2_WRITE_SECRET_ACCESS_KEY`。
    * 对象只读：给 api，写进 `MEDIA_R2_READ_ACCESS_KEY_ID` 和 `MEDIA_R2_READ_SECRET_ACCESS_KEY`。
@@ -236,6 +236,48 @@ cd ~/harvester && IMAGE_TAG=<sha> ./deploy.sh migrate api collector
 * 附件**不进** `pg_dump`，也不另做备份：R2 自己有冗余。恢复旧的数据库备份后，桶里会多出数据库不认识的文件，无害。
 * 空间满了会停止下载并在图标栏显示红点，在「附件存储」页调高总容量即可继续。
 * 只读 token 或读写 token 泄露：在 Cloudflare 控制台撤销、重建，更新 `.env` 后重启对应的服务。
+
+## 附件的公开域名（导出用）
+
+频道导出（spec 0014）里的附件和 embed 图片链接写成 `https://media.norafu.com/<频道 ID>/<年月>/<SHA-256>.<扩展名>`，不用登录就能打开，方便交给外部 AI 读取。dashboard 自己仍然走 1 小时有效的签名链接，不受影响。
+
+这些链接**永久有效，不能单独收回**：谁拿到导出文件，谁就能一直打开里面的文件。文件名里的 SHA-256 猜不到，域名也不列目录，所以没拿到导出文件的人找不到它们。
+
+### Cloudflare 控制台步骤（你来做，我不会替你点）
+
+建议在发布带这个功能的 api 之前做完：
+
+1. 核对 DNS（`norafu.com` 已在 2026-11-06 迁到 Cloudflare）：原来的记录都在（`harvester.norafu.com` 的 A 记录，邮件用的 MX、TXT 记录，如果有）。`harvester.norafu.com` 设成 **DNS only（灰色云）**，因为 Caddy 自己申请 HTTPS 证书，走 Cloudflare 代理（橙色云）可能让证书续期和 SSE 长连接出问题。`dig +short harvester.norafu.com` 应该返回服务器的静态 IP，dashboard 能正常打开。
+2. R2 → `harvester-media` → Settings → Custom Domains，绑定 `media.norafu.com`（Cloudflare 会自动建这条记录，走代理）。
+3. 同一页确认 `r2.dev` 公开地址是关着的。
+4. Rules → Transform Rules → Modify Response Header，条件 `Hostname equals media.norafu.com`，设置两个响应头：`Content-Security-Policy: sandbox` 和 `X-Content-Type-Options: nosniff`。这个域名和 dashboard 同站（都在 `norafu.com` 下），这条规则防止恶意的 HTML 或 SVG 附件在上面运行脚本。代码里没有第二道兜底，所以别删它。
+5. 让外部 AI 取得到文件：在 Security 里确认这个 zone 的 AI 爬虫屏蔽（AI bot blocking）和 Bot Fight Mode 是关的；要开着的话，就给 `media.norafu.com` 加一条跳过规则，不然外部 AI 会拿到 403 或质询页。
+6. 检查：
+
+```bash
+curl -I https://media.norafu.com/<一个已存的 object_key>   # 200，带上面两个头
+curl -I https://media.norafu.com/                          # 不列出文件
+```
+
+`object_key` 可以在数据库的 `stored_file.object_key` 里找一个。
+
+### 上线顺序
+
+1. 做完上面的 Cloudflare 步骤，`curl -I` 确认通过。
+2. **合并之前**，给服务器 `~/harvester/.env` 加一行：
+
+```bash
+MEDIA_PUBLIC_BASE_URL=https://media.norafu.com
+```
+
+   `compose.prod.yml` 对它用的是 `:?` 写法：`.env` 里少了它，整个 compose 文件都读不了，collector 的发布和其他用 compose 的运维脚本也会一起失败，而合并后 CI 会自动发布。值只能是 `https://<主机名>`，不能带路径，带了 api 启动就报错退出。
+
+3. 合并，发布 api：`cd ~/harvester && IMAGE_TAG=<sha> ./deploy.sh api`。
+4. 回滚：发回上一个镜像就行，`.env` 里留着这个变量不影响旧版本。
+
+### 以后要删文件
+
+程序从不删 R2 里的文件。你手动删了某个文件后，Cloudflare 的缓存还会让它的链接能打开一阵子，需要时在 Cloudflare 控制台对那个网址做 Purge。
 
 ## 密钥副本在哪里
 

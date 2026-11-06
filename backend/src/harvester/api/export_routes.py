@@ -12,15 +12,16 @@ from typing import Annotated, Literal
 
 import anyio
 import structlog
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from starlette.requests import HTTPConnection
 from starlette.responses import StreamingResponse
 from starlette.types import Receive, Scope, Send
 
 from harvester.api import export_format as fmt
-from harvester.api.deps import ApiSettingsDep, ClockDep
+from harvester.api.deps import ClockDep
 from harvester.api.errors import ApiError
 from harvester.api.message_routes import (
     ChannelNotFoundError,
@@ -33,6 +34,7 @@ from harvester.db import export as export_store
 from harvester.db.export import ExportChannel, ExportRange
 from harvester.db.history import channel_gaps
 from harvester.db.search import is_query_canceled
+from harvester.media.urls import MediaLinkBase
 
 # 由 routes.py 挂到 protected_router 上，登录检查从那里继承（AC-21）。
 export_router = APIRouter(prefix="/channels", tags=["export"])
@@ -88,6 +90,14 @@ class ExportPreviewOut(BaseModel):
 
 
 Raw = Annotated[str | None, Query()]
+
+
+def get_media_link_base(connection: HTTPConnection) -> MediaLinkBase:
+    """文件链接的开头由启动时的媒体设置决定（AC-17）。"""
+    return connection.app.state.media_link_base
+
+
+MediaLinkBaseDep = Annotated[MediaLinkBase, Depends(get_media_link_base)]
 
 
 def _point(point: export_store.Endpoint) -> ExportPointOut:
@@ -215,7 +225,7 @@ async def _body(
     channel_id: int,
     export_range: ExportRange,
     params: fmt.ExportParams,
-    site_origin: str,
+    link_base: MediaLinkBase,
     started: float,
 ) -> AsyncGenerator[bytes]:
     """键集分页，每批转成文本行发出去；内存里最多只有一批（AC-10）。"""
@@ -240,9 +250,9 @@ async def _body(
             if not batch:
                 break
             if params.format == "csv":
-                lines = (fmt.csv_row(m, params.tz, site_origin) for m in batch)
+                lines = (fmt.csv_row(m, params.tz, link_base) for m in batch)
             else:
-                lines = (fmt.jsonl_line(m, params.tz, site_origin) for m in batch)
+                lines = (fmt.jsonl_line(m, params.tz, link_base) for m in batch)
             chunk = "".join(lines).encode()
             messages += len(batch)
             size += len(chunk)
@@ -267,7 +277,7 @@ async def _body(
 async def export_messages(
     channel_id: PathId,
     factory: SessionFactoryDep,
-    settings: ApiSettingsDep,
+    link_base: MediaLinkBaseDep,
     start: Raw = None,
     end: Raw = None,
     format: Raw = None,
@@ -307,7 +317,7 @@ async def export_messages(
         params.tz,
         params.format,
     )
-    body = _body(session, stack, channel_int, export_range, params, settings.site_origin, started)
+    body = _body(session, stack, channel_int, export_range, params, link_base, started)
 
     async def on_close(never_started: bool) -> None:
         if never_started:

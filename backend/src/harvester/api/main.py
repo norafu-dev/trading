@@ -12,6 +12,7 @@ from harvester.api.notifications import Broadcaster, listen_forever
 from harvester.api.routes import router
 from harvester.api.search_backfill import run_search_backfill
 from harvester.config import (
+    ApiR2MediaSettings,
     ApiSettings,
     CryptoSettings,
     LocalMediaSettings,
@@ -22,6 +23,7 @@ from harvester.config import (
 )
 from harvester.db import get_engine, get_sessionmaker
 from harvester.media.storage import MediaStore, R2Store, build_local_store, build_r2_client
+from harvester.media.urls import MediaLinkBase, link_base_from_settings
 
 
 @asynccontextmanager
@@ -42,7 +44,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
 
 def create_app(
-    settings: ApiSettings, crypto: CryptoSettings, media_store: MediaStore | None = None
+    settings: ApiSettings,
+    crypto: CryptoSettings,
+    media_store: MediaStore | None = None,
+    *,
+    media_link_base: MediaLinkBase,
 ) -> FastAPI:
     # 生产环境不提供文档路由。
     docs_enabled = is_local_origin(settings.site_origin)
@@ -57,6 +63,7 @@ def create_app(
     app.state.api_settings = settings
     app.state.key_ring = crypto.key_ring
     app.state.media_store = media_store
+    app.state.media_link_base = media_link_base
     register_error_handlers(app)
     app.add_middleware(origin_check, site_origin=settings.site_origin)
     app.include_router(public_router)
@@ -66,12 +73,18 @@ def create_app(
 
 def create_app_from_env() -> FastAPI:
     """uvicorn 的工厂入口；配置不全时启动就报错退出。"""
-    return create_app(get_api_settings(), get_crypto_settings(), _build_media_store())
+    media = load_media_settings("api")
+    return create_app(
+        get_api_settings(),
+        get_crypto_settings(),
+        _build_media_store(media),
+        media_link_base=link_base_from_settings(media),
+    )
 
 
-def _build_media_store() -> MediaStore:
-    """MEDIA_STORAGE 没设置或 R2 配置不全时，这里抛校验错误，api 启动失败（AC-20）。"""
-    settings = load_media_settings("api")
+def _build_media_store(settings: LocalMediaSettings | ApiR2MediaSettings) -> MediaStore:
+    """媒体设置只在 create_app_from_env 里读一次：没设置或 R2 配置不全时抛校验错误，
+    api 启动失败（spec 0011 AC-20，spec 0014 AC-17）。"""
     if isinstance(settings, LocalMediaSettings):
         return build_local_store(settings.media_local_dir)
     client = build_r2_client(

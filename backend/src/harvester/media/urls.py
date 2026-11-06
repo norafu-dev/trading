@@ -1,8 +1,12 @@
 """Discord CDN 链接和存储路径的纯函数（spec 0011）。"""
 
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from urllib.parse import unquote, urlsplit
+from pathlib import Path
+from urllib.parse import quote, unquote, urlsplit
+
+from harvester.config import ApiR2MediaSettings, LocalMediaSettings
 
 DISCORD_HOSTS = frozenset({"cdn.discordapp.com", "media.discordapp.net"})
 _HOSTED_PATH_PREFIXES = ("/attachments/", "/ephemeral-attachments/")
@@ -71,3 +75,36 @@ def object_key(prefix: str, sha256_hex: str, filename: str) -> str:
 
 def thumb_key(prefix: str, sha256_hex: str) -> str:
     return f"{prefix}/thumbs/{sha256_hex}.webp"
+
+
+# --- 导出里的文件链接（spec 0014 AC-17）----------------------------------------
+
+
+@dataclass(frozen=True)
+class PublicMediaBase:
+    """MEDIA_STORAGE=r2：桶的公开域名，已去掉末尾的 /。"""
+
+    url: str
+
+
+@dataclass(frozen=True)
+class LocalMediaDir:
+    """MEDIA_STORAGE=local：MEDIA_LOCAL_DIR 的绝对路径，启动时算一次。"""
+
+    root: Path
+
+
+MediaLinkBase = PublicMediaBase | LocalMediaDir
+
+
+def file_link(base: MediaLinkBase, key: str) -> str:
+    """公开域名下的永久链接，或本机文件的绝对路径（本机路径不做 URL 编码）。"""
+    if isinstance(base, PublicMediaBase):
+        return f"{base.url}/{quote(key, safe='/')}"
+    return str(base.root / key)
+
+
+def link_base_from_settings(settings: LocalMediaSettings | ApiR2MediaSettings) -> MediaLinkBase:
+    if isinstance(settings, LocalMediaSettings):
+        return LocalMediaDir(settings.media_local_dir.resolve())
+    return PublicMediaBase(settings.media_public_base_url)

@@ -12,7 +12,15 @@ from typing import Any, Literal
 from sqlalchemy import func, literal, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from harvester.db.models import Attachment, Channel, Guild, Media, Message, MessageRevision
+from harvester.db.models import (
+    Attachment,
+    Channel,
+    Guild,
+    Media,
+    Message,
+    MessageRevision,
+    StoredFile,
+)
 from harvester.db.snapshots import EmbedData, ForwardedData, MediaKind, MediaStatus
 
 # 一次导出最多这么多条；预览和下载两处都检查（测试里可以改小）。
@@ -78,6 +86,8 @@ class ExportMedia:
     status: MediaStatus
     declared_content_type: str | None
     declared_size_bytes: int | None
+    # `stored` 的行一定有（数据库约束 status='stored' 等价于 file_id 不为空）。
+    object_key: str | None
 
 
 @dataclass(frozen=True)
@@ -233,7 +243,9 @@ async def _media_of(
             Media.status,
             Media.declared_content_type,
             Media.declared_size_bytes,
+            StoredFile.object_key,
         )
+        .outerjoin(StoredFile, StoredFile.id == Media.file_id)
         .where(Media.message_id.in_(message_ids), Media.kind.in_(_EXPORT_MEDIA_KINDS))
         .order_by(Media.id)
     )
@@ -247,6 +259,7 @@ async def _media_of(
             r.status,
             r.declared_content_type,
             r.declared_size_bytes,
+            r.object_key,
         )
         grouped[r.message_id] = (*grouped.get(r.message_id, ()), item)
     return grouped

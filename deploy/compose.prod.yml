@@ -57,6 +57,8 @@ services:
       # 只读 token：api 只签发读取链接，拿不到写权限。
       MEDIA_R2_READ_ACCESS_KEY_ID: ${MEDIA_R2_READ_ACCESS_KEY_ID:?set in .env}
       MEDIA_R2_READ_SECRET_ACCESS_KEY: ${MEDIA_R2_READ_SECRET_ACCESS_KEY:?set in .env}
+      # 桶的公开域名，只有导出用它写文件链接（spec 0014 AC-17）；collector 不需要。
+      MEDIA_PUBLIC_BASE_URL: ${MEDIA_PUBLIC_BASE_URL:?set in .env}
     command: ["python", "-m", "harvester.api"]
     restart: unless-stopped
     depends_on:

@@ -16,6 +16,7 @@ from harvester.api.search_query import FieldError
 from harvester.db.export import ExportAttachment, ExportMedia, ExportMessage
 from harvester.db.search_text import strip_markup
 from harvester.db.snapshots import EmbedData, ForwardedData
+from harvester.media.urls import MediaLinkBase, file_link
 
 ExportFormat = Literal["csv", "jsonl"]
 
@@ -139,11 +140,11 @@ def _optional_time(moment: datetime | None, tz: tzinfo) -> str | None:
     return format_time(moment, tz) if moment is not None else None
 
 
-def media_link(media: ExportMedia | None, site_origin: str) -> str | None:
-    """只有保存好的附件给链接，指向需要登录的 dashboard 接口（AC-17）。"""
-    if media is None or media.status != "stored":
+def media_link(media: ExportMedia | None, link_base: MediaLinkBase) -> str | None:
+    """只有保存好的文件给链接：公开域名下的原文件，或本机绝对路径（AC-17）。"""
+    if media is None or media.status != "stored" or media.object_key is None:
         return None
-    return f"{site_origin}/api/media/{media.id}"
+    return file_link(link_base, media.object_key)
 
 
 def clip_gaps(
@@ -224,7 +225,7 @@ def clean_embed(embed: EmbedData) -> EmbedData:
 
 
 def with_embed_media_urls(
-    embeds: Sequence[EmbedData], media_rows: Iterable[ExportMedia], site_origin: str
+    embeds: Sequence[EmbedData], media_rows: Iterable[ExportMedia], link_base: MediaLinkBase
 ) -> tuple[EmbedData, ...]:
     """给消息自己的 embed 加已保存图片的副本链接；返回新对象，不改入参（AC-17）。
 
@@ -235,7 +236,7 @@ def with_embed_media_urls(
     def link(kind: str, slot: int) -> str | None:
         return next(
             (
-                media_link(m, site_origin)
+                media_link(m, link_base)
                 for m in rows
                 if m.kind == kind and m.slot == slot and m.status == "stored"
             ),
@@ -294,27 +295,27 @@ def _attachment_line(filename: str, link: str | None) -> str:
     return f"{filename} {link}" if link else filename
 
 
-def attachments_text(message: ExportMessage, site_origin: str) -> str:
+def attachments_text(message: ExportMessage, link_base: MediaLinkBase) -> str:
     """每个没被移除的附件一行：`文件名 链接`（AC-15、AC-17）。"""
     return "\n".join(
-        _attachment_line(a.filename, media_link(_attachment_media(message, a), site_origin))
+        _attachment_line(a.filename, media_link(_attachment_media(message, a), link_base))
         for a in message.attachments
         if a.removed_at is None
     )
 
 
-def _message_embeds(message: ExportMessage, site_origin: str) -> tuple[EmbedData, ...]:
-    return with_embed_media_urls(message.embeds, message.media, site_origin)
+def _message_embeds(message: ExportMessage, link_base: MediaLinkBase) -> tuple[EmbedData, ...]:
+    return with_embed_media_urls(message.embeds, message.media, link_base)
 
 
 def forwarded_text(
-    forwarded: ForwardedData | None, message: ExportMessage, site_origin: str
+    forwarded: ForwardedData | None, message: ExportMessage, link_base: MediaLinkBase
 ) -> str:
     if forwarded is None:
         return ""
     lines = [strip_markup(forwarded["content"])] if forwarded["content"] else []
     lines.extend(
-        _attachment_line(name, media_link(_forwarded_media(message, slot), site_origin))
+        _attachment_line(name, media_link(_forwarded_media(message, slot), link_base))
         for slot, name in enumerate(forwarded["attachment_names"])
     )
     return "\n".join(lines)
@@ -339,7 +340,7 @@ def csv_header() -> str:
     return "﻿" + _csv_line(CSV_COLUMNS)
 
 
-def csv_row(message: ExportMessage, tz: tzinfo, site_origin: str) -> str:
+def csv_row(message: ExportMessage, tz: tzinfo, link_base: MediaLinkBase) -> str:
     cells: dict[str, str] = {
         "id": str(message.id),
         "created_at": format_time(message.created_at, tz),
@@ -347,9 +348,9 @@ def csv_row(message: ExportMessage, tz: tzinfo, site_origin: str) -> str:
         "author_name": message.author_name,
         "content": strip_markup(message.content),
         "reply_to_id": str(message.reply_to_id) if message.reply_to_id is not None else "",
-        "forwarded": forwarded_text(message.forwarded, message, site_origin),
-        "embeds": embeds_text(_message_embeds(message, site_origin)),
-        "attachments": attachments_text(message, site_origin),
+        "forwarded": forwarded_text(message.forwarded, message, link_base),
+        "embeds": embeds_text(_message_embeds(message, link_base)),
+        "attachments": attachments_text(message, link_base),
         "version": str(message.version),
         "edited_at": _optional_time(message.edited_at, tz) or "",
         "deleted_at": _optional_time(message.deleted_at, tz) or "",
@@ -366,7 +367,7 @@ def csv_row(message: ExportMessage, tz: tzinfo, site_origin: str) -> str:
 
 
 def _attachment_json(
-    message: ExportMessage, attachment: ExportAttachment, tz: tzinfo, site_origin: str
+    message: ExportMessage, attachment: ExportAttachment, tz: tzinfo, link_base: MediaLinkBase
 ) -> dict[str, Any]:
     media = _attachment_media(message, attachment)
     return {
@@ -378,11 +379,11 @@ def _attachment_json(
         "height": attachment.height,
         "removed_at": _optional_time(attachment.removed_at, tz),
         "media_status": media.status if media is not None else None,
-        "url": media_link(media, site_origin),
+        "url": media_link(media, link_base),
     }
 
 
-def _forwarded_json(message: ExportMessage, site_origin: str) -> dict[str, Any] | None:
+def _forwarded_json(message: ExportMessage, link_base: MediaLinkBase) -> dict[str, Any] | None:
     forwarded = message.forwarded
     if forwarded is None:
         return None
@@ -395,7 +396,7 @@ def _forwarded_json(message: ExportMessage, site_origin: str) -> dict[str, Any] 
                 "content_type": media.declared_content_type if media is not None else None,
                 "size_bytes": media.declared_size_bytes if media is not None else None,
                 "media_status": media.status if media is not None else None,
-                "url": media_link(media, site_origin),
+                "url": media_link(media, link_base),
             }
         )
     guild_id = forwarded["guild_id"]
@@ -409,7 +410,7 @@ def _forwarded_json(message: ExportMessage, site_origin: str) -> dict[str, Any] 
     }
 
 
-def jsonl_line(message: ExportMessage, tz: tzinfo, site_origin: str) -> str:
+def jsonl_line(message: ExportMessage, tz: tzinfo, link_base: MediaLinkBase) -> str:
     """一行一个对象，中文不转义，ID 都是十进制字符串（AC-16）。"""
     record = {
         "id": str(message.id),
@@ -420,9 +421,9 @@ def jsonl_line(message: ExportMessage, tz: tzinfo, site_origin: str) -> str:
         "author": {"id": str(message.author_id), "name": message.author_name},
         "content": strip_markup(message.content),
         "reply_to_id": str(message.reply_to_id) if message.reply_to_id is not None else None,
-        "forwarded": _forwarded_json(message, site_origin),
-        "embeds": [clean_embed(e) for e in _message_embeds(message, site_origin)],
-        "attachments": [_attachment_json(message, a, tz, site_origin) for a in message.attachments],
+        "forwarded": _forwarded_json(message, link_base),
+        "embeds": [clean_embed(e) for e in _message_embeds(message, link_base)],
+        "attachments": [_attachment_json(message, a, tz, link_base) for a in message.attachments],
         "version": message.version,
         "edited_at": _optional_time(message.edited_at, tz),
         "deleted_at": _optional_time(message.deleted_at, tz),

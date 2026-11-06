@@ -5,6 +5,7 @@ import io
 import json
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
@@ -22,6 +23,7 @@ from harvester.db.history import ChannelGaps
 from harvester.db.ingest import ingest_message, mark_messages_deleted, upsert_channel
 from harvester.db.models import Media, StoredFile
 from harvester.db.snapshots import AttachmentSnapshot, ChannelSnapshot
+from harvester.media.urls import PublicMediaBase
 from tests.api.conftest import ORIGIN
 from tests.db.builders import (
     CHANNEL,
@@ -185,8 +187,9 @@ async def test_jsonl_includes_revisions(
 
 
 async def test_attachments_links_and_removed(
-    logged_in: httpx.AsyncClient, factory: Factory
+    logged_in: httpx.AsyncClient, factory: Factory, tmp_path: Path
 ) -> None:  # covers: AC-17
+    """`app` fixture 传的是 LocalMediaDir(tmp_path)：链接是本机绝对路径。"""
     async with factory() as session, session.begin():
         await seed_channel(session)
         fwd_att = AttachmentSnapshot(
@@ -251,22 +254,30 @@ async def test_attachments_links_and_removed(
             .returning(Media.id)
         )
 
-    csv_row = csv_rows((await download(logged_in)).text)[0]
-    assert csv_row["attachments"] == f"file-5.png {ORIGIN}/api/media/{stored_id}\nfile-6.png"
-    assert csv_row["forwarded"] == f"fwd\nf.jpg {ORIGIN}/api/media/{fwd_media}"
+    assert stored_id is not None and fwd_media is not None
+    local = str(tmp_path / "k")
+    csv_body = (await download(logged_in)).text
+    csv_row = csv_rows(csv_body)[0]
+    assert csv_row["attachments"] == f"file-5.png {local}\nfile-6.png"
+    # 转发附件和普通附件指向同一个文件，链接也相同。
+    assert csv_row["forwarded"] == f"fwd\nf.jpg {local}"
 
-    [record] = jsonl((await download(logged_in, format="jsonl")).text)
+    jsonl_body = (await download(logged_in, format="jsonl")).text
+    [record] = jsonl(jsonl_body)
     by_id = {a["id"]: a for a in record["attachments"]}
-    assert by_id["5"]["url"] == f"{ORIGIN}/api/media/{stored_id}"
+    assert by_id["5"]["url"] == local
     assert by_id["6"]["url"] is None and by_id["6"]["media_status"] == "too_large"
     assert by_id["7"]["removed_at"] is not None
     assert record["forwarded"]["attachments"][0]["content_type"] == "image/jpeg"
-    assert record["forwarded"]["attachments"][0]["url"] == f"{ORIGIN}/api/media/{fwd_media}"
+    assert record["forwarded"]["attachments"][0]["url"] == local
+    assert "/api/media/" not in csv_body + jsonl_body
 
 
 async def test_embed_image_copy_links(
-    logged_in: httpx.AsyncClient, factory: Factory
+    app: FastAPI, logged_in: httpx.AsyncClient, factory: Factory
 ) -> None:  # covers: AC-17
+    """换成公开域名：链接由 app.state.media_link_base 拼出来，证明这条线接上了。"""
+    app.state.media_link_base = PublicMediaBase("https://media.example")
     async with factory() as session, session.begin():
         await seed_channel(session)
         embeds = (
@@ -309,14 +320,13 @@ async def test_embed_image_copy_links(
     [record] = jsonl((await download(logged_in, format="jsonl")).text)
     first, second = record["embeds"]
     assert "image_media_url" not in first
-    assert second["image_media_url"] == f"{ORIGIN}/api/media/{stored[('embed_image', 1)]}"
-    assert second["thumbnail_media_url"] == f"{ORIGIN}/api/media/{stored[('embed_thumbnail', 1)]}"
+    assert second["image_media_url"] == "https://media.example/k2"
+    assert second["thumbnail_media_url"] == "https://media.example/k2"
     assert second["image_url"].endswith("b.png")
 
     csv_row = csv_rows((await download(logged_in)).text)[0]
     assert csv_row["embeds"] == (
-        f"first\n\nsecond\n图片: {ORIGIN}/api/media/{stored[('embed_image', 1)]}"
-        f"\n缩略图: {ORIGIN}/api/media/{stored[('embed_thumbnail', 1)]}"
+        "first\n\nsecond\n图片: https://media.example/k2\n缩略图: https://media.example/k2"
     )
 
 

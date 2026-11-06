@@ -251,7 +251,7 @@ spec [0013](../specs/0013-message-search-filter/index.md)
 
 把当前筛选结果导出成文件。
 **Done when:** 能把筛选后的消息导出为 CSV 和 JSON；大量数据导出不会卡死页面；导出内容包含编辑和删除标记。
-spec [0014](../specs/0014-channel-message-export/index.md) · code in `backend/src/harvester/api/export_*.py`, `backend/src/harvester/db/export.py`, `web/src/components/export/`
+spec [0014](../specs/0014-channel-message-export/index.md) · code in `backend/src/harvester/api/export_*.py`, `backend/src/harvester/db/export.py`, `backend/src/harvester/media/urls.py`, `web/src/components/export/`
 
 - [x] Design it (spec): `/architect 导出`
 - [x] Build it: `/develop 导出`
@@ -259,6 +259,7 @@ spec [0014](../specs/0014-channel-message-export/index.md) · code in `backend/s
   - [x] 开放端和预览：「从最早」「到最新」、封顶计数和 10 万条上限、缺口提示、空频道和错误状态，AC-3, AC-6 到 AC-9, AC-18
   - [x] 内容加粗：CSV 的转发、embed、附件列和防公式注入，JSONL 和旧版本，附件链接，格式选择，AC-13, AC-15 到 AC-17
   - [x] 失败和收口：超时、中途断开、提前断开不漏连接、三种日志事件、会话保护，测试和 `verify.md`，AC-19 到 AC-21
+  - [x] 公开文件链接（spec 0014 第 9 步）：`MEDIA_PUBLIC_BASE_URL`，导出写 `media.norafu.com` 公开链接（本地写绝对路径），测试和部署文件，先完成 spec 0011 Follow-up 的 Cloudflare 步骤，AC-17
 - [ ] Verify it: `/check verify 导出`
 
 ## Slice 7: 关键词提醒

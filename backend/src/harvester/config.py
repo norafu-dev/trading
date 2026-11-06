@@ -173,6 +173,25 @@ class ApiR2MediaSettings(_R2Common):
 
     media_r2_read_access_key_id: SecretStr
     media_r2_read_secret_access_key: SecretStr
+    # 桶的公开域名，只有导出用它拼文件链接（spec 0014 AC-17）。
+    media_public_base_url: str
+
+    @field_validator("media_public_base_url")
+    @classmethod
+    def _check_public_base_url(cls, value: str) -> str:
+        return normalize_public_base_url(value)
+
+
+def normalize_public_base_url(raw: str) -> str:
+    """只接受 `https://<主机名>`：R2 自定义域名不支持路径前缀，带了链接会全部 404。"""
+    stripped = raw.strip()
+    parts = urlsplit(stripped)
+    if parts.scheme != "https" or not parts.hostname:
+        raise ValueError("MEDIA_PUBLIC_BASE_URL must look like https://media.example.com")
+    has_extra = "?" in stripped or "#" in stripped or parts.username or parts.password
+    if parts.path not in ("", "/") or has_extra:
+        raise ValueError("MEDIA_PUBLIC_BASE_URL must not have a path, query, fragment or user")
+    return stripped.rstrip("/")
 
 
 MediaSettings = LocalMediaSettings | CollectorR2MediaSettings | ApiR2MediaSettings
