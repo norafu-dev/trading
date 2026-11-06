@@ -62,6 +62,18 @@ def media(id: int, status: str, *, attachment_id: int | None = None, slot: int |
     )
 
 
+def embed_media(id: int, kind: str, slot: int, status: str = "stored") -> ExportMedia:
+    return ExportMedia(
+        id=id,
+        kind=kind,  # type: ignore[arg-type]
+        attachment_id=None,
+        slot=slot,
+        status=status,  # type: ignore[arg-type]
+        declared_content_type=None,
+        declared_size_bytes=None,
+    )
+
+
 def parse_csv_row(line: str) -> dict[str, str]:
     values = next(csv.reader(io.StringIO(line)))
     return dict(zip(fmt.CSV_COLUMNS, values, strict=True))
@@ -233,6 +245,61 @@ def test_csv_embeds_attachments_and_forwarded() -> None:
     assert cells["embeds"] == "Bot\nTitle \nDesc\nPrice: :up: 65k\nFoot\n\nSecond"
     assert cells["attachments"] == f"f1.png {SITE}/api/media/11\nf2.png"
     assert cells["forwarded"] == f"fwd \na.png\nb.png {SITE}/api/media/21"
+
+
+# --- embed 图片副本（AC-17） -------------------------------------------------
+
+
+def test_embed_media_urls_match_slot_and_status() -> None:
+    embeds = (
+        {"title": "a", "image_url": "https://cdn/a.png"},
+        {"title": "b", "image_url": "https://cdn/b.png", "thumbnail_url": "https://cdn/t.png"},
+        {"title": "c", "image_url": "https://cdn/c.png"},
+    )
+    rows = (
+        embed_media(31, "embed_image", 1),
+        embed_media(32, "embed_thumbnail", 1),
+        embed_media(33, "embed_image", 2, "pending"),
+    )
+    result = fmt.with_embed_media_urls(embeds, rows, SITE)  # type: ignore[arg-type]
+    assert "image_media_url" not in result[0]
+    assert result[1]["image_media_url"] == f"{SITE}/api/media/31"  # type: ignore[typeddict-item]
+    assert result[1]["thumbnail_media_url"] == f"{SITE}/api/media/32"  # type: ignore[typeddict-item]
+    assert result[1]["image_url"] == "https://cdn/b.png"
+    assert "image_media_url" not in result[2]
+    assert "image_media_url" not in embeds[1]  # 不改入参
+
+
+def test_embed_media_urls_in_jsonl_and_csv_but_not_revisions_or_forwarded() -> None:
+    message = msg(
+        embeds=({"description": "d", "image_url": "https://cdn/a.png"},),
+        forwarded={
+            "message_id": 9,
+            "channel_id": 8,
+            "guild_id": None,
+            "content": "",
+            "embeds": [{"image_url": "https://cdn/f.png"}],
+            "attachment_names": [],
+        },
+        media=(embed_media(31, "embed_image", 0), embed_media(32, "embed_thumbnail", 0)),
+        revisions=(ExportRevision(1, "old", ({"image_url": "https://cdn/o.png"},), T),),
+    )
+    record = json.loads(fmt.jsonl_line(message, UTC, SITE))  # type: ignore[arg-type]
+    assert record["embeds"][0]["image_url"] == "https://cdn/a.png"
+    assert record["embeds"][0]["image_media_url"] == f"{SITE}/api/media/31"
+    assert record["embeds"][0]["thumbnail_media_url"] == f"{SITE}/api/media/32"
+    assert "image_media_url" not in record["forwarded"]["embeds"][0]
+    assert "image_media_url" not in record["revisions"][0]["embeds"][0]
+    cells = parse_csv_row(fmt.csv_row(message, UTC, SITE))  # type: ignore[arg-type]
+    assert cells["embeds"] == f"d\n图片: {SITE}/api/media/31\n缩略图: {SITE}/api/media/32"
+
+
+def test_csv_embed_with_only_image_copy() -> None:
+    message = msg(
+        embeds=({"image_url": "https://cdn/a.png"},), media=(embed_media(31, "embed_image", 0),)
+    )
+    cells = parse_csv_row(fmt.csv_row(message, UTC, SITE))  # type: ignore[arg-type]
+    assert cells["embeds"] == f"图片: {SITE}/api/media/31"
 
 
 # --- JSONL（AC-16、AC-17） --------------------------------------------------

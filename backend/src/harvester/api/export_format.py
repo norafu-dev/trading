@@ -223,7 +223,42 @@ def clean_embed(embed: EmbedData) -> EmbedData:
     return cast("EmbedData", cleaned)
 
 
+def with_embed_media_urls(
+    embeds: Sequence[EmbedData], media_rows: Iterable[ExportMedia], site_origin: str
+) -> tuple[EmbedData, ...]:
+    """给消息自己的 embed 加已保存图片的副本链接；返回新对象，不改入参（AC-17）。
+
+    `slot` 是 embed 在消息 `embeds` 里的序号；没有 `stored` 的行就不加这个键。
+    """
+    rows = tuple(media_rows)
+
+    def link(kind: str, slot: int) -> str | None:
+        return next(
+            (
+                media_link(m, site_origin)
+                for m in rows
+                if m.kind == kind and m.slot == slot and m.status == "stored"
+            ),
+            None,
+        )
+
+    result: list[EmbedData] = []
+    for slot, embed in enumerate(embeds):
+        enriched: dict[str, Any] = dict(embed)
+        image = link("embed_image", slot)
+        thumbnail = link("embed_thumbnail", slot)
+        if image is not None:
+            enriched["image_media_url"] = image
+        if thumbnail is not None:
+            enriched["thumbnail_media_url"] = thumbnail
+        result.append(cast("EmbedData", enriched))
+    return tuple(result)
+
+
 def _embed_text(embed: EmbedData) -> str:
+    extra: dict[str, Any] = dict(embed)
+    image = extra.get("image_media_url")
+    thumbnail = extra.get("thumbnail_media_url")
     author = embed.get("author")
     parts = [
         author.get("name", "") if author is not None else "",
@@ -231,6 +266,8 @@ def _embed_text(embed: EmbedData) -> str:
         embed.get("description", ""),
         *(f"{f['name']}: {f['value']}" for f in embed.get("fields", ())),
         embed.get("footer_text", ""),
+        f"图片: {image}" if image else "",
+        f"缩略图: {thumbnail}" if thumbnail else "",
     ]
     return "\n".join(p for p in parts if p)
 
@@ -264,6 +301,10 @@ def attachments_text(message: ExportMessage, site_origin: str) -> str:
         for a in message.attachments
         if a.removed_at is None
     )
+
+
+def _message_embeds(message: ExportMessage, site_origin: str) -> tuple[EmbedData, ...]:
+    return with_embed_media_urls(message.embeds, message.media, site_origin)
 
 
 def forwarded_text(
@@ -307,7 +348,7 @@ def csv_row(message: ExportMessage, tz: tzinfo, site_origin: str) -> str:
         "content": strip_markup(message.content),
         "reply_to_id": str(message.reply_to_id) if message.reply_to_id is not None else "",
         "forwarded": forwarded_text(message.forwarded, message, site_origin),
-        "embeds": embeds_text(message.embeds),
+        "embeds": embeds_text(_message_embeds(message, site_origin)),
         "attachments": attachments_text(message, site_origin),
         "version": str(message.version),
         "edited_at": _optional_time(message.edited_at, tz) or "",
@@ -380,7 +421,7 @@ def jsonl_line(message: ExportMessage, tz: tzinfo, site_origin: str) -> str:
         "content": strip_markup(message.content),
         "reply_to_id": str(message.reply_to_id) if message.reply_to_id is not None else None,
         "forwarded": _forwarded_json(message, site_origin),
-        "embeds": [clean_embed(e) for e in message.embeds],
+        "embeds": [clean_embed(e) for e in _message_embeds(message, site_origin)],
         "attachments": [_attachment_json(message, a, tz, site_origin) for a in message.attachments],
         "version": message.version,
         "edited_at": _optional_time(message.edited_at, tz),

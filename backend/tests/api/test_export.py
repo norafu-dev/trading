@@ -264,6 +264,62 @@ async def test_attachments_links_and_removed(
     assert record["forwarded"]["attachments"][0]["url"] == f"{ORIGIN}/api/media/{fwd_media}"
 
 
+async def test_embed_image_copy_links(
+    logged_in: httpx.AsyncClient, factory: Factory
+) -> None:  # covers: AC-17
+    async with factory() as session, session.begin():
+        await seed_channel(session)
+        embeds = (
+            {
+                "description": "first",
+                "image_url": "https://cdn.discordapp.com/attachments/1/2/a.png",
+            },
+            {
+                "description": "second",
+                "image_url": "https://cdn.discordapp.com/attachments/1/3/b.png",
+                "thumbnail_url": "https://cdn.discordapp.com/attachments/1/4/t.png",
+            },
+        )
+        await ingest_message(session, message(id=mid(1), embeds=embeds), "realtime", at(1))
+        file_id = await session.scalar(
+            insert(StoredFile)
+            .values(
+                prefix="201/2024-10",
+                sha256=bytes.fromhex("cd" * 32),
+                size_bytes=3,
+                content_type="image/png",
+                object_key="k2",
+            )
+            .returning(StoredFile.id)
+        )
+        # 只有第二个 embed 的图片和缩略图保存好了，第一个 embed 的图还是 pending。
+        stored = {
+            (kind, slot): media_id
+            for media_id, kind, slot in (
+                await session.execute(
+                    update(Media)
+                    .where(Media.slot == 1, Media.kind.in_(("embed_image", "embed_thumbnail")))
+                    .values(status="stored", file_id=file_id)
+                    .returning(Media.id, Media.kind, Media.slot)
+                )
+            ).all()
+        }
+    assert set(stored) == {("embed_image", 1), ("embed_thumbnail", 1)}
+
+    [record] = jsonl((await download(logged_in, format="jsonl")).text)
+    first, second = record["embeds"]
+    assert "image_media_url" not in first
+    assert second["image_media_url"] == f"{ORIGIN}/api/media/{stored[('embed_image', 1)]}"
+    assert second["thumbnail_media_url"] == f"{ORIGIN}/api/media/{stored[('embed_thumbnail', 1)]}"
+    assert second["image_url"].endswith("b.png")
+
+    csv_row = csv_rows((await download(logged_in)).text)[0]
+    assert csv_row["embeds"] == (
+        f"first\n\nsecond\n图片: {ORIGIN}/api/media/{stored[('embed_image', 1)]}"
+        f"\n缩略图: {ORIGIN}/api/media/{stored[('embed_thumbnail', 1)]}"
+    )
+
+
 # --- 开放的一端、空频道、上限（AC-3、AC-6、AC-7、AC-9、AC-18） -----------------------
 
 

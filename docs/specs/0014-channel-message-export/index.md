@@ -1,6 +1,6 @@
 # 0014. 频道消息导出
 
-**Date**: 2026-11-06
+**Date**: 2026-11-06（2026-11-06 更新：AC-17 给 embed 图片加不过期的副本链接）
 **Status**: In Progress
 
 ## Summary
@@ -41,7 +41,7 @@
 - **AC-14**: 文件里所有时间都按请求里的 `tz`（浏览器的 IANA 时区，比如 `Asia/Shanghai`）写成带偏移的 ISO 8601，精确到秒，例如 `2026-11-06T15:30:00+08:00`。例外：embed 里的 `timestamp` 是发消息的人自己写的字段，原样保留。
 - **AC-15**: CSV：开头有 UTF-8 BOM（Excel 双击打开中文不乱码），按 RFC 4180 写（行尾 `\r\n`，含逗号、引号或换行的字段加引号），第一行是表头，每条消息一行，内容是最新版本。列和每列的写法见 Feature design 的「CSV 格式」。防公式注入：文字列（`author_name`、`content`、`forwarded`、`embeds`、`attachments`）里第一个字符是 `=`、`+`、`-`、`@`、制表符或回车的单元格，前面加一个 `'`，Excel 打开时不会当成公式执行；ID、时间、版本列不加。JSONL 不做这个处理。
 - **AC-16**: JSONL：每行一个 JSON 对象，UTF-8 不带 BOM，行尾 `\n`，中文不转义，所有 ID 是十进制字符串。字段见 Feature design 的「JSONL 格式」；`revisions` 是全部旧版本，按 `version` 从小到大，没有旧版本时是空数组。
-- **AC-17**: 附件：每个附件写文件名、类型和大小。已经保存好的（对应的 `media` 行是 `stored`）写链接 `<SITE_ORIGIN>/api/media/<media_id>`（登录 dashboard 后能打开，不会过期）；其他状态链接为空。转发里的附件按 `forwarded_attachment` 行的 `slot` 对上名字，同样处理；它们的类型和大小取 `media.declared_content_type` 和 `media.declared_size_bytes`，没有 `media` 行时为空。CSV 只列没被移除的附件；JSONL 列出全部，被移除的带 `removed_at`。embed 里的图片不单独给链接。
+- **AC-17**: 附件：每个附件写文件名、类型和大小。已经保存好的（对应的 `media` 行是 `stored`）写链接 `<SITE_ORIGIN>/api/media/<media_id>`（登录 dashboard 后能打开，不会过期）；其他状态链接为空。转发里的附件按 `forwarded_attachment` 行的 `slot` 对上名字，同样处理；它们的类型和大小取 `media.declared_content_type` 和 `media.declared_size_bytes`，没有 `media` 行时为空。CSV 只列没被移除的附件；JSONL 列出全部，被移除的带 `removed_at`。embed 里的图片另有规则：消息自己的 embed（不含转发里的、旧版本里的）的 `image_url`、`thumbnail_url`，如果有对应的 `media` 行（`kind` 是 `embed_image` 或 `embed_thumbnail`，`slot` 等于这个 embed 在消息 `embeds` 里的序号）且状态是 `stored`，就在这个 embed 里加 `image_media_url`、`thumbnail_media_url`，值是 `<SITE_ORIGIN>/api/media/<media_id>`；没有 `stored` 的行（没有行、`pending`、`failed`、`gone` 等）就不加这个字段。原来的 `image_url`、`thumbnail_url` 原样保留，不改。原因：Discord 的图片链接带有效期，过期后打不开，而已保存的副本不会过期。
 
 错误和边界
 
@@ -144,7 +144,8 @@ type ExportSelection =
 | `export_filename(guild_name, channel_name, channel_id, first, last, tz, ext) -> ContentDisposition` | `harvester/api/export_format.py` | AC-11 的名字处理和两种文件名 |
 | `csv_header() -> str`、`csv_row(message, tz, site_origin) -> str` | 同上 | AC-15，用标准库 `csv` 写进 `io.StringIO` |
 | `jsonl_line(message, tz, site_origin) -> str` | 同上 | AC-16，`json.dumps(..., ensure_ascii=False)` |
-| `media_link(media, site_origin) -> str \| None` | 同上 | AC-17，只有 `status == 'stored'` 时返回链接 |
+| `media_link(media, site_origin) -> str \| None` | 同上 | AC-17，只有 `status == 'stored'` 时返回链接；附件和 embed 图片共用 |
+| `with_embed_media_urls(embeds, media_rows, site_origin) -> tuple[EmbedData, ...]` | 同上 | AC-17，按 `(kind, slot)` 给每个 embed 加 `image_media_url`、`thumbnail_media_url`，不改入参，返回新对象；CSV 的 `embeds` 列用同一个结果写 `图片:` 行 |
 | `clip_gaps(gaps, range_start, range_end) -> tuple[tuple[datetime, datetime], ...]` | 同上 | AC-8，缺口和范围取交集 |
 
 `message` 参数是一个 frozen dataclass `ExportMessage`（消息列加上它的附件、媒体行和旧版本），由数据库层按批组装。
@@ -162,7 +163,7 @@ type ExportSelection =
 | `content` | 处理过标记的正文（AC-13） |
 | `reply_to_id` | 被回复的消息 ID，没有就空 |
 | `forwarded` | 转发的正文；有转发附件时后面每个附件一行，写法同 `attachments` 列；没有转发就空 |
-| `embeds` | 每个 embed 依次写作者名、标题、描述、每个字段一行 `字段名: 值`、页脚，空的部分跳过；多个 embed 之间空一行 |
+| `embeds` | 每个 embed 依次写作者名、标题、描述、每个字段一行 `字段名: 值`、页脚，空的部分跳过；多个 embed 之间空一行；有已保存副本的图片，在这个 embed 末尾加一行 `图片: 链接` 或 `缩略图: 链接`（链接规则见 AC-17），没有副本就不写，也不写 Discord 的原链接 |
 | `attachments` | 每个没被移除的附件一行：`文件名 链接`，没有链接就只写文件名 |
 | `version` | 当前版本号 |
 | `edited_at` | 最后编辑时间，没有就空 |
@@ -183,7 +184,7 @@ type ExportSelection =
   "content": "正文",
   "reply_to_id": null,
   "forwarded": {"message_id": "…", "channel_id": "…", "guild_id": "…", "content": "…", "embeds": [], "attachments": []},
-  "embeds": [{"title": "…", "description": "…", "fields": [{"name": "…", "value": "…"}], "...": "其余 EmbedData 字段原样"}],
+  "embeds": [{"title": "…", "description": "…", "fields": [{"name": "…", "value": "…"}], "image_url": "https://cdn.discordapp.com/…", "image_media_url": "https://harvester.example/api/media/43", "...": "其余 EmbedData 字段原样"}],
   "attachments": [{"id": "…", "filename": "a.png", "content_type": "image/png", "size_bytes": 1234, "width": 800, "height": 600, "removed_at": null, "media_status": "stored", "url": "https://harvester.example/api/media/42"}],
   "version": 2,
   "edited_at": "2026-11-06T15:31:00+08:00",
@@ -193,7 +194,7 @@ type ExportSelection =
 ```
 
 - `forwarded` 没有转发时是 `null`；它的 `attachments` 每项是 `{"filename", "content_type", "size_bytes", "media_status", "url"}`，按 `attachment_names` 的顺序和 `slot` 对上；`content_type`、`size_bytes` 取 `media.declared_content_type`、`media.declared_size_bytes`；没有 `media` 行时 `content_type`、`size_bytes`、`media_status` 和 `url` 都是 `null`。
-- `embeds` 保留 `EmbedData` 的结构，只对文字字段做 AC-13 的处理；embed 里的图片地址原样保留（可能已过期），不加 dashboard 链接。
+- `embeds` 保留 `EmbedData` 的结构，只对文字字段做 AC-13 的处理；embed 里的 `image_url`、`thumbnail_url` 原样保留（可能已过期）。有已保存副本的，同一个 embed 里多一个 `image_media_url` 或 `thumbnail_media_url`（AC-17），没有就不出现这个键。`revisions` 和 `forwarded` 里的 embed 不加。
 - `attachments[].media_status` 是 `media.status`，没有 `media` 行时是 `null`。
 
 ### Value sourcing
@@ -212,6 +213,7 @@ type ExportSelection =
 | 下载 | 文件名里的日期 | 第一条和最后一条消息的 `created_at`，按 `tz` 换算 |
 | 下载 | 附件链接的域名 | 现有配置 `site_origin`（`harvester.config`） |
 | 下载 | 附件链接的 ID 和是否可用 | `media.id`、`media.status` |
+| 下载 | embed 图片副本的链接 | `media` 里 `message_id` 相同、`kind` 为 `embed_image` 或 `embed_thumbnail`、`slot` 等于 embed 序号、`status = 'stored'` 的行的 `id`，域名取 `site_origin`；每批消息一次查出，不逐条查 |
 | 下载 | 正文 | `message.content` 经 `strip_markup` |
 | 下载 | 旧版本 | `message_revision` |
 | 下载 | 删除和编辑标记 | `message.deleted_at`、`message.edited_at`、`message.version` |
@@ -250,6 +252,7 @@ type ExportSelection =
 - 范围不在本频道：`start` 是它线程里的消息时 404 `message_not_found`，verifies **AC-1**、**AC-18**
 - 标记处理和时区：含提及、表情、斜杠命令的正文；`tz=Asia/Shanghai` 和非法时区，verifies **AC-13**、**AC-14**、**AC-18**
 - 附件：`stored` 有链接、`pending` 和 `too_large` 没有，移除的附件只在 JSONL；转发附件按 `slot` 对上，verifies **AC-17**
+- embed 图片：`stored` 的 `embed_image` 和 `embed_thumbnail` 在对应序号的 embed 里有 `image_media_url`、`thumbnail_media_url`，原 `image_url` 不变；`pending`、没有行、第二个 embed 的图不会串到第一个；CSV 的 `embeds` 列末尾有 `图片: 链接`；转发和旧版本里的 embed 不加，verifies **AC-17**
 - 文件名：中文、非法字符、超长名字、空名字，verifies **AC-11**
 - 缺口：范围和缺口部分重叠、完全不重叠，verifies **AC-8**
 - 中途失败：模拟第二批查询抛错，响应在已写部分后断开，日志记 `export_failed`，verifies **AC-19**
@@ -265,7 +268,7 @@ type ExportSelection =
 3. 前端最细链路：「导出」按钮、选择模式（点两条消息、排序、高亮、取消和 Esc）、操作栏和「下载」，satisfies **AC-1**、**AC-2**、**AC-4**、**AC-5**、**AC-10**
 4. 开放的一端：后端补 `min`/`max` 和 `export_empty`；前端「从最早」「到最新」和 `toggleOpen`，satisfies **AC-3**、**AC-18**
 5. 预览接口：计数、上限、`clip_gaps` 和缺口；前端显示条数、上限提示、缺口提示和错误状态；下载接口补上限检查，satisfies **AC-6**、**AC-7**、**AC-8**、**AC-9**、**AC-18**
-6. 内容加粗：CSV 的 `forwarded`、`embeds`、`attachments` 列；`media_link`；JSONL 的 `jsonl_line`、批量取旧版本；前端格式选择，satisfies **AC-13**、**AC-15**、**AC-16**、**AC-17**
+6. 内容加粗：CSV 的 `forwarded`、`embeds`、`attachments` 列；`media_link`（也用于 embed 图片副本，每批一次查出 embed 的 `stored` 行）；JSONL 的 `jsonl_line`、批量取旧版本；前端格式选择，satisfies **AC-13**、**AC-15**、**AC-16**、**AC-17**
 7. 失败和运维：超时设置、`export_timeout`、中途出错断开、取消处理、三种日志事件；确认两个接口都要求会话，satisfies **AC-19**、**AC-20**、**AC-21**
 8. 测试：后端纯函数单元测试和连真实 PostgreSQL 的集成测试（快照、范围、上限、附件、失败）；前端选择状态纯函数和操作栏的 Vitest；写 `verify.md` 给 `/check verify` 用，satisfies **AC-1** 到 **AC-22**
 

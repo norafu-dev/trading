@@ -27,7 +27,12 @@ SNAPSHOT_OPTIONS: Mapping[str, Any] = {
     "postgresql_readonly": True,
 }
 
-_EXPORT_MEDIA_KINDS: tuple[MediaKind, ...] = ("attachment", "forwarded_attachment")
+_EXPORT_MEDIA_KINDS: tuple[MediaKind, ...] = (
+    "attachment",
+    "forwarded_attachment",
+    "embed_image",
+    "embed_thumbnail",
+)
 
 
 @dataclass(frozen=True)
