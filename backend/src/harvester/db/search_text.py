@@ -17,12 +17,16 @@ _DROPPED_MARKUP = re.compile(r"<(?:@[!&]?\d+|#\d+|t:-?\d+(?::[A-Za-z])?)>")
 _WHITESPACE = re.compile(r"\s+")
 
 
-def clean_text(raw: str) -> str:
-    """处理 Discord 标记、转小写、合并空白。"""
+def strip_markup(raw: str) -> str:
+    """只处理 Discord 标记，保留大小写和空白；搜索和导出共用（spec 0014 AC-13）。"""
     text = _CUSTOM_EMOJI.sub(r"\1", raw)
     text = _SLASH_COMMAND.sub(r"/\1", text)
-    text = _DROPPED_MARKUP.sub("", text)
-    return _WHITESPACE.sub(" ", text.lower()).strip()
+    return _DROPPED_MARKUP.sub("", text)
+
+
+def clean_text(raw: str) -> str:
+    """处理 Discord 标记、转小写、合并空白。"""
+    return _WHITESPACE.sub(" ", strip_markup(raw).lower()).strip()
 
 
 def _embed_parts(embed: EmbedData) -> Iterable[str]:

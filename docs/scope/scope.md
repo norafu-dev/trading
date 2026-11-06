@@ -26,7 +26,7 @@ _这些都是让构建保持有序的建议，不是硬性要求。不合适的�
 | 11  | 编辑与删除留痕       | Slice 3    | planned     |
 | 12  | 附件与图片保存       | Slice 4    | in-progress |
 | 13  | 消息搜索与筛选       | Slice 5    | in-progress |
-| 14  | 导出                 | Slice 6    | planned     |
+| 14  | 导出                 | Slice 6    | in-progress |
 | 15  | 关键词提醒           | Slice 7    | planned     |
 | 16  | 睡眠登录保护和日志文件 | Slice 1    | in-progress |
 | 17  | 数据库版频道未读数   | Slice 1    | in-progress |
@@ -247,12 +247,19 @@ spec [0013](../specs/0013-message-search-filter/index.md)
 
 ## Slice 6: 导出
 
-### 14. 导出
+### 14. 导出 · in-progress
 
 把当前筛选结果导出成文件。
 **Done when:** 能把筛选后的消息导出为 CSV 和 JSON；大量数据导出不会卡死页面；导出内容包含编辑和删除标记。
+spec [0014](../specs/0014-channel-message-export/index.md)
 
+- [x] Design it (spec): `/architect 导出`
 - [ ] Build it: `/develop 导出`
+  - [ ] 打通细线：拆出 `strip_markup`，选两条消息下载最简 CSV（快照事务、键集分页、文件名），频道页导出按钮和选择模式，AC-1, AC-2, AC-4, AC-5, AC-10 到 AC-15, AC-22
+  - [ ] 开放端和预览：「从最早」「到最新」、封顶计数和 10 万条上限、缺口提示、空频道和错误状态，AC-3, AC-6 到 AC-9, AC-18
+  - [ ] 内容加粗：CSV 的转发、embed、附件列和防公式注入，JSONL 和旧版本，附件链接，格式选择，AC-13, AC-15 到 AC-17
+  - [ ] 失败和收口：超时、中途断开、提前断开不漏连接、三种日志事件、会话保护，测试和 `verify.md`，AC-19 到 AC-21
+- [ ] Verify it: `/check verify 导出`
 
 ## Slice 7: 关键词提醒
 
@@ -276,6 +283,7 @@ spec [0013](../specs/0013-message-search-filter/index.md)
 - **查看已关闭频道的消息**：关掉开关的频道从侧栏消失后，在管理页提供入口查看已存的消息 · from spec 0008
 - **新线程提示**：醒目标出新出现的线程和论坛帖子，并能一键开启某频道下的全部线程 · from spec 0006
 - **一键重试一个频道的全部失败段**：历史采集现在只能展开后逐段点「重试」· from spec 0012
+- **去掉 dashboard 里的 @ 提及显示**：频道页和搜索页不再渲染用户提及，接口里为此批量加载的 `users` 也可以去掉 · from spec 0014
 
 ## Legend
 

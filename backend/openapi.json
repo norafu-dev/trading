@@ -2015,6 +2015,183 @@
         }
       }
     },
+    "/api/channels/{channel_id}/export/preview": {
+      "get": {
+        "tags": [
+          "export"
+        ],
+        "summary": "Export Preview",
+        "description": "下载前的条数和缺口（AC-6 到 AC-9）。\n\n超过上限时 `over_limit` 为真，频道没消息时 `count` 为 0。",
+        "operationId": "export_preview_api_channels__channel_id__export_preview_get",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Channel Id"
+            }
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportPreviewOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/{channel_id}/export": {
+      "get": {
+        "tags": [
+          "export"
+        ],
+        "summary": "Export Messages",
+        "description": "写文件之前的问题都返回 JSON 错误；之后的错误只能断开连接（AC-18、AC-19）。",
+        "operationId": "export_messages_api_channels__channel_id__export_get",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Channel Id"
+            }
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
+          },
+          {
+            "name": "tz",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tz"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "CSV 或 JSONL 文件，边查边写"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/system/status": {
       "get": {
         "tags": [
@@ -2904,6 +3081,93 @@
           "value"
         ],
         "title": "EmbedField"
+      },
+      "ExportGapOut": {
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "ExportGapOut"
+      },
+      "ExportPointOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at"
+        ],
+        "title": "ExportPointOut"
+      },
+      "ExportPreviewOut": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "over_limit": {
+            "type": "boolean",
+            "title": "Over Limit"
+          },
+          "range_start": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportPointOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "range_end": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportPointOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "gaps": {
+            "items": {
+              "$ref": "#/components/schemas/ExportGapOut"
+            },
+            "type": "array",
+            "title": "Gaps"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count",
+          "over_limit",
+          "range_start",
+          "range_end",
+          "gaps"
+        ],
+        "title": "ExportPreviewOut"
       },
       "FillGapsIn": {
         "properties": {

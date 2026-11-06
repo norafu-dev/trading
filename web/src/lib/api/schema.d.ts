@@ -732,6 +732,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/channels/{channel_id}/export/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Preview
+         * @description 下载前的条数和缺口（AC-6 到 AC-9）。
+         *
+         *     超过上限时 `over_limit` 为真，频道没消息时 `count` 为 0。
+         */
+        get: operations["export_preview_api_channels__channel_id__export_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/{channel_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Messages
+         * @description 写文件之前的问题都返回 JSON 错误；之后的错误只能断开连接（AC-18、AC-19）。
+         */
+        get: operations["export_messages_api_channels__channel_id__export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/system/status": {
         parameters: {
             query?: never;
@@ -1046,6 +1088,40 @@ export interface components {
             value: string;
             /** Inline */
             inline?: boolean;
+        };
+        /** ExportGapOut */
+        ExportGapOut: {
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+        };
+        /** ExportPointOut */
+        ExportPointOut: {
+            /** Id */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** ExportPreviewOut */
+        ExportPreviewOut: {
+            /** Count */
+            count: number;
+            /** Over Limit */
+            over_limit: boolean;
+            range_start: components["schemas"]["ExportPointOut"] | null;
+            range_end: components["schemas"]["ExportPointOut"] | null;
+            /** Gaps */
+            gaps: components["schemas"]["ExportGapOut"][];
         };
         /** FillGapsIn */
         FillGapsIn: {
@@ -2928,6 +3004,74 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AuthorsOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_preview_api_channels__channel_id__export_preview_get: {
+        parameters: {
+            query?: {
+                start?: string | null;
+                end?: string | null;
+            };
+            header?: never;
+            path: {
+                channel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportPreviewOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_messages_api_channels__channel_id__export_get: {
+        parameters: {
+            query?: {
+                start?: string | null;
+                end?: string | null;
+                format?: string | null;
+                tz?: string | null;
+            };
+            header?: never;
+            path: {
+                channel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description CSV 或 JSONL 文件，边查边写 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
